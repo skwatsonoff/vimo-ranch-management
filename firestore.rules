@@ -1,0 +1,166 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function memberPath(ranchId) {
+      return /databases/$(database)/documents/ranches/$(ranchId)/members/$(request.auth.uid);
+    }
+
+    function isMember(ranchId) {
+      return signedIn()
+        && exists(memberPath(ranchId))
+        && get(memberPath(ranchId)).data.active != false
+        && get(memberPath(ranchId)).data.status == 'active';
+    }
+
+    function memberRole(ranchId) {
+      return isMember(ranchId)
+        ? get(memberPath(ranchId)).data.role
+        : 'None';
+    }
+
+    function isAdmin(ranchId) {
+      return memberRole(ranchId) == 'Admin';
+    }
+
+    function canEditAnimals(ranchId) {
+      return memberRole(ranchId) in ['Admin', 'Editor'];
+    }
+
+    function canRecordEntries(ranchId) {
+      return memberRole(ranchId) in ['Admin', 'Editor', 'Basic Entry'];
+    }
+
+    function canWriteSale(ranchId) {
+      return canEditAnimals(ranchId)
+        || (
+          canRecordEntries(ranchId)
+          && request.resource.data.type in ['Milk', 'Manure']
+        );
+    }
+
+    match /users/{userId} {
+      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    // Public-to-authenticated registry used only to check Ranch ID
+    // availability and locate an existing ranch. It contains no ranch records.
+    match /ranch_ids/{ranchId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /ranches/{ranchId} {
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow read: if isMember(ranchId)
+        || (signedIn() && resource.data.ownerUid == request.auth.uid)
+        || (signedIn() && resource.data.authUid == request.auth.uid);
+      allow update: if isAdmin(ranchId)
+        || (signedIn() && resource.data.ownerUid == request.auth.uid)
+        || (signedIn() && resource.data.authUid == request.auth.uid);
+      allow delete: if false;
+
+      match /members/{memberId} {
+        allow read: if isMember(ranchId)
+          || (signedIn() && request.auth.uid == memberId);
+        allow create: if isAdmin(ranchId)
+          || (
+            signedIn()
+            && request.auth.uid == memberId
+            && getAfter(/databases/$(database)/documents/ranches/$(ranchId)).data.ownerUid == request.auth.uid
+          )
+          || (
+            signedIn()
+            && request.auth.uid == memberId
+            && get(/databases/$(database)/documents/ranches/$(ranchId)).data.authUid == request.auth.uid
+          );
+        allow update, delete: if isAdmin(ranchId);
+      }
+
+      match /join_requests/{requesterId} {
+        allow create: if signedIn()
+          && request.auth.uid == requesterId
+          && request.resource.data.uid == request.auth.uid
+          && exists(/databases/$(database)/documents/ranch_ids/$(ranchId));
+        allow read: if isAdmin(ranchId)
+          || (signedIn() && request.auth.uid == requesterId);
+        allow update: if isAdmin(ranchId)
+          || (
+            signedIn()
+            && request.auth.uid == requesterId
+            && resource.data.uid == request.auth.uid
+            && resource.data.status in ['pending', 'rejected']
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.status == 'pending'
+          );
+        allow delete: if isAdmin(ranchId)
+          || (signedIn() && request.auth.uid == requesterId);
+      }
+
+      match /animals/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canEditAnimals(ranchId);
+      }
+
+      match /settings/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if isAdmin(ranchId);
+      }
+
+      match /family_users/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if isAdmin(ranchId);
+      }
+
+      match /milk_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canRecordEntries(ranchId);
+      }
+
+      match /food_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canRecordEntries(ranchId);
+      }
+
+      match /doctor_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canRecordEntries(ranchId);
+      }
+
+      match /purchase_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canEditAnimals(ranchId);
+      }
+
+      match /sale_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update: if canWriteSale(ranchId);
+        allow delete: if canEditAnimals(ranchId);
+      }
+
+      match /death_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canEditAnimals(ranchId);
+      }
+
+      match /calving_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canEditAnimals(ranchId);
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+  }
+}

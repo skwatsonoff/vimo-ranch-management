@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="VIMO - family ranch management with cows, milk, feed, sales, reports, and secure Firebase sync.">
+
+  <!-- iPhone / PWA polish -->
+  <meta name="theme-color" content="#F6F1FF">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="VIMO">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="preload" as="image" href="icons/VimoSplash-256.png" fetchpriority="high">
+
+  <title>VIMO - My Ranch</title>
+
+  <style>
+    @property --ring-angle {
+      syntax: "<angle>";
+      initial-value: 0deg;
+      inherits: false;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: #F6F1FF;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      overflow: hidden;
+      position: fixed;
+      inset: 0;
+    }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at 50% 44%, rgba(125, 65, 232, .18), transparent 24%),
+        radial-gradient(circle at 20% 20%, #FFFFFF 0%, #F6F1FF 42%, #E7DCFF 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      z-index: 9999;
+    }
+
+    .splash-card {
+      width: min(78vw, 280px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-orbit {
+      position: relative;
+      width: clamp(112px, 12vw, 142px);
+      height: clamp(112px, 12vw, 142px);
+      margin-bottom: 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 29%;
+      isolation: isolate;
+    }
+
+    .logo-orbit::before {
+      content: "";
+      position: absolute;
+      /* The artwork's visible glass outline begins 10.7% inside its
+         transparent PNG canvas. Trace that exact squircle instead of orbiting
+         outside the logo with a detached ring. */
+      inset: 11.4%;
+      border-radius: 24%;
+      border: 1.5px solid transparent;
+      background: conic-gradient(
+        from var(--ring-angle),
+        transparent 0 17%,
+        #B983FF 28%,
+        #FFFFFF 36%,
+        #6E2FE5 49%,
+        transparent 67%
+      ) border-box;
+      -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      animation: trace-squircle 2.8s linear infinite;
+      filter: drop-shadow(0 0 10px rgba(122, 58, 224, .45));
+    }
+
+    .logo-art {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      border-radius: 27%;
+      background: transparent;
+    }
+
+    .logo-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 27%;
+      background: transparent;
+      filter: drop-shadow(0 16px 24px rgba(91, 35, 217, .22));
+    }
+
+    .splash-title {
+      color: #2D234A;
+      font-weight: 900;
+      font-size: 28px;
+      letter-spacing: 5px;
+    }
+
+    .splash-subtitle {
+      color: #6C5E86;
+      font-size: 13px;
+      margin-top: 7px;
+      letter-spacing: .3px;
+    }
+
+    @keyframes trace-squircle {
+      to { --ring-angle: 360deg; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .logo-orbit::before {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="splash-card">
+      <div class="logo-orbit">
+        <div class="logo-art">
+          <img src="icons/VimoSplash-256.png" alt="VIMO ranch logo" width="256" height="256" fetchpriority="high">
+        </div>
+      </div>
+      <div class="splash-title">VIMO</div>
+      <div class="splash-subtitle">Manage. Care. Grow.</div>
+    </div>
+  </div>
+
+  <script>
+    // Never leave the installed PWA on an endless splash when the network is
+    // weak. The Flutter access gate has its own retry UI after this hand-off.
+    setTimeout(function () {
+      var loading = document.getElementById('loading');
+      if (loading) {
+        var subtitle = loading.querySelector('.splash-subtitle');
+        if (subtitle) subtitle.textContent = 'Still loading — check your connection';
+      }
+    }, 9000);
+
+    window.addEventListener('flutter-first-frame', function () {
+      var loading = document.getElementById('loading');
+      if (loading) {
+        loading.style.transition = 'opacity 260ms ease';
+        loading.style.opacity = '0';
+        setTimeout(function () {
+          loading.remove();
+        }, 300);
+      }
+    });
+  </script>
+
+  <script>
+    // Older VIMO releases used Flutter's cache-first service worker. Clear that
+    // shell before booting so every deployment becomes visible immediately,
+    // while Hive continues to keep the user's ranch data available offline.
+    (async function bootLatestVimo() {
+      try {
+        if ('serviceWorker' in navigator) {
+          var registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(function (registration) {
+            return registration.unregister();
+          }));
+        }
+
+        if ('caches' in window) {
+          var cacheNames = await caches.keys();
+          var flutterCaches = [
+            'flutter-app-manifest',
+            'flutter-temp-cache',
+            'flutter-app-cache'
+          ];
+          await Promise.all(cacheNames
+            .filter(function (name) {
+              return flutterCaches.indexOf(name) !== -1;
+            })
+            .map(function (name) {
+              return caches.delete(name);
+            }));
+        }
+      } catch (error) {
+        console.warn('VIMO cache refresh could not complete:', error);
+      }
+
+      var bootstrap = document.createElement('script');
+      bootstrap.src = 'flutter_bootstrap.js?v=20260826-1';
+      bootstrap.async = true;
+      document.body.appendChild(bootstrap);
+    })();
+  </script>
+</body>
+</html>
