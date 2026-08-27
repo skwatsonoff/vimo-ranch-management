@@ -77,6 +77,12 @@
       isolation: isolate;
     }
 
+    @property --ring-angle {
+      syntax: "<angle>";
+      inherits: false;
+      initial-value: 0deg;
+    }
+
     .logo-orbit::before {
       content: "";
       position: absolute;
@@ -220,7 +226,7 @@
       }
 
       var bootstrap = document.createElement('script');
-      bootstrap.src = 'flutter_bootstrap.js?v=20260826-2';
+      bootstrap.src = 'flutter_bootstrap.js?v=20260827-1';
       bootstrap.async = true;
       document.body.appendChild(bootstrap);
     })();
