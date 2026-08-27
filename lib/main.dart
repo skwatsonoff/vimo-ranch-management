@@ -40,10 +40,16 @@ bool firebaseReady = false;
 /// developer explicitly passes --dart-define=VIMO_PREVIEW_MODE=true.
 const bool vimoPreviewMode = bool.fromEnvironment('VIMO_PREVIEW_MODE');
 
+/// One deliberate pre-launch reset. Keep this marker unchanged in every future
+/// release: changing it would clear real customer data on the next app start.
+const String prelaunchResetMarker = 'vimo_prelaunch_reset_20260826';
+
 const List<String> backupBoxNames = [
   'animals',
   'milk_records',
   'food_records',
+  'stock_records',
+  'expense_records',
   'doctor_records',
   'purchase_records',
   'sale_records',
@@ -82,6 +88,7 @@ Future<void> main() async {
     await Hive.openBox(name);
   }
 
+  await applyPrelaunchResetOnce();
   await seedAnimals();
   await seedSettingsAndUsers();
   AutoSyncService.start();
@@ -92,6 +99,23 @@ Future<void> main() async {
 // -----------------------------------------------------------------------------
 //  Seeding
 // -----------------------------------------------------------------------------
+
+Future<void> applyPrelaunchResetOnce() async {
+  if (vimoPreviewMode) return;
+  final settings = Hive.box('settings');
+  if (settings.get(prelaunchResetMarker) == true) return;
+
+  final existingDeviceId = '${settings.get('deviceId', defaultValue: '')}';
+  for (final name in backupBoxNames) {
+    if (name == 'settings') continue;
+    await Hive.box(name).clear();
+  }
+  await settings.clear();
+  if (existingDeviceId.isNotEmpty) {
+    await settings.put('deviceId', existingDeviceId);
+  }
+  await settings.put(prelaunchResetMarker, true);
+}
 
 Future<void> seedAnimals() async {
   final box = Hive.box('animals');
@@ -484,8 +508,8 @@ String buildCompleteExcelWorkbook() {
     '<Author>VIMO</Author><Company>${_xml(farmName())}</Company>'
     '<Title>Complete Ranch Data</Title></DocumentProperties>'
     '<Styles><Style ss:ID="Default" ss:Name="Normal">'
-    '<Alignment ss:Vertical="Center"/><Font ss:FontName="Aptos" ss:Size="11"/>'
-    '</Style><Style ss:ID="header"><Font ss:Bold="1" ss:Color="#FFFFFF"/>'
+    '<Alignment ss:Vertical="Center"/><Font ss:FontName="Courier New" ss:Size="11"/>'
+    '</Style><Style ss:ID="header"><Font ss:FontName="Courier New" ss:Bold="1" ss:Color="#FFFFFF"/>'
     '<Interior ss:Color="#5B23D9" ss:Pattern="Solid"/>'
     '<Alignment ss:Vertical="Center"/></Style></Styles>',
   );
@@ -518,7 +542,9 @@ String buildCompleteExcelWorkbook() {
       ),
     )
     ..write(_excelWorksheet('Milk Records', boxData('milk_records')))
-    ..write(_excelWorksheet('Feed Records', boxData('food_records')))
+    ..write(_excelWorksheet('Legacy Feed Records', boxData('food_records')))
+    ..write(_excelWorksheet('Stock Ledger', boxData('stock_records')))
+    ..write(_excelWorksheet('Other Expenses', boxData('expense_records')))
     ..write(_excelWorksheet('Doctor Visits', boxData('doctor_records')))
     ..write(_excelWorksheet('Purchases', boxData('purchase_records')))
     ..write(_excelWorksheet('Sales', boxData('sale_records')))
@@ -2429,6 +2455,8 @@ List<String> motherNames() => ['Unknown Mother', ...cowNames()];
 
 List<Map<String, dynamic>> milkRows() => rows('milk_records');
 List<Map<String, dynamic>> foodRows() => rows('food_records');
+List<Map<String, dynamic>> stockRows() => rows('stock_records');
+List<Map<String, dynamic>> expenseRows() => rows('expense_records');
 List<Map<String, dynamic>> doctorRows() => rows('doctor_records');
 List<Map<String, dynamic>> purchaseRows() => rows('purchase_records');
 List<Map<String, dynamic>> saleRows() => rows('sale_records');
@@ -2572,6 +2600,19 @@ double sumPeriod(List<Map<String, dynamic>> list, String key, String period) {
 
 double milkTotal(String period) => sumPeriod(milkRows(), 'quantity', period);
 double foodExpense(String period) => sumPeriod(foodRows(), 'price', period);
+double stockPurchaseExpense(String period) {
+  double total = 0;
+  for (final record in stockRows()) {
+    if (txt(record, 'movement') == 'Purchase' &&
+        matchPeriod(txt(record, 'date'), period)) {
+      total += numv(record, 'amount');
+    }
+  }
+  return total;
+}
+
+double otherExpense(String period) =>
+    sumPeriod(expenseRows(), 'amount', period);
 double doctorExpense(String period) => sumPeriod(doctorRows(), 'cost', period);
 double purchaseExpense(String period) =>
     sumPeriod(purchaseRows(), 'amount', period);
@@ -2580,11 +2621,80 @@ double saleIncome(String period) => sumPeriod(saleRows(), 'amount', period);
 
 double totalExpense(String period) =>
     foodExpense(period) +
+    stockPurchaseExpense(period) +
+    otherExpense(period) +
     doctorExpense(period) +
     purchaseExpense(period) +
     deathExpense(period);
 
 double profit(String period) => saleIncome(period) - totalExpense(period);
+
+double stockBalanceFrom(Iterable<Map<String, dynamic>> records, String item) {
+  double total = 0;
+  for (final record in records) {
+    if (txt(record, 'item') != item) continue;
+    final quantity = numv(record, 'quantityKg');
+    total += txt(record, 'movement') == 'Usage' ? -quantity : quantity;
+  }
+  return math.max(0, total);
+}
+
+double stockBalance(String item) => stockBalanceFrom(stockRows(), item);
+
+/// Suggestions are ranked by how often they were used, then by most recent
+/// use. This makes the everyday petrol/customer names rise to the top while
+/// still keeping older choices available.
+List<String> frequentNameSuggestions(
+  Iterable<Map<String, dynamic>> records,
+  String key, {
+  bool Function(Map<String, dynamic>)? where,
+}) {
+  final counts = <String, int>{};
+  final labels = <String, String>{};
+  final latest = <String, DateTime>{};
+  for (final record in records) {
+    if (where != null && !where(record)) continue;
+    final label = txt(record, key).trim();
+    if (label.isEmpty) continue;
+    final normalized = label.toLowerCase();
+    counts[normalized] = (counts[normalized] ?? 0) + 1;
+    labels[normalized] = label;
+    final stamp = activityDate(record);
+    if (latest[normalized] == null || stamp.isAfter(latest[normalized]!)) {
+      latest[normalized] = stamp;
+    }
+  }
+  final names = counts.keys.toList()
+    ..sort((a, b) {
+      final byCount = counts[b]!.compareTo(counts[a]!);
+      if (byCount != 0) return byCount;
+      final byRecent = latest[b]!.compareTo(latest[a]!);
+      if (byRecent != 0) return byRecent;
+      return labels[a]!.toLowerCase().compareTo(labels[b]!.toLowerCase());
+    });
+  return names.map((key) => labels[key]!).toList();
+}
+
+double? lastMilkQuantityForCustomerFrom(
+  Iterable<Map<String, dynamic>> records,
+  String customer,
+) {
+  final wanted = customer.trim().toLowerCase();
+  if (wanted.isEmpty) return null;
+  final matches = records.where(
+    (record) =>
+        txt(record, 'type') == 'Milk' &&
+        txt(record, 'customerName').trim().toLowerCase() == wanted,
+  );
+  if (matches.isEmpty) return null;
+  final sorted = matches.toList()
+    ..sort((a, b) => activityDate(b).compareTo(activityDate(a)));
+  final quantity = numv(sorted.first, 'quantity');
+  return quantity > 0 ? quantity : null;
+}
+
+double? lastMilkQuantityForCustomer(String customer) =>
+    lastMilkQuantityForCustomerFrom(saleRows(), customer);
 
 double milkSold(String period) {
   double total = 0;
@@ -2864,6 +2974,26 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'value': money(numv(r, 'price')),
       'icon': Icons.grass_rounded,
       'color': Ink.green,
+      'sort': activityDate(r),
+    });
+  }
+  for (final r in stockRows()) {
+    list.add({
+      'title': '${txt(r, 'item')} ${txt(r, 'movement').toLowerCase()}',
+      'sub': '${txt(r, 'date')} \u2022 ${txt(r, 'target', 'Stock')}',
+      'value': '${numv(r, 'quantityKg').toStringAsFixed(1)} kg',
+      'icon': Icons.inventory_2_rounded,
+      'color': txt(r, 'movement') == 'Usage' ? Ink.amber : Ink.green,
+      'sort': activityDate(r),
+    });
+  }
+  for (final r in expenseRows()) {
+    list.add({
+      'title': '${txt(r, 'name')} expense',
+      'sub': '${txt(r, 'date')} \u2022 Others',
+      'value': money(numv(r, 'amount')),
+      'icon': Icons.receipt_long_rounded,
+      'color': Ink.red,
       'sort': activityDate(r),
     });
   }
@@ -6175,7 +6305,13 @@ class DashboardScreen extends StatelessWidget {
           valueListenable: Hive.box('sale_records').listenable(),
           builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
             valueListenable: Hive.box('food_records').listenable(),
-            builder: (_, _, _) => _build(context),
+            builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
+              valueListenable: Hive.box('stock_records').listenable(),
+              builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
+                valueListenable: Hive.box('expense_records').listenable(),
+                builder: (_, _, _) => _build(context),
+              ),
+            ),
           ),
         ),
       ),
@@ -8381,6 +8517,105 @@ class FormPage extends StatelessWidget {
 }
 
 /// A read-only date field that opens the picker on tap.
+class SuggestionField extends StatefulWidget {
+  final TextEditingController controller;
+  final List<String> suggestions;
+  final String label;
+  final IconData icon;
+  final ValueChanged<String>? onSelected;
+
+  const SuggestionField({
+    super.key,
+    required this.controller,
+    required this.suggestions,
+    required this.label,
+    required this.icon,
+    this.onSelected,
+  });
+
+  @override
+  State<SuggestionField> createState() => _SuggestionFieldState();
+}
+
+class _SuggestionFieldState extends State<SuggestionField> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<String>(
+      textEditingController: widget.controller,
+      focusNode: _focusNode,
+      displayStringForOption: (option) => option,
+      optionsBuilder: (value) {
+        final query = value.text.trim().toLowerCase();
+        return widget.suggestions.where(
+          (option) => query.isEmpty || option.toLowerCase().contains(query),
+        );
+      },
+      onSelected: (value) {
+        widget.controller.text = value;
+        widget.controller.selection = TextSelection.collapsed(
+          offset: value.length,
+        );
+        widget.onSelected?.call(value);
+      },
+      fieldViewBuilder: (_, controller, focusNode, onSubmitted) => TextField(
+        controller: controller,
+        focusNode: focusNode,
+        textCapitalization: TextCapitalization.words,
+        onSubmitted: (_) => onSubmitted(),
+        decoration: fieldStyle(widget.label, icon: widget.icon),
+      ),
+      optionsViewBuilder: (_, onSelected, options) {
+        final choices = options.take(6).toList();
+        if (choices.isEmpty) return const SizedBox.shrink();
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            color: Colors.transparent,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420, maxHeight: 260),
+              child: Glass(
+                radius: Gold.r21,
+                blur: Gold.s21,
+                opacity: 0.92,
+                padding: const EdgeInsets.symmetric(vertical: Gold.s5),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: choices.length,
+                  itemBuilder: (_, index) => ListTile(
+                    dense: true,
+                    leading: Icon(
+                      widget.icon,
+                      color: Ink.violet,
+                      size: Gold.t16,
+                    ),
+                    title: Text(
+                      choices[index],
+                      style: const TextStyle(
+                        color: Ink.navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    onTap: () => onSelected(choices[index]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class DateField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -8996,7 +9231,7 @@ class AddEntryScreen extends StatefulWidget {
 class _AddEntryScreenState extends State<AddEntryScreen> {
   int _mode = 0;
   int _feedTarget = 0;
-  int _feedType = 0;
+  int _stockItem = 0;
   String _session = 'Morning';
   String _cow = '';
   bool _saving = false;
@@ -9005,21 +9240,12 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   final _time = TextEditingController(text: currentTime());
   final _milk = TextEditingController();
   final _qty = TextEditingController();
-  final _price = TextEditingController();
+  final _expenseName = TextEditingController();
+  final _amount = TextEditingController();
   final _notes = TextEditingController();
 
-  static const List<String> _feedNames = ['Bran', 'Straw', 'Fodder Bundle'];
-  static const List<String> _feedLabels = [
-    'Bran / Thavudu',
-    'Straw / Vaikol',
-    'Fodder / Thattai Pul',
-  ];
-  static const List<String> _feedUnits = [
-    'Bag / Moodai',
-    'Bundle / Kattu',
-    'Bundle / Kattu',
-  ];
-  static const List<String> _feedIcons = ['bag', 'dryGrass', 'freshGrass'];
+  static const List<String> _stockItems = ['Vaikol', 'Thavudu'];
+  static const List<String> _stockIcons = ['dryGrass', 'bag'];
 
   @override
   void initState() {
@@ -9034,7 +9260,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     _time.dispose();
     _milk.dispose();
     _qty.dispose();
-    _price.dispose();
+    _expenseName.dispose();
+    _amount.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -9065,20 +9292,51 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         'addedBy': currentUserName(),
         'createdAt': DateTime.now().toIso8601String(),
       });
-    } else {
+    } else if (_mode == 1) {
       final quantity = toDouble(_qty.text);
       if (quantity <= 0) {
         snack(context, 'Please enter the quantity');
         return;
       }
+      final item = _stockItems[_stockItem];
+      final available = stockBalance(item);
+      if (quantity > available) {
+        snack(
+          context,
+          'Only ${available.toStringAsFixed(1)} kg of $item is available',
+        );
+        return;
+      }
       setState(() => _saving = true);
-      await Hive.box('food_records').add({
+      await Hive.box('stock_records').add({
+        'movement': 'Usage',
+        'item': item,
         'target': _feedTarget == 0 ? 'Cows' : 'Calves',
-        'foodType': _feedNames[_feedType],
-        'foodLabel': _feedLabels[_feedType],
-        'unit': _feedUnits[_feedType],
-        'quantity': quantity,
-        'price': toDouble(_price.text),
+        'quantityKg': quantity,
+        'unit': 'kg',
+        'amount': 0.0,
+        'date': _date.text,
+        'time': _time.text,
+        'notes': _notes.text.trim(),
+        'addedBy': currentUserName(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+    } else {
+      final name = _expenseName.text.trim();
+      final amount = toDouble(_amount.text);
+      if (name.isEmpty) {
+        snack(context, 'Please enter the expense name');
+        return;
+      }
+      if (amount <= 0) {
+        snack(context, 'Please enter the expense amount');
+        return;
+      }
+      setState(() => _saving = true);
+      await Hive.box('expense_records').add({
+        'category': 'Others',
+        'name': name,
+        'amount': amount,
         'date': _date.text,
         'time': _time.text,
         'notes': _notes.text.trim(),
@@ -9162,7 +9420,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     );
   }
 
-  Widget _feedForm() {
+  Widget _stockUseForm() {
     return Column(
       children: [
         Glass(
@@ -9177,12 +9435,12 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           ),
         ),
         const SizedBox(height: Gold.s13),
-        for (int i = 0; i < _feedNames.length; i++)
+        for (int i = 0; i < _stockItems.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: Gold.s8),
             child: Pressable(
               radius: Gold.r21,
-              onTap: () => setState(() => _feedType = i),
+              onTap: () => setState(() => _stockItem = i),
               child: AnimatedContainer(
                 duration: Gold.base,
                 curve: Gold.ease,
@@ -9191,12 +9449,12 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                   shape: SquircleBorder(
                     radius: Gold.r21,
                     side: BorderSide(
-                      color: _feedType == i
+                      color: _stockItem == i
                           ? Colors.transparent
                           : Colors.white.withValues(alpha: 0.80),
                     ),
                   ),
-                  gradient: _feedType == i
+                  gradient: _stockItem == i
                       ? const LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -9216,35 +9474,35 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                       height: Gold.s34,
                       decoration: ShapeDecoration(
                         shape: const SquircleBorder(radius: Gold.r13),
-                        color: _feedType == i
+                        color: _stockItem == i
                             ? Colors.white.withValues(alpha: 0.20)
                             : Ink.violet.withValues(alpha: 0.10),
                       ),
                       child: Center(
                         child: RanchIcon(
-                          type: _feedIcons[i],
+                          type: _stockIcons[i],
                           size: Gold.s21,
-                          color: _feedType == i ? Colors.white : Ink.violet,
+                          color: _stockItem == i ? Colors.white : Ink.violet,
                         ),
                       ),
                     ),
                     const SizedBox(width: Gold.s13),
                     Expanded(
                       child: Text(
-                        _feedLabels[i],
+                        _stockItems[i],
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: _feedType == i ? Colors.white : Ink.navy,
+                          color: _stockItem == i ? Colors.white : Ink.navy,
                           fontWeight: FontWeight.w800,
                           fontSize: Gold.t13,
                         ),
                       ),
                     ),
                     Text(
-                      _feedUnits[i],
+                      '${stockBalance(_stockItems[i]).toStringAsFixed(1)} kg left',
                       style: TextStyle(
-                        color: _feedType == i
+                        color: _stockItem == i
                             ? Colors.white.withValues(alpha: 0.80)
                             : Ink.muted,
                         fontSize: Gold.t10,
@@ -9272,18 +9530,39 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           controller: _qty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
-            'Quantity (${_feedUnits[_feedType]})',
+            'Quantity used (kg)',
             icon: Icons.inventory_2_outlined,
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _otherExpenseForm() {
+    return Column(
+      children: [
+        SuggestionField(
+          controller: _expenseName,
+          suggestions: frequentNameSuggestions(expenseRows(), 'name'),
+          label: 'Expense Name',
+          icon: Icons.receipt_long_outlined,
+        ),
+        const SizedBox(height: Gold.s13),
+        DateField(
+          controller: _date,
+          label: 'Date',
+          onChanged: () => setState(() {}),
+        ),
         const SizedBox(height: Gold.s13),
         TextField(
-          controller: _price,
+          controller: _time,
+          decoration: fieldStyle('Time', icon: Icons.schedule_rounded),
+        ),
+        const SizedBox(height: Gold.s13),
+        TextField(
+          controller: _amount,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: fieldStyle(
-            'Price / Expense',
-            icon: Icons.payments_outlined,
-          ),
+          decoration: fieldStyle('Amount', icon: Icons.payments_outlined),
         ),
       ],
     );
@@ -9300,8 +9579,12 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: const ['Milk', 'Feed'],
-            icons: const [Icons.water_drop_rounded, Icons.grass_rounded],
+            labels: const ['Milk', 'Stock Use', 'Others'],
+            icons: const [
+              Icons.water_drop_rounded,
+              Icons.inventory_2_rounded,
+              Icons.receipt_long_rounded,
+            ],
             index: _mode,
             onChanged: (value) => setState(() => _mode = value),
           ),
@@ -9311,7 +9594,11 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           duration: Gold.base,
           curve: Gold.ease,
           alignment: Alignment.topCenter,
-          child: _mode == 0 ? _milkForm() : _feedForm(),
+          child: switch (_mode) {
+            0 => _milkForm(),
+            1 => _stockUseForm(),
+            _ => _otherExpenseForm(),
+          },
         ),
         const SizedBox(height: Gold.s13),
         TextField(
@@ -9322,7 +9609,11 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
-          label: _mode == 0 ? 'Save Milk Entry' : 'Save Feed Entry',
+          label: switch (_mode) {
+            0 => 'Save Milk Entry',
+            1 => 'Use Stock',
+            _ => 'Save Other Expense',
+          },
           icon: Icons.check_rounded,
           busy: _saving,
           onPressed: _save,
@@ -10184,15 +10475,22 @@ class SellScreen extends StatefulWidget {
 
 class _SellScreenState extends State<SellScreen> {
   static const List<String> _types = ['Milk', 'Cow', 'Calf', 'Manure'];
+  static const List<String> _stockItems = ['Vaikol', 'Thavudu'];
 
+  int _section = 0;
   int _type = 0;
+  int _stockItem = 0;
   String _animal = '';
   bool _saving = false;
 
   final _date = TextEditingController(text: todayDate());
+  final _customer = TextEditingController();
   final _qty = TextEditingController();
   final _price = TextEditingController();
   final _notes = TextEditingController();
+  final _stockQty = TextEditingController();
+  final _stockAmount = TextEditingController();
+  final _stockNotes = TextEditingController();
 
   @override
   void initState() {
@@ -10211,9 +10509,13 @@ class _SellScreenState extends State<SellScreen> {
     _qty.removeListener(_refresh);
     _price.removeListener(_refresh);
     _date.dispose();
+    _customer.dispose();
     _qty.dispose();
     _price.dispose();
     _notes.dispose();
+    _stockQty.dispose();
+    _stockAmount.dispose();
+    _stockNotes.dispose();
     super.dispose();
   }
 
@@ -10251,6 +10553,10 @@ class _SellScreenState extends State<SellScreen> {
     double perUnit = toDouble(_price.text);
 
     if (_type == 0) {
+      if (_customer.text.trim().isEmpty) {
+        snack(context, 'Please enter the customer name');
+        return;
+      }
       if (quantity <= 0) {
         snack(context, 'Please enter the milk quantity');
         return;
@@ -10285,6 +10591,7 @@ class _SellScreenState extends State<SellScreen> {
     await Hive.box('sale_records').add({
       'category': '${_types[_type]} Sale',
       'animal': item,
+      'customerName': _type == 0 ? _customer.text.trim() : '',
       'type': _types[_type],
       'quantity': quantity,
       'unit': _unit,
@@ -10304,6 +10611,7 @@ class _SellScreenState extends State<SellScreen> {
     setState(() {
       _saving = false;
       _qty.clear();
+      _customer.clear();
       _notes.clear();
       _animal = '';
       _price.text = _type == 0 ? defaultMilkPrice().toStringAsFixed(0) : '';
@@ -10370,8 +10678,256 @@ class _SellScreenState extends State<SellScreen> {
     );
   }
 
+  Widget _sectionSwitcher() => Glass(
+    radius: Gold.r27,
+    blur: Gold.s21,
+    padding: const EdgeInsets.all(Gold.s5),
+    elevation: 0.72,
+    child: LiquidSegmentBar(
+      labels: const ['Sell', 'Stock'],
+      icons: const [Icons.sell_rounded, Icons.inventory_2_rounded],
+      index: _section,
+      onChanged: (value) => setState(() => _section = value),
+    ),
+  );
+
+  Future<void> _saveStockPurchase() async {
+    if (!canRecordEntries) {
+      snack(context, 'Your ranch role does not allow adding stock');
+      return;
+    }
+    final quantity = toDouble(_stockQty.text);
+    final amount = toDouble(_stockAmount.text);
+    if (quantity <= 0) {
+      snack(context, 'Please enter the purchased quantity');
+      return;
+    }
+    if (amount <= 0) {
+      snack(context, 'Please enter the purchase amount');
+      return;
+    }
+    setState(() => _saving = true);
+    await Hive.box('stock_records').add({
+      'movement': 'Purchase',
+      'item': _stockItems[_stockItem],
+      'quantityKg': quantity,
+      'unit': 'kg',
+      'amount': amount,
+      'date': _date.text,
+      'time': currentTime(),
+      'notes': _stockNotes.text.trim(),
+      'addedBy': currentUserName(),
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    if (!mounted) return;
+    snack(context, '${_stockItems[_stockItem]} stock added');
+    setState(() {
+      _saving = false;
+      _stockQty.clear();
+      _stockAmount.clear();
+      _stockNotes.clear();
+    });
+  }
+
+  Widget _stockScreen() => ValueListenableBuilder<Box<dynamic>>(
+    valueListenable: Hive.box('stock_records').listenable(),
+    builder: (_, _, _) {
+      final recent = stockRows().take(8).toList();
+      return Shell(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+            Gold.s21,
+            Gold.s21,
+            Gold.s21,
+            _MainShellState.bottomInset,
+          ),
+          children: [
+            _sectionSwitcher(),
+            const SizedBox(height: Gold.s21),
+            const Text(
+              'Stock',
+              style: TextStyle(
+                fontSize: Gold.t34,
+                fontWeight: FontWeight.w900,
+                color: Ink.navy,
+                height: 1.05,
+                letterSpacing: -1,
+              ),
+            ),
+            const SizedBox(height: Gold.s3),
+            const Text(
+              'Track Vaikol and Thavudu without double-counting expenses',
+              style: TextStyle(
+                color: Ink.muted,
+                fontSize: Gold.t13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: Gold.s21),
+            Row(
+              children: [
+                for (int i = 0; i < _stockItems.length; i++) ...[
+                  if (i > 0) const SizedBox(width: Gold.s13),
+                  Expanded(
+                    child: Glass(
+                      radius: Gold.r27,
+                      gradient: LinearGradient(
+                        colors: [
+                          (i == 0 ? Ink.amber : Ink.violet).withValues(
+                            alpha: 0.19,
+                          ),
+                          Colors.white.withValues(alpha: 0.55),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            i == 0
+                                ? Icons.grass_rounded
+                                : Icons.inventory_2_rounded,
+                            color: i == 0 ? Ink.amber : Ink.violet,
+                          ),
+                          const SizedBox(height: Gold.s13),
+                          Text(
+                            _stockItems[i],
+                            style: const TextStyle(
+                              color: Ink.muted,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            '${stockBalance(_stockItems[i]).toStringAsFixed(1)} kg',
+                            style: const TextStyle(
+                              color: Ink.navy,
+                              fontSize: Gold.t21,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: Gold.s21),
+            const SectionTitle(title: 'Add Purchased Stock'),
+            Glass(
+              radius: Gold.r27,
+              blur: Gold.s21,
+              child: Column(
+                children: [
+                  LiquidSegmentBar(
+                    labels: _stockItems,
+                    index: _stockItem,
+                    onChanged: (value) => setState(() => _stockItem = value),
+                  ),
+                  const SizedBox(height: Gold.s13),
+                  DateField(
+                    controller: _date,
+                    label: 'Purchase Date',
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: Gold.s13),
+                  TextField(
+                    controller: _stockQty,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: fieldStyle(
+                      'Purchased Quantity (kg)',
+                      icon: Icons.scale_rounded,
+                    ),
+                  ),
+                  const SizedBox(height: Gold.s13),
+                  TextField(
+                    controller: _stockAmount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: fieldStyle(
+                      'Total Purchase Amount',
+                      icon: Icons.payments_outlined,
+                    ),
+                  ),
+                  const SizedBox(height: Gold.s13),
+                  TextField(
+                    controller: _stockNotes,
+                    maxLines: 2,
+                    decoration: fieldStyle('Notes (optional)'),
+                  ),
+                  const SizedBox(height: Gold.s21),
+                  LiquidButton(
+                    label: 'Add to Stock',
+                    icon: Icons.add_box_rounded,
+                    busy: _saving,
+                    onPressed: _saveStockPurchase,
+                  ),
+                ],
+              ),
+            ),
+            if (recent.isNotEmpty) ...[
+              const SizedBox(height: Gold.s21),
+              const SectionTitle(title: 'Recent Stock Movements'),
+              for (final record in recent)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Gold.s8),
+                  child: Glass(
+                    radius: Gold.r21,
+                    padding: const EdgeInsets.all(Gold.s13),
+                    child: Row(
+                      children: [
+                        Icon(
+                          txt(record, 'movement') == 'Usage'
+                              ? Icons.remove_circle_outline_rounded
+                              : Icons.add_circle_outline_rounded,
+                          color: txt(record, 'movement') == 'Usage'
+                              ? Ink.red
+                              : Ink.green,
+                        ),
+                        const SizedBox(width: Gold.s13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${txt(record, 'item')} · ${txt(record, 'movement')}',
+                                style: const TextStyle(
+                                  color: Ink.navy,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                '${txt(record, 'date')} · ${txt(record, 'target', txt(record, 'addedBy'))}',
+                                style: const TextStyle(color: Ink.muted),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          '${txt(record, 'movement') == 'Usage' ? '-' : '+'}${numv(record, 'quantityKg').toStringAsFixed(1)} kg',
+                          style: TextStyle(
+                            color: txt(record, 'movement') == 'Usage'
+                                ? Ink.red
+                                : Ink.green,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) {
+    if (_section == 1) return _stockScreen();
     return ValueListenableBuilder<Box<dynamic>>(
       valueListenable: Hive.box('sale_records').listenable(),
       builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
@@ -10393,6 +10949,8 @@ class _SellScreenState extends State<SellScreen> {
                 _MainShellState.bottomInset,
               ),
               children: [
+                _sectionSwitcher(),
+                const SizedBox(height: Gold.s21),
                 const Reveal(
                   index: 0,
                   child: Column(
@@ -10442,6 +11000,7 @@ class _SellScreenState extends State<SellScreen> {
                         setState(() {
                           _type = value;
                           _animal = '';
+                          _customer.clear();
                           _qty.clear();
                           _price.text = value == 0
                               ? defaultMilkPrice().toStringAsFixed(0)
@@ -10518,8 +11077,33 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                   ),
                 ] else ...[
+                  if (_type == 0) ...[
+                    Reveal(
+                      index: 4,
+                      child: SuggestionField(
+                        controller: _customer,
+                        suggestions: frequentNameSuggestions(
+                          saleRows(),
+                          'customerName',
+                          where: (record) => txt(record, 'type') == 'Milk',
+                        ),
+                        label: 'Customer Name',
+                        icon: Icons.person_outline_rounded,
+                        onSelected: (name) {
+                          final previous = lastMilkQuantityForCustomer(name);
+                          if (previous == null) return;
+                          _qty.text = previous.toStringAsFixed(1);
+                          snack(
+                            context,
+                            'Last quantity ${previous.toStringAsFixed(1)} L added',
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: Gold.s13),
+                  ],
                   Reveal(
-                    index: 4,
+                    index: 5,
                     child: TextField(
                       controller: _qty,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -10533,7 +11117,7 @@ class _SellScreenState extends State<SellScreen> {
                   ),
                   const SizedBox(height: Gold.s13),
                   Reveal(
-                    index: 5,
+                    index: 6,
                     child: TextField(
                       controller: _price,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -10699,6 +11283,10 @@ class RecordListScreen extends StatelessWidget {
         ? milkRows()
         : <Map<String, dynamic>>[
             ...foodRows().map((r) => {...r, 'cat': 'Food'}),
+            ...stockRows()
+                .where((r) => txt(r, 'movement') == 'Purchase')
+                .map((r) => {...r, 'cat': 'Stock'}),
+            ...expenseRows().map((r) => {...r, 'cat': 'Others'}),
             ...doctorRows().map((r) => {...r, 'cat': 'Doctor'}),
             ...purchaseRows().map((r) => {...r, 'cat': 'Purchase'}),
             ...deathRows().map((r) => {...r, 'cat': 'Death'}),
@@ -10716,6 +11304,8 @@ class RecordListScreen extends StatelessWidget {
         case 'Food':
           return numv(r, 'price');
         case 'Purchase':
+        case 'Stock':
+        case 'Others':
           return numv(r, 'amount');
         default:
           return numv(r, 'cost');
@@ -10870,7 +11460,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
         valueListenable: Hive.box('sale_records').listenable(),
         builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
           valueListenable: Hive.box('food_records').listenable(),
-          builder: (_, _, _) => _content(context),
+          builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
+            valueListenable: Hive.box('stock_records').listenable(),
+            builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
+              valueListenable: Hive.box('expense_records').listenable(),
+              builder: (_, _, _) => _content(context),
+            ),
+          ),
         ),
       ),
     );
@@ -11356,6 +11952,17 @@ class ReportDetailScreen extends StatelessWidget {
       b['feed'] = (b['feed'] ?? 0) + numv(r, 'price');
       b['expense'] = (b['expense'] ?? 0) + numv(r, 'price');
     }
+    for (final r in stockRows().where(
+      (record) => txt(record, 'movement') == 'Purchase',
+    )) {
+      final b = bucket(txt(r, 'date'));
+      b['feed'] = (b['feed'] ?? 0) + numv(r, 'amount');
+      b['expense'] = (b['expense'] ?? 0) + numv(r, 'amount');
+    }
+    for (final r in expenseRows()) {
+      bucket(txt(r, 'date'))['expense'] =
+          (bucket(txt(r, 'date'))['expense'] ?? 0) + numv(r, 'amount');
+    }
     for (final r in doctorRows()) {
       bucket(txt(r, 'date'))['expense'] =
           (bucket(txt(r, 'date'))['expense'] ?? 0) + numv(r, 'cost');
@@ -11506,7 +12113,6 @@ class ReportDetailScreen extends StatelessWidget {
         ),
       );
     }
-
     final byMonth = kind == 'monthly';
     final buckets = _buckets(byMonth);
 
@@ -11583,7 +12189,7 @@ class ReportDetailScreen extends StatelessWidget {
                               _Cell(label: 'Income', value: money(income)),
                               _Cell(label: 'Expense', value: money(expense)),
                               _Cell(
-                                label: 'Feed',
+                                label: 'Stock',
                                 value: money(b['feed'] ?? 0),
                               ),
                             ],
@@ -11700,6 +12306,28 @@ class ExportReportScreen extends StatelessWidget {
         txt(r, 'addedBy'),
       );
     }
+    for (final r in stockRows().where(
+      (record) => txt(record, 'movement') == 'Purchase',
+    )) {
+      line(
+        txt(r, 'date'),
+        'Stock Purchase',
+        '${txt(r, 'item')} - ${numv(r, 'quantityKg').toStringAsFixed(2)} kg',
+        numv(r, 'amount'),
+        txt(r, 'notes'),
+        txt(r, 'addedBy'),
+      );
+    }
+    for (final r in expenseRows()) {
+      line(
+        txt(r, 'date'),
+        'Others',
+        txt(r, 'name'),
+        numv(r, 'amount'),
+        txt(r, 'notes'),
+        txt(r, 'addedBy'),
+      );
+    }
     for (final r in doctorRows()) {
       line(
         txt(r, 'date'),
@@ -11735,7 +12363,7 @@ class ExportReportScreen extends StatelessWidget {
 
   String _saleCsv() {
     final b = StringBuffer(
-      'Date,Time,Category,Item,Quantity,Unit,Price Per Unit,Amount,Notes,Added By\n',
+      'Date,Time,Category,Customer,Item,Quantity,Unit,Price Per Unit,Amount,Notes,Added By\n',
     );
     for (final r in saleRows()) {
       b.writeln(
@@ -11743,6 +12371,7 @@ class ExportReportScreen extends StatelessWidget {
           csv(txt(r, 'date')),
           csv(txt(r, 'time')),
           csv(txt(r, 'category')),
+          csv(txt(r, 'customerName')),
           csv(txt(r, 'animal')),
           csv(numv(r, 'quantity').toStringAsFixed(2)),
           csv(txt(r, 'unit')),
@@ -11799,7 +12428,7 @@ class ExportReportScreen extends StatelessWidget {
         _ExportTile(
           title: 'All Data - Excel Workbook',
           subtitle:
-              'Animals, milk, feed, sales, expenses, visits and settings in one file',
+              'Animals, milk, stock, sales, expenses, visits and settings in one file',
           icon: Icons.dataset_rounded,
           color: Ink.green,
           onTap: () async {
@@ -11828,7 +12457,7 @@ class ExportReportScreen extends StatelessWidget {
         ),
         _ExportTile(
           title: 'Expenses',
-          subtitle: 'Feed, doctor, purchase and loss',
+          subtitle: 'Stock, others, doctor, purchase and loss',
           icon: Icons.payments_rounded,
           color: Ink.red,
           onTap: () async {

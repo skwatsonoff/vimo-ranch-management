@@ -123,5 +123,45 @@ void main() {
       expect(rankBackgroundAsset(2), endsWith('rank_purple.jpg'));
       expect(rankBackgroundAsset(3), endsWith('rank_green.jpg'));
     });
+
+    test('stock ledger adds purchases and subtracts usage', () {
+      final balance = stockBalanceFrom([
+        {'item': 'Vaikol', 'movement': 'Purchase', 'quantityKg': 100},
+        {'item': 'Vaikol', 'movement': 'Usage', 'quantityKg': 22.5},
+        {'item': 'Thavudu', 'movement': 'Purchase', 'quantityKg': 40},
+      ], 'Vaikol');
+
+      expect(balance, 77.5);
+    });
+
+    test('suggestions prefer the most frequently used names', () {
+      final suggestions = frequentNameSuggestions([
+        {'name': 'Petrol', 'createdAt': '2026-08-01T10:00:00'},
+        {'name': 'Rope', 'createdAt': '2026-08-02T10:00:00'},
+        {'name': 'petrol', 'createdAt': '2026-08-03T10:00:00'},
+      ], 'name');
+
+      expect(suggestions.first.toLowerCase(), 'petrol');
+      expect(suggestions, hasLength(2));
+    });
+
+    test('milk customer lookup returns the latest saved quantity', () {
+      final quantity = lastMilkQuantityForCustomerFrom([
+        {
+          'type': 'Milk',
+          'customerName': 'Kumar',
+          'quantity': 4,
+          'createdAt': '2026-08-01T10:00:00',
+        },
+        {
+          'type': 'Milk',
+          'customerName': 'kumar',
+          'quantity': 5,
+          'createdAt': '2026-08-02T10:00:00',
+        },
+      ], 'Kumar');
+
+      expect(quantity, 5);
+    });
   });
 }

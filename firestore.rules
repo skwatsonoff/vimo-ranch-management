@@ -132,6 +132,16 @@ service cloud.firestore {
         allow create, update, delete: if canRecordEntries(ranchId);
       }
 
+      match /stock_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canRecordEntries(ranchId);
+      }
+
+      match /expense_records/{documentId} {
+        allow read: if isMember(ranchId);
+        allow create, update, delete: if canRecordEntries(ranchId);
+      }
+
       match /doctor_records/{documentId} {
         allow read: if isMember(ranchId);
         allow create, update, delete: if canRecordEntries(ranchId);

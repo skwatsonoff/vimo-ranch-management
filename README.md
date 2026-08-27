@@ -7,8 +7,8 @@ members through Firebase.
 ## Included
 
 - Email sign-in, account creation, password reset, and remembered sessions
-- Dashboard, cows, calves, animal profiles, milk, feed, doctor, pregnancy,
-  purchases, sales, deaths, calving, expenses, and reports
+- Dashboard, cows, calves, animal profiles, milk, Vaikol/Thavudu stock,
+  doctor, pregnancy, purchases, sales, deaths, calving, expenses, and reports
 - Monthly top-three milk ranking and active-animal birthday reminders
 - Offline local storage, backup/restore, individual CSV exports, one complete
   multi-sheet Excel workbook, and automatic cloud sync
@@ -19,6 +19,10 @@ members through Firebase.
   lactation, and links the newborn calf to its mother
 - Safe browser photo uploads with orientation correction, resizing, and cloud
   size limits
+- Stock ledger where purchases add kilograms and daily usage deducts kilograms;
+  the purchase is counted as an expense once and usage is never double-counted
+- Frequency-ranked suggestions for Other expense names and milk customers;
+  selecting a returning milk customer restores their latest quantity
 
 ## Run locally
 
@@ -34,6 +38,23 @@ Run `flutter build web --release`.
 
 The deployable website is written to `build/web`.
 
+Deploy every web update to the existing Firebase Hosting site. The permanent
+production URL stays `https://my-ranch-sync.web.app`; a new deploy replaces the
+app code without changing the URL or deleting Firestore ranch data.
+
+## Android / Play Store updates
+
+Before the first Play Store release, choose the final Android `applicationId`
+and create one upload signing key. Never change that application ID or lose the
+signing key. For every update, increase `version`/build number in
+`pubspec.yaml`, build an Android App Bundle with `flutter build appbundle`, and
+upload the new `.aab` to the same Play Console app. Android then installs it as
+an update; Hive data remains on the device and Firebase data remains in the
+ranch cloud account.
+
+Back up the upload key securely and test each release in Play Console's
+Internal testing track before Production.
+
 ## Firebase
 
 The app is connected to the `my-ranch-sync` Firebase project. Enable Email /
@@ -46,6 +67,14 @@ request. Admins can remove members and assign permissions from Family Users.
 
 Firestore rules in `firestore.rules` enforce those roles on the server; the UI
 is not the security boundary.
+
+Stock and Other expense records are included in Firebase sync, JSON backup,
+CSV expense export, and the complete Excel workbook. The Excel workbook uses
+Courier New (typewriter style); CSV is plain text and cannot store a font.
+
+The one-time `vimo_prelaunch_reset_20260826` migration intentionally clears
+only pre-launch test data. Do not rename or repeat this marker in future
+releases; keeping it unchanged ensures subsequent updates preserve user data.
 
 ## Animal lifecycle
 

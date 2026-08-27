@@ -85,7 +85,7 @@
          outside the logo with a detached ring. */
       inset: 11.4%;
       border-radius: 24%;
-      border: 1.5px solid transparent;
+      border: 2.5px solid transparent;
       background: conic-gradient(
         from var(--ring-angle),
         transparent 0 17%,
@@ -97,8 +97,10 @@
       -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
       -webkit-mask-composite: xor;
       mask-composite: exclude;
-      animation: trace-squircle 2.8s linear infinite;
-      filter: drop-shadow(0 0 10px rgba(122, 58, 224, .45));
+      animation: trace-squircle 1.9s linear infinite;
+      filter: drop-shadow(0 0 8px rgba(122, 58, 224, .58));
+      z-index: 2;
+      pointer-events: none;
     }
 
     .logo-art {
@@ -108,6 +110,7 @@
       place-items: center;
       border-radius: 27%;
       background: transparent;
+      z-index: 1;
     }
 
     .logo-art img {
@@ -116,7 +119,11 @@
       object-fit: contain;
       border-radius: 27%;
       background: transparent;
-      filter: drop-shadow(0 16px 24px rgba(91, 35, 217, .22));
+      /* The source artwork contains intentionally soft, nearly transparent
+         pixels outside the icon. Clipping to the actual logo outline prevents
+         those pixels from flashing as a square during image decode. */
+      clip-path: inset(11.4% round 24%);
+      filter: drop-shadow(0 10px 16px rgba(91, 35, 217, .20));
     }
 
     .splash-title {
@@ -213,7 +220,7 @@
       }
 
       var bootstrap = document.createElement('script');
-      bootstrap.src = 'flutter_bootstrap.js?v=20260826-1';
+      bootstrap.src = 'flutter_bootstrap.js?v=20260826-2';
       bootstrap.async = true;
       document.body.appendChild(bootstrap);
     })();
