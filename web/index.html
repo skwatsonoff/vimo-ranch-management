@@ -171,8 +171,10 @@
   </div>
 
   <script>
-    // Never leave the installed PWA on an endless splash when the network is
-    // weak. The Flutter access gate has its own retry UI after this hand-off.
+    // Flutter dismisses this overlay only after authentication and ranch access
+    // have resolved, so users see one continuous branded splash instead of a
+    // second full-screen access loader. Keep a safety timeout for rare boot
+    // failures where Dart cannot take over.
     setTimeout(function () {
       var loading = document.getElementById('loading');
       if (loading) {
@@ -181,7 +183,7 @@
       }
     }, 9000);
 
-    window.addEventListener('flutter-first-frame', function () {
+    setTimeout(function () {
       var loading = document.getElementById('loading');
       if (loading) {
         loading.style.transition = 'opacity 260ms ease';
@@ -190,7 +192,7 @@
           loading.remove();
         }, 300);
       }
-    });
+    }, 15000);
   </script>
 
   <script>

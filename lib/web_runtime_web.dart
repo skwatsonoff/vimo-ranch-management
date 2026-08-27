@@ -9,6 +9,15 @@ class BrowserRuntime {
 
   bool get online => web.window.navigator.onLine;
 
+  void dismissBootSplash() {
+    final loading = web.document.getElementById('loading') as web.HTMLElement?;
+    if (loading == null) return;
+    loading.style
+      ..transition = 'opacity 260ms ease'
+      ..opacity = '0';
+    Timer(const Duration(milliseconds: 300), () => loading.remove());
+  }
+
   Future<String?> pickImageDataUrl() async {
     final input = web.HTMLInputElement()
       ..type = 'file'

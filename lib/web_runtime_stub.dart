@@ -3,6 +3,8 @@ class BrowserRuntime {
 
   Future<String?> pickImageDataUrl() async => null;
 
+  void dismissBootSplash() {}
+
   void start({
     required void Function() onOnline,
     required void Function() onFocus,

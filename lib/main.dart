@@ -4911,9 +4911,13 @@ class AuthGate extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       initialData: FirebaseAuth.instance.currentUser,
       builder: (context, snapshot) {
-        return snapshot.data == null
-            ? const LoginScreen()
-            : const RanchAccessGate();
+        if (snapshot.data == null) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _browserRuntime.dismissBootSplash(),
+          );
+          return const LoginScreen();
+        }
+        return const RanchAccessGate();
       },
     );
   }
@@ -4956,6 +4960,12 @@ class _RanchAccessGateState extends State<RanchAccessGate> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const _AccessLoadingScreen();
         }
+        // On web the animated HTML splash stays above this access check. Remove
+        // it only after the real destination is ready, avoiding a second
+        // full-screen "Checking ranch access" loader between the two screens.
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _browserRuntime.dismissBootSplash(),
+        );
         if (snapshot.hasError) {
           return _AccessErrorScreen(
             message: '${snapshot.error}'.replaceFirst('Bad state: ', ''),
@@ -5141,7 +5151,6 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
     final suggested = current == null
         ? ''
         : RanchAccessService.displayNameFor(current);
-    _owner.text = suggested;
     _joinName.text = suggested;
   }
 
