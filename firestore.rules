@@ -31,8 +31,25 @@ service cloud.firestore {
       return memberRole(ranchId) in ['Admin', 'Editor'];
     }
 
+    function canUpdateAnimalEntry(ranchId) {
+      return canRecordEntries(ranchId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'pregnancyStartDate',
+          'pregnancyInjection',
+          'milkingStopDate',
+          'cloudId',
+          'deviceKey',
+          'updatedAtMillis',
+          'updatedAtText',
+          'updatedBy'
+        ]);
+    }
+
     function canRecordEntries(ranchId) {
-      return memberRole(ranchId) in ['Admin', 'Editor', 'Basic Entry'];
+      // Data Entry is the current limited-entry role. The two legacy names are
+      // temporarily accepted so existing approved family members keep working
+      // until their membership document is migrated by the admin.
+      return memberRole(ranchId) in ['Admin', 'Editor', 'Data Entry', 'Basic Entry', 'Viewer'];
     }
 
     function canWriteSale(ranchId) {
@@ -109,7 +126,9 @@ service cloud.firestore {
 
       match /animals/{documentId} {
         allow read: if isMember(ranchId);
-        allow create, update, delete: if canEditAnimals(ranchId);
+        allow create, delete: if canEditAnimals(ranchId);
+        allow update: if canEditAnimals(ranchId)
+          || canUpdateAnimalEntry(ranchId);
       }
 
       match /settings/{documentId} {

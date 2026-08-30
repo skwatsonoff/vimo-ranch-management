@@ -213,6 +213,7 @@ Future<void> seedSettingsAndUsers() async {
   await putIfMissing('lastSyncedAt', '');
   await putIfMissing('syncStatus', 'Waiting for sync');
   await putIfMissing('lastAutoSyncReason', '');
+  await putIfMissing('pendingAnimalEntryUpdates', <String, dynamic>{});
   await putIfMissing(
     'deviceId',
     'dev_${DateTime.now().millisecondsSinceEpoch}',
@@ -225,10 +226,14 @@ String normalizeFamilyRole(String role) {
   final value = role.trim().toLowerCase();
   if (value == 'owner' || value == 'admin') return 'Admin';
   if (value == 'manager' || value == 'editor') return 'Editor';
-  if (value == 'basic' || value == 'basic entry' || value == 'entry') {
-    return 'Basic Entry';
+  if (value == 'basic' ||
+      value == 'basic entry' ||
+      value == 'entry' ||
+      value == 'data entry' ||
+      value == 'viewer') {
+    return 'Data Entry';
   }
-  return 'Viewer';
+  return 'Data Entry';
 }
 
 int familyUserUpdatedAt(Map<String, dynamic> user) {
@@ -245,7 +250,7 @@ List<Map<String, dynamic>> deduplicateFamilyUsers(Iterable<Map> values) {
     if (name.isEmpty) continue;
 
     user['name'] = name;
-    user['role'] = normalizeFamilyRole(txt(user, 'role', 'Viewer'));
+    user['role'] = normalizeFamilyRole(txt(user, 'role', 'Data Entry'));
     final identity = name.toLowerCase();
     final current = byName[identity];
     if (current == null ||
@@ -283,9 +288,12 @@ Future<void> normalizeFamilyUsers() async {
               : txt(
                   user,
                   'userId',
-                  userKeyFor(txt(user, 'name'), txt(user, 'role', 'Viewer')),
+                  userKeyFor(
+                    txt(user, 'name'),
+                    txt(user, 'role', 'Data Entry'),
+                  ),
                 ),
-          'role': normalizeFamilyRole(txt(user, 'role', 'Viewer')),
+          'role': normalizeFamilyRole(txt(user, 'role', 'Data Entry')),
           'active': user['active'] ?? true,
         };
       })
@@ -2207,7 +2215,7 @@ const List<String> deathReasons = [
 
 const List<String> periods = ['Today', 'This Week', 'This Month', 'This Year'];
 
-const List<String> familyRoles = ['Admin', 'Editor', 'Basic Entry', 'Viewer'];
+const List<String> familyRoles = ['Admin', 'Editor', 'Data Entry'];
 
 // --- primitives --------------------------------------------------------------
 
@@ -2285,13 +2293,23 @@ String currentUserName() {
 }
 
 String currentUserRole() =>
-    normalizeFamilyRole(settingText('currentRole', 'Viewer'));
+    normalizeFamilyRole(settingText('currentRole', 'Data Entry'));
 
 bool get canManageRanch => currentUserRole() == 'Admin';
 bool get canEditAnimals =>
     const {'Admin', 'Editor'}.contains(currentUserRole());
 bool get canRecordEntries =>
-    const {'Admin', 'Editor', 'Basic Entry'}.contains(currentUserRole());
+    const {'Admin', 'Editor', 'Data Entry'}.contains(currentUserRole());
+bool get isDataEntryUser => currentUserRole() == 'Data Entry';
+
+String rolePermissionSummary(String role) => switch (normalizeFamilyRole(
+  role,
+)) {
+  'Admin' => 'Full access, including members and ranch settings',
+  'Editor' => 'Can view, add and edit all ranch data; cannot manage members',
+  _ =>
+    'Tamil entry view: cows, calves, milk, stock, milk sales, doctor and pregnancy only',
+};
 bool get canViewRanch => ranchId().isNotEmpty;
 
 bool autoSyncEnabled() => settingValue('autoSyncEnabled', true) == true;
@@ -3228,7 +3246,7 @@ class RanchAccessService {
     await setSetting('pendingRanchId', '');
     await setSetting(
       'currentRole',
-      normalizeFamilyRole(txt(member, 'role', 'Viewer')),
+      normalizeFamilyRole(txt(member, 'role', 'Data Entry')),
     );
     await setSetting(
       'currentUser',
@@ -3293,7 +3311,7 @@ class RanchAccessService {
         return RanchGateState(
           RanchGateMode.active,
           ranchId: localId,
-          role: normalizeFamilyRole(txt(member, 'role', 'Viewer')),
+          role: normalizeFamilyRole(txt(member, 'role', 'Data Entry')),
         );
       }
       await setSetting('ranchId', '');
@@ -3311,7 +3329,7 @@ class RanchAccessService {
         return RanchGateState(
           RanchGateMode.active,
           ranchId: profileRanch,
-          role: normalizeFamilyRole(txt(member, 'role', 'Viewer')),
+          role: normalizeFamilyRole(txt(member, 'role', 'Data Entry')),
         );
       }
     }
@@ -3455,7 +3473,7 @@ class RanchAccessService {
   static Future<void> approveRequest(
     String id,
     Map<String, dynamic> request, {
-    String role = 'Basic Entry',
+    String role = 'Data Entry',
   }) async {
     if (!canManageRanch) throw StateError('Admin permission required');
     final memberUid = txt(request, 'uid');
@@ -3538,6 +3556,7 @@ class CloudSyncService {
     'lastSyncError',
     'lastSyncedAt',
     'lastAutoSyncReason',
+    'pendingAnimalEntryUpdates',
   };
 
   static FirebaseFirestore get db => FirebaseFirestore.instance;
@@ -3783,6 +3802,70 @@ class CloudSyncService {
   }
 }
 
+/// Saves the small set of animal health fields that a Data Entry member is
+/// allowed to record. The direct merge keeps pregnancy and milking state in
+/// sync without granting that role permission to edit the full animal profile.
+Future<void> updateAnimalEntryFields(
+  dynamic animalKey,
+  Map<String, dynamic> updates,
+) async {
+  final box = Hive.box('animals');
+  final raw = box.get(animalKey);
+  if (raw == null) throw StateError('Animal not found');
+  final data = asMap(raw)..addAll(updates);
+  final now = DateTime.now();
+  data['updatedAtMillis'] = now.millisecondsSinceEpoch;
+  data['updatedAtText'] = now.toIso8601String();
+  data['updatedBy'] = currentUserName();
+  await box.put(animalKey, data);
+
+  final documentId = makeRecordId('animals', '$animalKey', data);
+  final payload = <String, dynamic>{
+    ...updates,
+    'cloudId': documentId,
+    'deviceKey': '$animalKey',
+    'updatedAtMillis': data['updatedAtMillis'],
+    'updatedAtText': data['updatedAtText'],
+    'updatedBy': data['updatedBy'],
+  };
+
+  final settings = Hive.box('settings');
+  final pending = Map<String, dynamic>.from(
+    asMap(settings.get('pendingAnimalEntryUpdates')),
+  );
+  pending[documentId] = {...asMap(pending[documentId]), ...payload};
+  await settings.put('pendingAnimalEntryUpdates', pending);
+  AutoSyncService.markDirty(reason: 'animal health entry', quiet: true);
+
+  if (!CloudSyncService.ready || !isOnlineNow()) return;
+  try {
+    await flushPendingAnimalEntryUpdates();
+  } catch (_) {
+    AutoSyncService.scheduleSync(reason: 'retry animal health entry');
+  }
+}
+
+/// Retries the restricted animal updates independently from full animal sync.
+/// This keeps a Data Entry member's pregnancy and milking changes safe while
+/// offline, without granting permission to edit names or other profile fields.
+Future<void> flushPendingAnimalEntryUpdates() async {
+  if (!CloudSyncService.ready || !Hive.isBoxOpen('settings')) return;
+  final settings = Hive.box('settings');
+  final pending = Map<String, dynamic>.from(
+    asMap(settings.get('pendingAnimalEntryUpdates')),
+  );
+  if (pending.isEmpty) return;
+
+  for (final entry in pending.entries.toList()) {
+    await CloudSyncService.ranch
+        .collection('animals')
+        .doc(entry.key)
+        .set(asMap(entry.value), SetOptions(merge: true));
+    pending.remove(entry.key);
+    await settings.put('pendingAnimalEntryUpdates', pending);
+  }
+}
+
 class AutoSyncService {
   const AutoSyncService._();
 
@@ -3909,6 +3992,9 @@ class AutoSyncService {
       await settings.put('syncStatus', 'Syncing...');
       await settings.put('lastAutoSyncReason', reason);
 
+      await flushPendingAnimalEntryUpdates().timeout(
+        const Duration(seconds: 45),
+      );
       await CloudSyncService.uploadAll().timeout(const Duration(seconds: 45));
       await CloudSyncService.downloadAll().timeout(const Duration(seconds: 45));
 
@@ -5104,12 +5190,13 @@ class _MemberAwareShellState extends State<MemberAwareShell> {
           }
           await setSetting(
             'currentRole',
-            normalizeFamilyRole(txt(member, 'role', 'Viewer')),
+            normalizeFamilyRole(txt(member, 'role', 'Data Entry')),
           );
           await setSetting(
             'currentUser',
             txt(member, 'name', currentUserName()),
           );
+          if (mounted) setState(() {});
         });
   }
 
@@ -5120,7 +5207,8 @@ class _MemberAwareShellState extends State<MemberAwareShell> {
   }
 
   @override
-  Widget build(BuildContext context) => const MainShell();
+  Widget build(BuildContext context) =>
+      MainShell(key: ValueKey<String>(currentUserRole()));
 }
 
 class RanchOnboardingScreen extends StatefulWidget {
@@ -5691,7 +5779,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _authenticate({required bool createAccount}) async {
+  Future<void> _signIn() async {
     final email = _email.text.trim();
     final password = _password.text;
 
@@ -5711,20 +5799,11 @@ class _LoginScreenState extends State<LoginScreen> {
         _remember ? Persistence.LOCAL : Persistence.SESSION,
       );
 
-      if (createAccount) {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-      } else {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-      }
-      if (mounted) {
-        snack(context, createAccount ? 'Account created' : 'Welcome back');
-      }
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      if (mounted) snack(context, 'Welcome back');
     } on FirebaseAuthException catch (e) {
       if (mounted) snack(context, _friendlyError(e));
     } catch (_) {
@@ -5870,8 +5949,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               obscureText: _obscure,
                               autofillHints: const [AutofillHints.password],
                               textInputAction: TextInputAction.done,
-                              onSubmitted: (_) =>
-                                  _authenticate(createAccount: false),
+                              onSubmitted: (_) => _signIn(),
                               decoration: fieldStyle(
                                 'Password',
                                 icon: Icons.lock_outline_rounded,
@@ -5936,8 +6014,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             LiquidButton(
                               label: 'Sign In',
                               busy: _busy,
-                              onPressed: () =>
-                                  _authenticate(createAccount: false),
+                              onPressed: _signIn,
                             ),
                           ],
                         ),
@@ -5959,7 +6036,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           GestureDetector(
                             onTap: _busy
                                 ? null
-                                : () => _authenticate(createAccount: true),
+                                : () => push(context, const SignupScreen()),
                             child: const Text(
                               'Create Account',
                               style: TextStyle(
@@ -5979,6 +6056,143 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
+
+  @override
+  State<SignupScreen> createState() => _SignupScreenState();
+}
+
+class _SignupScreenState extends State<SignupScreen> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _busy = false;
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createAccount() async {
+    final email = _email.text.trim();
+    final password = _password.text;
+    if (email.isEmpty || !email.contains('@')) {
+      snack(context, 'Please enter a valid email');
+      return;
+    }
+    if (password.length < 6) {
+      snack(context, 'Password needs at least 6 characters');
+      return;
+    }
+    if (password != _confirm.text) {
+      snack(context, 'Passwords do not match');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      if (mounted) {
+        snack(context, 'Account created');
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      final message = switch (error.code) {
+        'email-already-in-use' =>
+          'That email already has an account. Please sign in',
+        'invalid-email' => 'That email address does not look right',
+        'weak-password' => 'Please choose a stronger password',
+        'network-request-failed' => 'No network. Check your connection',
+        _ => error.message ?? 'Could not create the account',
+      };
+      snack(context, message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FormPage(
+      title: 'Create Account',
+      children: [
+        const Center(child: BrandMark(size: Gold.s89)),
+        const SizedBox(height: Gold.s21),
+        const Text(
+          'Create your VIMO account',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Ink.navy,
+            fontSize: Gold.t21,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: Gold.s5),
+        const Text(
+          'Enter your details here. Your sign-in page stays separate.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Ink.muted),
+        ),
+        const SizedBox(height: Gold.s21),
+        TextField(
+          controller: _email,
+          keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.newUsername],
+          textInputAction: TextInputAction.next,
+          decoration: fieldStyle('Email', icon: Icons.mail_outline_rounded),
+        ),
+        const SizedBox(height: Gold.s13),
+        TextField(
+          controller: _password,
+          obscureText: _obscure,
+          autofillHints: const [AutofillHints.newPassword],
+          textInputAction: TextInputAction.next,
+          decoration: fieldStyle(
+            'Create Password',
+            icon: Icons.lock_outline_rounded,
+            suffix: IconButton(
+              onPressed: () => setState(() => _obscure = !_obscure),
+              icon: Icon(
+                _obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: Gold.s13),
+        TextField(
+          controller: _confirm,
+          obscureText: _obscure,
+          autofillHints: const [AutofillHints.newPassword],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _createAccount(),
+          decoration: fieldStyle(
+            'Confirm Password',
+            icon: Icons.verified_user_outlined,
+          ),
+        ),
+        const SizedBox(height: Gold.s21),
+        LiquidButton(
+          label: 'Create Account',
+          icon: Icons.person_add_alt_1_rounded,
+          busy: _busy,
+          onPressed: _createAccount,
+        ),
+      ],
     );
   }
 }
@@ -6028,12 +6242,30 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = <Widget>[
-      DashboardScreen(onOpenCard: _openCard),
-      const AnimalsScreen(),
-      const SellScreen(),
-      const ReportsScreen(),
-    ];
+    final dataEntry = isDataEntryUser;
+    final pages = dataEntry
+        ? <Widget>[const AnimalsScreen(), const SellScreen()]
+        : <Widget>[
+            DashboardScreen(onOpenCard: _openCard),
+            const AnimalsScreen(),
+            const SellScreen(),
+            const ReportsScreen(),
+          ];
+    final navItems = dataEntry
+        ? const <_NavItem>[
+            _NavItem('மாடுகள்', null, null),
+            _NavItem('விற்பனை', Icons.sell_rounded, Icons.sell_outlined),
+          ]
+        : const <_NavItem>[
+            _NavItem('Home', Icons.home_rounded, Icons.home_outlined),
+            _NavItem('Cows', null, null),
+            _NavItem('Sell', Icons.sell_rounded, Icons.sell_outlined),
+            _NavItem(
+              'Reports',
+              Icons.bar_chart_rounded,
+              Icons.bar_chart_outlined,
+            ),
+          ];
     final tab = _tab.clamp(0, pages.length - 1);
 
     return Scaffold(
@@ -6076,8 +6308,9 @@ class _MainShellState extends State<MainShell> {
                       onTap: () => guardedPush(
                         context,
                         allowed: canRecordEntries,
-                        message:
-                            'Your ranch role does not allow adding entries',
+                        message: dataEntry
+                            ? 'பதிவு சேர்க்க அனுமதி இல்லை'
+                            : 'Your ranch role does not allow adding entries',
                         page: const AddEntryScreen(),
                       ),
                     ),
@@ -6101,6 +6334,7 @@ class _MainShellState extends State<MainShell> {
               ),
               child: _NavBar(
                 index: tab,
+                items: navItems,
                 onChanged: (i) => setState(() => _tab = i),
               ),
             ),
@@ -6154,16 +6388,14 @@ class _QuickAddButton extends StatelessWidget {
 
 class _NavBar extends StatelessWidget {
   final int index;
+  final List<_NavItem> items;
   final ValueChanged<int> onChanged;
 
-  const _NavBar({required this.index, required this.onChanged});
-
-  static const List<_NavItem> _items = [
-    _NavItem('Home', Icons.home_rounded, Icons.home_outlined),
-    _NavItem('Cows', null, null),
-    _NavItem('Sell', Icons.sell_rounded, Icons.sell_outlined),
-    _NavItem('Reports', Icons.bar_chart_rounded, Icons.bar_chart_outlined),
-  ];
+  const _NavBar({
+    required this.index,
+    required this.items,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -6178,7 +6410,7 @@ class _NavBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final cellWidth = constraints.maxWidth / _items.length;
+          final cellWidth = constraints.maxWidth / items.length;
           return SizedBox(
             height: Gold.s55,
             child: Stack(
@@ -6186,7 +6418,7 @@ class _NavBar extends StatelessWidget {
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 520),
                   curve: Curves.easeOutBack,
-                  left: index.clamp(0, _items.length - 1) * cellWidth,
+                  left: index.clamp(0, items.length - 1) * cellWidth,
                   width: cellWidth,
                   top: 0,
                   bottom: 0,
@@ -6213,10 +6445,10 @@ class _NavBar extends StatelessWidget {
                 ),
                 Row(
                   children: [
-                    for (int i = 0; i < _items.length; i++)
+                    for (int i = 0; i < items.length; i++)
                       Expanded(
                         child: _NavCell(
-                          item: _items[i],
+                          item: items[i],
                           active: index == i,
                           onTap: () => onChanged(i),
                         ),
@@ -6265,7 +6497,7 @@ class _NavCell extends StatelessWidget {
           children: [
             SizedBox(
               height: Gold.s27,
-              child: item.label == 'Cows'
+              child: item.active == null
                   ? CowHoofIcon(
                       size: Gold.s27,
                       color: active ? Ink.violetDeep : Ink.faint,
@@ -7122,7 +7354,11 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(_tab == 0 ? 'All Cows' : 'All Calves'),
+        title: Text(
+          isDataEntryUser
+              ? (_tab == 0 ? 'மாடுகள்' : 'கன்றுக்குட்டிகள்')
+              : (_tab == 0 ? 'All Cows' : 'All Calves'),
+        ),
         leading: const _BackButton(),
       ),
       body: body,
@@ -7175,9 +7411,11 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Cows & Calves',
-                        style: TextStyle(
+                      Text(
+                        isDataEntryUser
+                            ? 'மாடுகள் மற்றும் கன்றுகள்'
+                            : 'Cows & Calves',
+                        style: const TextStyle(
                           fontSize: Gold.t27,
                           fontWeight: FontWeight.w900,
                           color: Ink.navy,
@@ -7188,8 +7426,12 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                       const SizedBox(height: Gold.s2),
                       Text(
                         isCow
-                            ? 'Top performing cows this month'
-                            : 'Every calf on the ranch',
+                            ? (isDataEntryUser
+                                  ? 'பால் பதிவு செய்ய வேண்டிய மாடுகள்'
+                                  : 'Top performing cows this month')
+                            : (isDataEntryUser
+                                  ? 'பண்ணையில் உள்ள கன்றுக்குட்டிகள்'
+                                  : 'Every calf on the ranch'),
                         style: const TextStyle(
                           color: Ink.muted,
                           fontSize: Gold.t13,
@@ -7200,23 +7442,24 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                   ),
                 ),
                 const SizedBox(width: Gold.s13),
-                Glass(
-                  radius: Gold.r21,
-                  blur: Gold.s13,
-                  padding: const EdgeInsets.all(Gold.s13),
-                  elevation: 0.8,
-                  onTap: () => guardedPush(
-                    context,
-                    allowed: canEditAnimals,
-                    message: 'Only admins and editors can add cows or calves',
-                    page: AddAnimalScreen(type: type),
+                if (canEditAnimals)
+                  Glass(
+                    radius: Gold.r21,
+                    blur: Gold.s13,
+                    padding: const EdgeInsets.all(Gold.s13),
+                    elevation: 0.8,
+                    onTap: () => guardedPush(
+                      context,
+                      allowed: canEditAnimals,
+                      message: 'Only admins and editors can add cows or calves',
+                      page: AddAnimalScreen(type: type),
+                    ),
+                    child: const Icon(
+                      Icons.add_rounded,
+                      color: Ink.violetDeep,
+                      size: Gold.t21,
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.add_rounded,
-                    color: Ink.violetDeep,
-                    size: Gold.t21,
-                  ),
-                ),
               ],
             ),
           ),
@@ -7229,7 +7472,9 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
               padding: const EdgeInsets.all(Gold.s5),
               elevation: 0.62,
               child: LiquidSegmentBar(
-                labels: const ['Cows', 'Calves'],
+                labels: isDataEntryUser
+                    ? const ['மாடுகள்', 'கன்றுகள்']
+                    : const ['Cows', 'Calves'],
                 index: _tab,
                 onChanged: (value) => setState(() => _tab = value),
               ),
@@ -7241,10 +7486,16 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
               index: reveal++,
               child: EmptyNote(
                 icon: Icons.add_circle_outline_rounded,
-                title: isCow ? 'No cows yet' : 'No calves yet',
+                title: isDataEntryUser
+                    ? (isCow ? 'மாடுகள் இல்லை' : 'கன்றுகள் இல்லை')
+                    : (isCow ? 'No cows yet' : 'No calves yet'),
                 message: isCow
-                    ? 'Add your first cow to start tracking milk, health and ranking.'
-                    : 'Calves appear here once you add one or record a birth.',
+                    ? (isDataEntryUser
+                          ? 'நிர்வாகி மாட்டை சேர்த்த பிறகு இங்கே காட்டப்படும்.'
+                          : 'Add your first cow to start tracking milk, health and ranking.')
+                    : (isDataEntryUser
+                          ? 'புதிய கன்றுகள் இங்கே காட்டப்படும்.'
+                          : 'Calves appear here once you add one or record a birth.'),
               ),
             ),
           for (final a in podium)
@@ -7259,7 +7510,9 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
             const SizedBox(height: Gold.s8),
             Reveal(
               index: reveal++,
-              child: const SectionTitle(title: 'All Animals'),
+              child: SectionTitle(
+                title: isDataEntryUser ? 'அனைத்தும்' : 'All Animals',
+              ),
             ),
           ],
           for (final a in rest)
@@ -7684,9 +7937,13 @@ class PlainAnimalCard extends StatelessWidget {
                 ),
                 const SizedBox(height: Gold.s2),
                 Text(
-                  isCow
-                      ? 'Age ${ageShort(a)} \u2022 In farm ${durationText(txt(a, 'arrivalDate'))}'
-                      : 'Age ${ageShort(a)} \u2022 Mother ${txt(a, 'mother', 'Unknown')}',
+                  isDataEntryUser
+                      ? (isCow
+                            ? 'வயது ${ageShort(a)} \u2022 பண்ணையில் ${durationText(txt(a, 'arrivalDate'))}'
+                            : 'வயது ${ageShort(a)} \u2022 தாய் ${txt(a, 'mother', 'தெரியவில்லை')}')
+                      : (isCow
+                            ? 'Age ${ageShort(a)} \u2022 In farm ${durationText(txt(a, 'arrivalDate'))}'
+                            : 'Age ${ageShort(a)} \u2022 Mother ${txt(a, 'mother', 'Unknown')}'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -7712,7 +7969,7 @@ class PlainAnimalCard extends StatelessWidget {
                   color: statusColor(status).withValues(alpha: 0.14),
                 ),
                 child: Text(
-                  status,
+                  isDataEntryUser && status == 'Active' ? 'பண்ணையில்' : status,
                   style: TextStyle(
                     fontSize: Gold.t10,
                     fontWeight: FontWeight.w900,
@@ -7748,7 +8005,9 @@ class AnimalProfileScreen extends StatefulWidget {
 
 class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   int _tab = 0;
-  static const List<String> _tabs = ['Overview', 'Health', 'Milk', 'History'];
+  List<String> get _tabs => isDataEntryUser
+      ? const ['விவரம்', 'மருத்துவம்', 'பால்', 'வரலாறு']
+      : const ['Overview', 'Health', 'Milk', 'History'];
 
   @override
   Widget build(BuildContext context) {
@@ -7809,14 +8068,20 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 backgroundColor: Ink.canvasTop,
                 extendBodyBehindAppBar: true,
                 appBar: AppBar(
-                  title: Text(isCow ? 'Cow Profile' : 'Calf Profile'),
+                  title: Text(
+                    isDataEntryUser
+                        ? (isCow ? 'மாடு விவரம்' : 'கன்று விவரம்')
+                        : (isCow ? 'Cow Profile' : 'Calf Profile'),
+                  ),
                   leading: const _BackButton(),
                   actions: [
-                    _ProfileMenu(
-                      animalKey: widget.animalKey,
-                      type: txt(a, 'type'),
-                    ),
-                    const SizedBox(width: Gold.s8),
+                    if (canEditAnimals) ...[
+                      _ProfileMenu(
+                        animalKey: widget.animalKey,
+                        type: txt(a, 'type'),
+                      ),
+                      const SizedBox(width: Gold.s8),
+                    ],
                   ],
                 ),
                 body: Shell(
@@ -8116,7 +8381,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         const SizedBox(height: Gold.s21),
         if (isCow) ...[
           LiquidButton(
-            label: 'Add Milk Record',
+            label: isDataEntryUser ? 'பால் பதிவு செய்' : 'Add Milk Record',
             icon: Icons.add_rounded,
             onPressed: () => guardedPush(
               context,
@@ -8128,7 +8393,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           const SizedBox(height: Gold.s13),
         ],
         LiquidButton(
-          label: 'Add Doctor Visit',
+          label: isDataEntryUser ? 'மருத்துவர் பதிவு' : 'Add Doctor Visit',
           icon: Icons.medical_services_rounded,
           start: Ink.blue,
           end: Ink.violetDeep,
@@ -8142,11 +8407,11 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         if (isCow && pregnantDate.isNotEmpty && stopDate.isEmpty) ...[
           const SizedBox(height: Gold.s13),
           LiquidButton(
-            label: 'Stop Milking',
+            label: isDataEntryUser ? 'பால் கறப்பதை நிறுத்து' : 'Stop Milking',
             icon: Icons.pause_rounded,
             start: Ink.red,
             end: const Color(0xFFA82638),
-            onPressed: () {
+            onPressed: () async {
               if (!canRecordEntries) {
                 snack(
                   context,
@@ -8154,7 +8419,10 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 );
                 return;
               }
-              updateAnimal(a, {'milkingStopDate': todayDate()});
+              await updateAnimalEntryFields(widget.animalKey, {
+                'milkingStopDate': todayDate(),
+              });
+              if (!context.mounted) return;
               snack(context, 'Milking stopped for $name');
             },
           ),
@@ -8163,7 +8431,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             pregnantDate.isNotEmpty) ...[
           const SizedBox(height: Gold.s13),
           LiquidButton(
-            label: 'Calf Born',
+            label: isDataEntryUser ? 'கன்று பிறந்தது' : 'Calf Born',
             icon: Icons.child_care_rounded,
             start: Ink.green,
             end: const Color(0xFF1B7A4A),
@@ -9283,11 +9551,19 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     if (_mode == 0) {
       final quantity = toDouble(_milk.text);
       if (_cow.isEmpty) {
-        snack(context, 'Please select a cow');
+        snack(
+          context,
+          isDataEntryUser ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
+        );
         return;
       }
       if (quantity <= 0) {
-        snack(context, 'Please enter the milk quantity');
+        snack(
+          context,
+          isDataEntryUser
+              ? 'பால் அளவை உள்ளிடவும்'
+              : 'Please enter the milk quantity',
+        );
         return;
       }
       setState(() => _saving = true);
@@ -9304,7 +9580,10 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     } else if (_mode == 1) {
       final quantity = toDouble(_qty.text);
       if (quantity <= 0) {
-        snack(context, 'Please enter the quantity');
+        snack(
+          context,
+          isDataEntryUser ? 'அளவை உள்ளிடவும்' : 'Please enter the quantity',
+        );
         return;
       }
       final item = _stockItems[_stockItem];
@@ -9375,7 +9654,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             isExpanded: true,
             borderRadius: BorderRadius.circular(Gold.r21),
             decoration: fieldStyle(
-              'Cow',
+              isDataEntryUser ? 'மாடு' : 'Cow',
               prefix: const Padding(
                 padding: EdgeInsets.only(left: Gold.s13, right: Gold.s8),
                 child: CowHoofIcon(size: Gold.s34),
@@ -9390,13 +9669,16 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         const SizedBox(height: Gold.s13),
         DateField(
           controller: _date,
-          label: 'Date',
+          label: isDataEntryUser ? 'தேதி' : 'Date',
           onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _time,
-          decoration: fieldStyle('Time', icon: Icons.schedule_rounded),
+          decoration: fieldStyle(
+            isDataEntryUser ? 'நேரம்' : 'Time',
+            icon: Icons.schedule_rounded,
+          ),
         ),
         const SizedBox(height: Gold.s13),
         Glass(
@@ -9405,7 +9687,9 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: const ['Morning', 'Afternoon', 'Evening'],
+            labels: isDataEntryUser
+                ? const ['காலை', 'மதியம்', 'மாலை']
+                : const ['Morning', 'Afternoon', 'Evening'],
             index: const [
               'Morning',
               'Afternoon',
@@ -9421,7 +9705,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           controller: _milk,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
-            'Milk Quantity (Liter)',
+            isDataEntryUser ? 'பால் அளவு (லிட்டர்)' : 'Milk Quantity (Liter)',
             icon: Icons.water_drop_outlined,
           ),
         ),
@@ -9438,7 +9722,9 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: const ['Cows', 'Calves'],
+            labels: isDataEntryUser
+                ? const ['மாடுகள்', 'கன்றுகள்']
+                : const ['Cows', 'Calves'],
             index: _feedTarget,
             onChanged: (value) => setState(() => _feedTarget = value),
           ),
@@ -9509,7 +9795,9 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                       ),
                     ),
                     Text(
-                      '${stockBalance(_stockItems[i]).toStringAsFixed(1)} kg left',
+                      isDataEntryUser
+                          ? '${stockBalance(_stockItems[i]).toStringAsFixed(1)} கிலோ உள்ளது'
+                          : '${stockBalance(_stockItems[i]).toStringAsFixed(1)} kg left',
                       style: TextStyle(
                         color: _stockItem == i
                             ? Colors.white.withValues(alpha: 0.80)
@@ -9526,20 +9814,23 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         const SizedBox(height: Gold.s5),
         DateField(
           controller: _date,
-          label: 'Date',
+          label: isDataEntryUser ? 'தேதி' : 'Date',
           onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _time,
-          decoration: fieldStyle('Time', icon: Icons.schedule_rounded),
+          decoration: fieldStyle(
+            isDataEntryUser ? 'நேரம்' : 'Time',
+            icon: Icons.schedule_rounded,
+          ),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _qty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
-            'Quantity used (kg)',
+            isDataEntryUser ? 'பயன்படுத்திய அளவு (கிலோ)' : 'Quantity used (kg)',
             icon: Icons.inventory_2_outlined,
           ),
         ),
@@ -9580,7 +9871,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   @override
   Widget build(BuildContext context) {
     return FormPage(
-      title: 'Add Entry',
+      title: isDataEntryUser ? 'புதிய பதிவு' : 'Add Entry',
       children: [
         Glass(
           radius: Gold.r21,
@@ -9588,12 +9879,16 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: const ['Milk', 'Stock Use', 'Others'],
-            icons: const [
-              Icons.water_drop_rounded,
-              Icons.inventory_2_rounded,
-              Icons.receipt_long_rounded,
-            ],
+            labels: isDataEntryUser
+                ? const ['பால்', 'தீவனம்']
+                : const ['Milk', 'Stock Use', 'Others'],
+            icons: isDataEntryUser
+                ? const [Icons.water_drop_rounded, Icons.inventory_2_rounded]
+                : const [
+                    Icons.water_drop_rounded,
+                    Icons.inventory_2_rounded,
+                    Icons.receipt_long_rounded,
+                  ],
             index: _mode,
             onChanged: (value) => setState(() => _mode = value),
           ),
@@ -9614,13 +9909,15 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           controller: _notes,
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
-          decoration: fieldStyle('Notes (optional)'),
+          decoration: fieldStyle(
+            isDataEntryUser ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
+          ),
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: switch (_mode) {
-            0 => 'Save Milk Entry',
-            1 => 'Use Stock',
+            0 => isDataEntryUser ? 'பால் பதிவை சேமி' : 'Save Milk Entry',
+            1 => isDataEntryUser ? 'தீவனத்தை கழி' : 'Use Stock',
             _ => 'Save Other Expense',
           },
           icon: Icons.check_rounded,
@@ -9669,7 +9966,12 @@ class _DoctorScreenState extends State<DoctorScreen> {
 
   Future<void> _save() async {
     if (!canRecordEntries) {
-      snack(context, 'Your ranch role does not allow doctor entries');
+      snack(
+        context,
+        isDataEntryUser
+            ? 'இந்த பதிவு செய்ய அனுமதி இல்லை'
+            : 'Your ranch role does not allow doctor entries',
+      );
       return;
     }
     final raw = Hive.box('animals').get(widget.animalKey);
@@ -9678,7 +9980,12 @@ class _DoctorScreenState extends State<DoctorScreen> {
       return;
     }
     if (_visit == 0 && _problem.text.trim().isEmpty) {
-      snack(context, 'Please describe the problem');
+      snack(
+        context,
+        isDataEntryUser
+            ? 'உடல்நிலை பிரச்சனையை எழுதவும்'
+            : 'Please describe the problem',
+      );
       return;
     }
     final animal = withKey(widget.animalKey, raw);
@@ -9703,8 +10010,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
       });
 
       if (_visit == 1) {
-        await Hive.box('animals').put(widget.animalKey, {
-          ...asMap(raw),
+        await updateAnimalEntryFields(widget.animalKey, {
           'pregnancyStartDate': _date.text,
           'pregnancyInjection': _semen,
           'milkingStopDate': '',
@@ -9723,9 +10029,9 @@ class _DoctorScreenState extends State<DoctorScreen> {
   Widget build(BuildContext context) {
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
-      return const FormPage(
-        title: 'Doctor Visit',
-        children: [
+      return FormPage(
+        title: isDataEntryUser ? 'மருத்துவர் பதிவு' : 'Doctor Visit',
+        children: const [
           EmptyNote(
             icon: Icons.search_off_rounded,
             title: 'Animal not found',
@@ -9737,7 +10043,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
     final animal = asMap(raw);
 
     return FormPage(
-      title: 'Add Doctor Visit',
+      title: isDataEntryUser ? 'மருத்துவர் / சினை பதிவு' : 'Add Doctor Visit',
       children: [
         Glass(
           radius: Gold.r21,
@@ -9777,7 +10083,9 @@ class _DoctorScreenState extends State<DoctorScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: const ['Problem', 'Pregnancy Injection'],
+            labels: isDataEntryUser
+                ? const ['மருத்துவம்', 'சினை ஊசி']
+                : const ['Problem', 'Pregnancy Injection'],
             index: _visit,
             onChanged: (value) => setState(() => _visit = value),
           ),
@@ -9785,26 +10093,32 @@ class _DoctorScreenState extends State<DoctorScreen> {
         const SizedBox(height: Gold.s16),
         DateField(
           controller: _date,
-          label: 'Date',
+          label: isDataEntryUser ? 'தேதி' : 'Date',
           onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _time,
-          decoration: fieldStyle('Time', icon: Icons.schedule_rounded),
+          decoration: fieldStyle(
+            isDataEntryUser ? 'நேரம்' : 'Time',
+            icon: Icons.schedule_rounded,
+          ),
         ),
         const SizedBox(height: Gold.s13),
         if (_visit == 0) ...[
           TextField(
             controller: _problem,
             textCapitalization: TextCapitalization.sentences,
-            decoration: fieldStyle('Problem', icon: Icons.healing_rounded),
+            decoration: fieldStyle(
+              isDataEntryUser ? 'உடல்நிலை பிரச்சனை' : 'Problem',
+              icon: Icons.healing_rounded,
+            ),
           ),
           const SizedBox(height: Gold.s13),
           TextField(
             controller: _medicine,
             decoration: fieldStyle(
-              'Injection / Medicine',
+              isDataEntryUser ? 'ஊசி / மருந்து' : 'Injection / Medicine',
               icon: Icons.vaccines_rounded,
             ),
           ),
@@ -9814,7 +10128,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
             isExpanded: true,
             borderRadius: BorderRadius.circular(Gold.r21),
             decoration: fieldStyle(
-              'Breed Injection Name',
+              isDataEntryUser ? 'சினை ஊசி வகை' : 'Breed Injection Name',
               icon: Icons.science_outlined,
             ),
             items: [
@@ -9827,18 +10141,23 @@ class _DoctorScreenState extends State<DoctorScreen> {
         TextField(
           controller: _cost,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: fieldStyle('Cost', icon: Icons.payments_outlined),
+          decoration: fieldStyle(
+            isDataEntryUser ? 'செலவு' : 'Cost',
+            icon: Icons.payments_outlined,
+          ),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _notes,
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
-          decoration: fieldStyle('Notes (optional)'),
+          decoration: fieldStyle(
+            isDataEntryUser ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
+          ),
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
-          label: 'Save Doctor Visit',
+          label: isDataEntryUser ? 'பதிவை சேமி' : 'Save Doctor Visit',
           icon: Icons.check_rounded,
           busy: _saving,
           onPressed: _save,
@@ -10640,9 +10959,9 @@ class _SellScreenState extends State<SellScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "Today's Milk Balance",
-            style: TextStyle(
+          Text(
+            isDataEntryUser ? 'இன்றைய பால் இருப்பு' : "Today's Milk Balance",
+            style: const TextStyle(
               fontSize: Gold.t16,
               fontWeight: FontWeight.w900,
               color: Ink.navy,
@@ -10650,17 +10969,17 @@ class _SellScreenState extends State<SellScreen> {
           ),
           const SizedBox(height: Gold.s13),
           _BalanceRow(
-            label: 'Collected',
+            label: isDataEntryUser ? 'கறந்த பால்' : 'Collected',
             value: '${collected.toStringAsFixed(1)} L',
             color: Ink.violet,
           ),
           _BalanceRow(
-            label: 'Already sold',
+            label: isDataEntryUser ? 'ஏற்கனவே விற்றது' : 'Already sold',
             value: '${sold.toStringAsFixed(1)} L',
             color: Ink.amber,
           ),
           _BalanceRow(
-            label: 'Available',
+            label: isDataEntryUser ? 'மீதம் உள்ளது' : 'Available',
             value: '${available.toStringAsFixed(1)} L',
             color: Ink.green,
             emphasise: true,
@@ -10671,12 +10990,14 @@ class _SellScreenState extends State<SellScreen> {
               color: Ink.violet.withValues(alpha: 0.10),
             ),
             _BalanceRow(
-              label: 'Selling now',
+              label: isDataEntryUser ? 'இப்போது விற்பது' : 'Selling now',
               value: '${selling.toStringAsFixed(1)} L',
               color: Ink.violetDeep,
             ),
             _BalanceRow(
-              label: over ? 'Not enough milk' : 'Balance after sale',
+              label: isDataEntryUser
+                  ? (over ? 'பால் போதவில்லை' : 'விற்ற பின் மீதம்')
+                  : (over ? 'Not enough milk' : 'Balance after sale'),
               value: '${after.toStringAsFixed(1)} L',
               color: over ? Ink.red : Ink.blue,
               emphasise: true,
@@ -10693,7 +11014,9 @@ class _SellScreenState extends State<SellScreen> {
     padding: const EdgeInsets.all(Gold.s5),
     elevation: 0.72,
     child: LiquidSegmentBar(
-      labels: const ['Sell', 'Stock'],
+      labels: isDataEntryUser
+          ? const ['விற்பனை', 'தீவனம்']
+          : const ['Sell', 'Stock'],
       icons: const [Icons.sell_rounded, Icons.inventory_2_rounded],
       index: _section,
       onChanged: (value) => setState(() => _section = value),
@@ -10753,9 +11076,9 @@ class _SellScreenState extends State<SellScreen> {
           children: [
             _sectionSwitcher(),
             const SizedBox(height: Gold.s21),
-            const Text(
-              'Stock',
-              style: TextStyle(
+            Text(
+              isDataEntryUser ? 'தீவன இருப்பு' : 'Stock',
+              style: const TextStyle(
                 fontSize: Gold.t34,
                 fontWeight: FontWeight.w900,
                 color: Ink.navy,
@@ -10764,9 +11087,11 @@ class _SellScreenState extends State<SellScreen> {
               ),
             ),
             const SizedBox(height: Gold.s3),
-            const Text(
-              'Track Vaikol and Thavudu without double-counting expenses',
-              style: TextStyle(
+            Text(
+              isDataEntryUser
+                  ? 'வைக்கோல் மற்றும் தவிடு இருப்பை பதிவு செய்யவும்'
+                  : 'Track Vaikol and Thavudu without double-counting expenses',
+              style: const TextStyle(
                 color: Ink.muted,
                 fontSize: Gold.t13,
                 fontWeight: FontWeight.w600,
@@ -10799,7 +11124,9 @@ class _SellScreenState extends State<SellScreen> {
                           ),
                           const SizedBox(height: Gold.s13),
                           Text(
-                            _stockItems[i],
+                            isDataEntryUser
+                                ? (i == 0 ? 'வைக்கோல்' : 'தவிடு')
+                                : _stockItems[i],
                             style: const TextStyle(
                               color: Ink.muted,
                               fontWeight: FontWeight.w700,
@@ -10821,21 +11148,27 @@ class _SellScreenState extends State<SellScreen> {
               ],
             ),
             const SizedBox(height: Gold.s21),
-            const SectionTitle(title: 'Add Purchased Stock'),
+            SectionTitle(
+              title: isDataEntryUser
+                  ? 'வாங்கிய தீவனத்தை சேர்'
+                  : 'Add Purchased Stock',
+            ),
             Glass(
               radius: Gold.r27,
               blur: Gold.s21,
               child: Column(
                 children: [
                   LiquidSegmentBar(
-                    labels: _stockItems,
+                    labels: isDataEntryUser
+                        ? const ['வைக்கோல்', 'தவிடு']
+                        : _stockItems,
                     index: _stockItem,
                     onChanged: (value) => setState(() => _stockItem = value),
                   ),
                   const SizedBox(height: Gold.s13),
                   DateField(
                     controller: _date,
-                    label: 'Purchase Date',
+                    label: isDataEntryUser ? 'வாங்கிய தேதி' : 'Purchase Date',
                     onChanged: () => setState(() {}),
                   ),
                   const SizedBox(height: Gold.s13),
@@ -10845,7 +11178,9 @@ class _SellScreenState extends State<SellScreen> {
                       decimal: true,
                     ),
                     decoration: fieldStyle(
-                      'Purchased Quantity (kg)',
+                      isDataEntryUser
+                          ? 'வாங்கிய அளவு (கிலோ)'
+                          : 'Purchased Quantity (kg)',
                       icon: Icons.scale_rounded,
                     ),
                   ),
@@ -10856,7 +11191,7 @@ class _SellScreenState extends State<SellScreen> {
                       decimal: true,
                     ),
                     decoration: fieldStyle(
-                      'Total Purchase Amount',
+                      isDataEntryUser ? 'மொத்த தொகை' : 'Total Purchase Amount',
                       icon: Icons.payments_outlined,
                     ),
                   ),
@@ -10864,11 +11199,15 @@ class _SellScreenState extends State<SellScreen> {
                   TextField(
                     controller: _stockNotes,
                     maxLines: 2,
-                    decoration: fieldStyle('Notes (optional)'),
+                    decoration: fieldStyle(
+                      isDataEntryUser
+                          ? 'குறிப்பு (விருப்பம்)'
+                          : 'Notes (optional)',
+                    ),
                   ),
                   const SizedBox(height: Gold.s21),
                   LiquidButton(
-                    label: 'Add to Stock',
+                    label: isDataEntryUser ? 'இருப்பில் சேர்' : 'Add to Stock',
                     icon: Icons.add_box_rounded,
                     busy: _saving,
                     onPressed: _saveStockPurchase,
@@ -10878,7 +11217,11 @@ class _SellScreenState extends State<SellScreen> {
             ),
             if (recent.isNotEmpty) ...[
               const SizedBox(height: Gold.s21),
-              const SectionTitle(title: 'Recent Stock Movements'),
+              SectionTitle(
+                title: isDataEntryUser
+                    ? 'சமீபத்திய தீவன பதிவுகள்'
+                    : 'Recent Stock Movements',
+              ),
               for (final record in recent)
                 Padding(
                   padding: const EdgeInsets.only(bottom: Gold.s8),
@@ -10960,14 +11303,14 @@ class _SellScreenState extends State<SellScreen> {
               children: [
                 _sectionSwitcher(),
                 const SizedBox(height: Gold.s21),
-                const Reveal(
+                Reveal(
                   index: 0,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Sell',
-                        style: TextStyle(
+                        isDataEntryUser ? 'பால் விற்பனை' : 'Sell',
+                        style: const TextStyle(
                           fontSize: Gold.t34,
                           fontWeight: FontWeight.w900,
                           color: Ink.navy,
@@ -10975,10 +11318,12 @@ class _SellScreenState extends State<SellScreen> {
                           letterSpacing: -1,
                         ),
                       ),
-                      SizedBox(height: Gold.s3),
+                      const SizedBox(height: Gold.s3),
                       Text(
-                        'Milk, cow, calf and manure sales',
-                        style: TextStyle(
+                        isDataEntryUser
+                            ? 'விற்ற பால் அளவு மற்றும் தொகையை பதிவு செய்யவும்'
+                            : 'Milk, cow, calf and manure sales',
+                        style: const TextStyle(
                           color: Ink.muted,
                           fontSize: Gold.t13,
                           fontWeight: FontWeight.w600,
@@ -10988,43 +11333,44 @@ class _SellScreenState extends State<SellScreen> {
                   ),
                 ),
                 const SizedBox(height: Gold.s21),
-                Reveal(
-                  index: 1,
-                  child: Glass(
-                    radius: Gold.r27,
-                    blur: Gold.s13,
-                    padding: const EdgeInsets.all(Gold.s5),
-                    elevation: 0.62,
-                    child: LiquidSegmentBar(
-                      labels: _types,
-                      index: _type,
-                      onChanged: (value) {
-                        if ((value == 1 || value == 2) && !canEditAnimals) {
-                          snack(
-                            context,
-                            'Only admins and editors can sell cows or calves',
-                          );
-                          return;
-                        }
-                        setState(() {
-                          _type = value;
-                          _animal = '';
-                          _customer.clear();
-                          _qty.clear();
-                          _price.text = value == 0
-                              ? defaultMilkPrice().toStringAsFixed(0)
-                              : '';
-                        });
-                      },
+                if (!isDataEntryUser)
+                  Reveal(
+                    index: 1,
+                    child: Glass(
+                      radius: Gold.r27,
+                      blur: Gold.s13,
+                      padding: const EdgeInsets.all(Gold.s5),
+                      elevation: 0.62,
+                      child: LiquidSegmentBar(
+                        labels: _types,
+                        index: _type,
+                        onChanged: (value) {
+                          if ((value == 1 || value == 2) && !canEditAnimals) {
+                            snack(
+                              context,
+                              'Only admins and editors can sell cows or calves',
+                            );
+                            return;
+                          }
+                          setState(() {
+                            _type = value;
+                            _animal = '';
+                            _customer.clear();
+                            _qty.clear();
+                            _price.text = value == 0
+                                ? defaultMilkPrice().toStringAsFixed(0)
+                                : '';
+                          });
+                        },
+                      ),
                     ),
                   ),
-                ),
                 const SizedBox(height: Gold.s21),
                 Reveal(
                   index: 2,
                   child: DateField(
                     controller: _date,
-                    label: 'Date',
+                    label: isDataEntryUser ? 'தேதி' : 'Date',
                     onChanged: () => setState(() {}),
                   ),
                 ),
@@ -11096,7 +11442,9 @@ class _SellScreenState extends State<SellScreen> {
                           'customerName',
                           where: (record) => txt(record, 'type') == 'Milk',
                         ),
-                        label: 'Customer Name',
+                        label: isDataEntryUser
+                            ? 'வாங்குபவர் பெயர்'
+                            : 'Customer Name',
                         icon: Icons.person_outline_rounded,
                         onSelected: (name) {
                           final previous = lastMilkQuantityForCustomer(name);
@@ -11119,7 +11467,9 @@ class _SellScreenState extends State<SellScreen> {
                         decimal: true,
                       ),
                       decoration: fieldStyle(
-                        'Quantity ($_unit)',
+                        isDataEntryUser
+                            ? 'பால் அளவு (லிட்டர்)'
+                            : 'Quantity ($_unit)',
                         icon: Icons.inventory_2_outlined,
                       ),
                     ),
@@ -11133,7 +11483,11 @@ class _SellScreenState extends State<SellScreen> {
                         decimal: true,
                       ),
                       decoration: fieldStyle(
-                        _type == 0 ? 'Price per Liter' : 'Price per Load',
+                        isDataEntryUser
+                            ? 'ஒரு லிட்டர் விலை'
+                            : (_type == 0
+                                  ? 'Price per Liter'
+                                  : 'Price per Load'),
                         icon: Icons.sell_outlined,
                       ),
                     ),
@@ -11168,10 +11522,12 @@ class _SellScreenState extends State<SellScreen> {
                           ),
                         ),
                         const SizedBox(width: Gold.s13),
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'Calculated Amount',
-                            style: TextStyle(
+                            isDataEntryUser
+                                ? 'மொத்த தொகை'
+                                : 'Calculated Amount',
+                            style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               color: Ink.navy,
                               fontSize: Gold.t13,
@@ -11197,14 +11553,20 @@ class _SellScreenState extends State<SellScreen> {
                     controller: _notes,
                     maxLines: 3,
                     textCapitalization: TextCapitalization.sentences,
-                    decoration: fieldStyle('Notes (optional)'),
+                    decoration: fieldStyle(
+                      isDataEntryUser
+                          ? 'குறிப்பு (விருப்பம்)'
+                          : 'Notes (optional)',
+                    ),
                   ),
                 ),
                 const SizedBox(height: Gold.s21),
                 Reveal(
                   index: 8,
                   child: LiquidButton(
-                    label: 'Save ${_types[_type]} Sale',
+                    label: isDataEntryUser
+                        ? 'பால் விற்பனையை சேமி'
+                        : 'Save ${_types[_type]} Sale',
                     icon: Icons.check_circle_rounded,
                     start: Ink.green,
                     end: const Color(0xFF1B7A4A),
@@ -12697,7 +13059,7 @@ class SettingsScreen extends StatelessWidget {
                 index: 3,
                 child: _SettingLink(
                   title: 'Family Users',
-                  subtitle: 'Admin, Editor, Basic Entry and Viewer access',
+                  subtitle: 'Admin, Editor and Data Entry access',
                   icon: Icons.groups_rounded,
                   color: Ink.blue,
                   onTap: () => push(context, const FamilyUsersScreen()),
@@ -13057,14 +13419,14 @@ class FamilyUsersScreen extends StatelessWidget {
   static Color roleColor(String role) => switch (normalizeFamilyRole(role)) {
     'Admin' => Ink.goldDeep,
     'Editor' => Ink.violet,
-    'Basic Entry' => Ink.green,
+    'Data Entry' => Ink.green,
     _ => Ink.blue,
   };
 
   static IconData roleIcon(String role) => switch (normalizeFamilyRole(role)) {
     'Admin' => Icons.admin_panel_settings_rounded,
     'Editor' => Icons.edit_note_rounded,
-    'Basic Entry' => Icons.playlist_add_check_circle_rounded,
+    'Data Entry' => Icons.playlist_add_check_circle_rounded,
     _ => Icons.visibility_rounded,
   };
 
@@ -13072,7 +13434,7 @@ class FamilyUsersScreen extends StatelessWidget {
     BuildContext context,
     Map<String, dynamic> request,
   ) async {
-    String role = 'Basic Entry';
+    String role = 'Data Entry';
     final approved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -13103,7 +13465,12 @@ class FamilyUsersScreen extends StatelessWidget {
                     DropdownMenuItem(value: value, child: Text(value)),
                 ],
                 onChanged: (value) =>
-                    setLocal(() => role = value ?? 'Basic Entry'),
+                    setLocal(() => role = value ?? 'Data Entry'),
+              ),
+              const SizedBox(height: Gold.s13),
+              Text(
+                rolePermissionSummary(role),
+                style: const TextStyle(color: Ink.muted, height: 1.35),
               ),
             ],
           ),
@@ -13154,7 +13521,7 @@ class FamilyUsersScreen extends StatelessWidget {
   ) async {
     final memberUid = txt(member, 'uid');
     if (!canManageRanch || memberUid == RanchAccessService.uid) return;
-    String role = normalizeFamilyRole(txt(member, 'role', 'Viewer'));
+    String role = normalizeFamilyRole(txt(member, 'role', 'Data Entry'));
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -13164,18 +13531,28 @@ class FamilyUsersScreen extends StatelessWidget {
             'Manage ${txt(member, 'name', 'member')}',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
-          content: DropdownButtonFormField<String>(
-            initialValue: role,
-            isExpanded: true,
-            decoration: fieldStyle(
-              'Permission',
-              icon: Icons.manage_accounts_rounded,
-            ),
-            items: [
-              for (final value in familyRoles.where((r) => r != 'Admin'))
-                DropdownMenuItem(value: value, child: Text(value)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: role == 'Admin' ? 'Editor' : role,
+                isExpanded: true,
+                decoration: fieldStyle(
+                  'Permission',
+                  icon: Icons.manage_accounts_rounded,
+                ),
+                items: [
+                  for (final value in familyRoles.where((r) => r != 'Admin'))
+                    DropdownMenuItem(value: value, child: Text(value)),
+                ],
+                onChanged: (value) => setLocal(() => role = value ?? role),
+              ),
+              const SizedBox(height: Gold.s13),
+              Text(
+                rolePermissionSummary(role),
+                style: const TextStyle(color: Ink.muted, height: 1.35),
+              ),
             ],
-            onChanged: (value) => setLocal(() => role = value ?? role),
           ),
           actions: [
             TextButton(
@@ -13249,7 +13626,7 @@ class FamilyUsersScreen extends StatelessWidget {
   }
 
   Widget _memberCard(BuildContext context, Map<String, dynamic> member) {
-    final role = normalizeFamilyRole(txt(member, 'role', 'Viewer'));
+    final role = normalizeFamilyRole(txt(member, 'role', 'Data Entry'));
     final color = roleColor(role);
     final self = txt(member, 'uid') == RanchAccessService.uid;
     return Glass(
@@ -13493,10 +13870,10 @@ class FamilyUsersScreen extends StatelessWidget {
                     <Map<String, dynamic>>[];
                 rows.sort((a, b) {
                   final ra = familyRoles.indexOf(
-                    normalizeFamilyRole(txt(a, 'role', 'Viewer')),
+                    normalizeFamilyRole(txt(a, 'role', 'Data Entry')),
                   );
                   final rb = familyRoles.indexOf(
-                    normalizeFamilyRole(txt(b, 'role', 'Viewer')),
+                    normalizeFamilyRole(txt(b, 'role', 'Data Entry')),
                   );
                   return ra != rb
                       ? ra.compareTo(rb)
@@ -13529,7 +13906,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
   static const Map<String, String> roleNotes = {
     'Owner': 'Full access - manage everything',
     'Manager': 'Manage animals and records',
-    'Viewer': 'View only - reports and details',
+    'Data Entry': 'Tamil entry view - records only',
   };
 
   static IconData roleIcon(String role) {
@@ -13546,7 +13923,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
 
   Future<void> _addUser(BuildContext context) async {
     final name = TextEditingController();
-    String role = 'Viewer';
+    String role = 'Data Entry';
 
     final saved = await showDialog<bool>(
       context: context,
@@ -13632,10 +14009,10 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
         final users = deduplicateFamilyUsers(box.values.whereType<Map>());
         users.sort((a, b) {
           final ra = familyRoles.indexOf(
-            normalizeFamilyRole(txt(a, 'role', 'Viewer')),
+            normalizeFamilyRole(txt(a, 'role', 'Data Entry')),
           );
           final rb = familyRoles.indexOf(
-            normalizeFamilyRole(txt(b, 'role', 'Viewer')),
+            normalizeFamilyRole(txt(b, 'role', 'Data Entry')),
           );
           if (ra != rb) return ra.compareTo(rb);
           return txt(a, 'name').compareTo(txt(b, 'name'));
@@ -13674,7 +14051,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                       builder: (_) {
                         final u = users[i];
                         final role = normalizeFamilyRole(
-                          txt(u, 'role', 'Viewer'),
+                          txt(u, 'role', 'Data Entry'),
                         );
                         final color = roleColor(role);
 

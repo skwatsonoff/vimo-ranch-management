@@ -77,8 +77,9 @@ void main() {
     test('legacy family roles map to the new permission levels', () {
       expect(normalizeFamilyRole('Owner'), 'Admin');
       expect(normalizeFamilyRole('Manager'), 'Editor');
-      expect(normalizeFamilyRole('Basic'), 'Basic Entry');
-      expect(normalizeFamilyRole('anything else'), 'Viewer');
+      expect(normalizeFamilyRole('Basic'), 'Data Entry');
+      expect(normalizeFamilyRole('anything else'), 'Data Entry');
+      expect(familyRoles, ['Admin', 'Editor', 'Data Entry']);
     });
 
     test('first calving promotes a heifer and starts milking', () {
