@@ -6400,6 +6400,28 @@ bool notificationRead(Map<String, dynamic> row) =>
       currentUserName(),
     );
 
+class RanchNotificationButton extends StatelessWidget {
+  const RanchNotificationButton({super.key});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<Box<dynamic>>(
+    valueListenable: Hive.box('notifications').listenable(),
+    builder: (_, _, _) {
+      final count = visibleNotifications()
+          .where((n) => !notificationRead(n))
+          .length;
+      return IconButton(
+        tooltip: 'Notifications',
+        onPressed: () => push(context, const NotificationHistoryScreen()),
+        icon: Badge(
+          isLabelVisible: count > 0,
+          label: Text('$count'),
+          child: const Icon(Icons.notifications_outlined),
+        ),
+      );
+    },
+  );
+}
+
 class RanchChatScreen extends StatefulWidget {
   const RanchChatScreen({super.key});
   @override
@@ -6431,9 +6453,32 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     final title = TextEditingController();
     final note = TextEditingController();
     final dueController = TextEditingController(text: todayDate());
-    final users = deduplicateFamilyUsers(
+    var users = deduplicateFamilyUsers(
       Hive.box('family_users').values.whereType<Map>(),
     );
+    if (CloudSyncService.ready) {
+      try {
+        final members = await RanchAccessService.ranchRef(
+          ranchId(),
+        ).collection('members').get();
+        users = members.docs
+            .map((d) => d.data())
+            .where((m) => m['active'] != false && txt(m, 'status') == 'active')
+            .toList();
+      } catch (_) {
+        if (mounted) snack(context, 'Unable to load ranch members. Try again.');
+        title.dispose();
+        note.dispose();
+        dueController.dispose();
+        return;
+      }
+    }
+    if (!mounted) {
+      title.dispose();
+      note.dispose();
+      dueController.dispose();
+      return;
+    }
     final names = <String>{
       currentUserName(),
       ...users.map((u) => txt(u, 'name')),
@@ -6569,37 +6614,14 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
                 .map((e) => {...asMap(e.value), '_key': e.key})
                 .toList()
               ..sort(
-                (a, b) => txt(a, 'createdAt').compareTo(txt(b, 'createdAt')),
+                (a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')),
               );
         final taskById = {
           for (final e in tasksBox.toMap().entries)
             txt(asMap(e.value), 'taskId'): {...asMap(e.value), '_key': e.key},
         };
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Ranch Chat'),
-            actions: [
-              IconButton(
-                tooltip: 'Notifications',
-                onPressed: () =>
-                    push(context, const NotificationHistoryScreen()),
-                icon: ValueListenableBuilder<Box<dynamic>>(
-                  valueListenable: Hive.box('notifications').listenable(),
-                  builder: (_, _, _) {
-                    final count = visibleNotifications()
-                        .where((n) => !notificationRead(n))
-                        .length;
-                    return Badge(
-                      isLabelVisible: count > 0,
-                      label: Text('$count'),
-                      child: const Icon(Icons.notifications_outlined),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: Gold.s8),
-            ],
-          ),
+          appBar: AppBar(title: const Text('Ranch Chat')),
           body: Shell(
             child: Column(
               children: [
@@ -6614,6 +6636,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
                           ),
                         )
                       : ListView.builder(
+                          reverse: true,
                           padding: const EdgeInsets.fromLTRB(
                             Gold.s13,
                             Gold.s13,
@@ -7172,102 +7195,69 @@ class _MainShellState extends State<MainShell> {
     final pages = dataEntry
         ? <Widget>[
             const AnimalsScreen(),
-            const RanchChatScreen(),
             const SellScreen(),
+            const RanchChatScreen(),
           ]
         : <Widget>[
             DashboardScreen(onOpenCard: _openCard),
             const AnimalsScreen(),
-            const RanchChatScreen(),
             const SellScreen(),
             const ReportsScreen(),
+            const RanchChatScreen(),
           ];
     final navItems = dataEntry
         ? const <_NavItem>[
             _NavItem('மாடுகள்', null, null),
-            _NavItem('அரட்டை', Icons.forum_rounded, Icons.forum_outlined),
             _NavItem('விற்பனை', Icons.sell_rounded, Icons.sell_outlined),
+            _NavItem('அரட்டை', Icons.forum_rounded, Icons.forum_outlined),
           ]
         : const <_NavItem>[
             _NavItem('Home', Icons.home_rounded, Icons.home_outlined),
             _NavItem('Cows', null, null),
-            _NavItem('Chat', Icons.forum_rounded, Icons.forum_outlined),
             _NavItem('Sell', Icons.sell_rounded, Icons.sell_outlined),
             _NavItem(
               'Reports',
               Icons.bar_chart_rounded,
               Icons.bar_chart_outlined,
             ),
+            _NavItem('Chat', Icons.forum_rounded, Icons.forum_outlined),
           ];
     final tab = _tab.clamp(0, pages.length - 1);
 
     return Scaffold(
-      extendBody: true,
+      extendBody: false,
       backgroundColor: Ink.canvasTop,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: AnimatedSwitcher(
-              duration: Gold.base,
-              switchInCurve: Gold.ease,
-              switchOutCurve: Gold.easeIn,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.018),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
+      appBar: AppBar(
+        toolbarHeight: 52,
+        leading: IconButton(
+          tooltip: 'Settings',
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: () => push(context, const SettingsScreen()),
+        ),
+        title: Text(farmName(), maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          if (canRecordEntries && tab != pages.length - 1)
+            PopupMenuButton<String>(
+              tooltip: 'Entry actions',
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              onSelected: (value) => push(
+                context,
+                value == 'add'
+                    ? const AddEntryScreen()
+                    : const RecentEntryCorrections(),
               ),
-              child: KeyedSubtree(key: ValueKey<int>(tab), child: pages[tab]),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: Gold.s89 + Gold.s5,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: Gold.contentWidth + Gold.s55,
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'add', child: Text('Add entry')),
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Text('Edit recent entries · 5 minutes'),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.only(right: Gold.s21),
-                  child: Align(
-                    alignment: Alignment.bottomRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton.filledTonal(
-                          tooltip: isDataEntryUser
-                              ? '5 நிமிடங்களுக்குள் திருத்து'
-                              : 'Edit recent entries (5 minutes)',
-                          onPressed: () =>
-                              push(context, const RecentEntryCorrections()),
-                          icon: const Icon(Icons.history_rounded),
-                        ),
-                        const SizedBox(width: Gold.s8),
-                        _QuickAddButton(
-                          onTap: () => guardedPush(
-                            context,
-                            allowed: canRecordEntries,
-                            message: dataEntry
-                                ? 'பதிவு சேர்க்க அனுமதி இல்லை'
-                                : 'Your ranch role does not allow adding entries',
-                            page: const AddEntryScreen(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              ],
             ),
-          ),
+          const RanchNotificationButton(),
         ],
       ),
+      body: pages[tab],
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
@@ -7286,47 +7276,6 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickAddButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _QuickAddButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      radius: Gold.s55,
-      onTap: onTap,
-      child: Container(
-        width: Gold.s55,
-        height: Gold.s55,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF9366FF), Ink.violetDeep],
-          ),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.80),
-            width: 1.4,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Ink.violet.withValues(alpha: 0.44),
-              blurRadius: Gold.s34,
-              offset: const Offset(0, Gold.s13),
-            ),
-          ],
-        ),
-        child: const Icon(
-          Icons.add_rounded,
-          size: Gold.t27,
-          color: Colors.white,
         ),
       ),
     );
@@ -7631,18 +7580,6 @@ class DashboardScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: Gold.s13),
-                Glass(
-                  radius: Gold.r21,
-                  blur: Gold.s13,
-                  padding: const EdgeInsets.all(Gold.s13),
-                  elevation: 0.8,
-                  onTap: () => push(context, const SettingsScreen()),
-                  child: const Icon(
-                    Icons.tune_rounded,
-                    color: Ink.violetDeep,
-                    size: Gold.t21,
-                  ),
-                ),
               ],
             ),
           ),
