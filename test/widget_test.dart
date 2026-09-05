@@ -6,6 +6,41 @@ import 'package:ranch_management/main.dart';
 
 void main() {
   group('VIMO data helpers', () {
+    test('stock units distinguish straw bundles from bran kilograms', () {
+      expect(stockUnit('Vaikol'), 'கட்டு');
+      expect(stockUnit('Thavudu'), 'kg');
+    });
+
+    test(
+      'entry correction window ends exactly five minutes after creation',
+      () {
+        final created = DateTime(2026, 9, 5, 12);
+        final record = {'createdAt': created.toIso8601String()};
+        expect(withinEntryEditWindow(record, created), isTrue);
+        expect(
+          withinEntryEditWindow(
+            record,
+            created.add(const Duration(minutes: 4, seconds: 59)),
+          ),
+          isTrue,
+        );
+        expect(
+          withinEntryEditWindow(
+            record,
+            created.add(const Duration(minutes: 5)),
+          ),
+          isFalse,
+        );
+        expect(
+          withinEntryEditWindow(
+            record,
+            created.subtract(const Duration(seconds: 1)),
+          ),
+          isFalse,
+        );
+        expect(withinEntryEditWindow({}, created), isFalse);
+      },
+    );
     test('cloud ids are Firestore-safe and deterministic', () {
       expect(cloudSafeId(' Cow / C-001 '), 'cow_c-001');
       expect(cloudSafeId(' Cow / C-001 '), cloudSafeId(' Cow / C-001 '));

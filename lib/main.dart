@@ -2659,6 +2659,8 @@ double stockBalanceFrom(Iterable<Map<String, dynamic>> records, String item) {
 
 double stockBalance(String item) => stockBalanceFrom(stockRows(), item);
 
+String stockUnit(String item) => item == 'Vaikol' ? 'கட்டு' : 'kg';
+
 /// Suggestions are ranked by how often they were used, then by most recent
 /// use. This makes the everyday petrol/customer names rise to the top while
 /// still keeping older choices available.
@@ -2936,33 +2938,63 @@ ImageProvider? animalImage(Map<String, dynamic> animal) {
   return null;
 }
 
-class _AnimalPortrait extends StatelessWidget {
+class _AnimalPortrait extends StatefulWidget {
   final Map<String, dynamic> animal;
   final double size;
+  final bool rectangular;
 
-  const _AnimalPortrait({required this.animal, required this.size});
+  const _AnimalPortrait({
+    required this.animal,
+    required this.size,
+    this.rectangular = false,
+  });
+
+  @override
+  State<_AnimalPortrait> createState() => _AnimalPortraitState();
+}
+
+class _AnimalPortraitState extends State<_AnimalPortrait> {
+  ImageProvider? provider;
+
+  @override
+  void initState() {
+    super.initState();
+    provider = animalImage(widget.animal);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimalPortrait oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animal['imageData'] != widget.animal['imageData'] ||
+        oldWidget.animal['imageUrl'] != widget.animal['imageUrl']) {
+      provider = animalImage(widget.animal);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final provider = animalImage(animal);
+    final size = widget.size;
     final fallback = Center(child: CowMark(size: size * 0.62));
 
     return Container(
-      width: size,
+      width: widget.rectangular ? double.infinity : size,
       height: size,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
+      decoration: BoxDecoration(
+        shape: widget.rectangular ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: widget.rectangular ? BorderRadius.circular(24) : null,
         color: Ink.lavender,
       ),
       clipBehavior: Clip.antiAlias,
       child: provider == null
           ? fallback
           : Image(
-              image: provider,
+              image: provider!,
               width: size,
               height: size,
               fit: BoxFit.cover,
               filterQuality: FilterQuality.high,
+              frameBuilder: (_, child, frame, synchronous) =>
+                  synchronous || frame != null ? child : fallback,
               errorBuilder: (_, _, _) => fallback,
             ),
     );
@@ -2999,7 +3031,8 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
     list.add({
       'title': '${txt(r, 'item')} ${txt(r, 'movement').toLowerCase()}',
       'sub': '${txt(r, 'date')} \u2022 ${txt(r, 'target', 'Stock')}',
-      'value': '${numv(r, 'quantityKg').toStringAsFixed(1)} kg',
+      'value':
+          '${numv(r, 'quantityKg').toStringAsFixed(1)} ${stockUnit(txt(r, 'item'))}',
       'icon': Icons.inventory_2_rounded,
       'color': txt(r, 'movement') == 'Usage' ? Ink.amber : Ink.green,
       'sort': activityDate(r),
@@ -3582,7 +3615,6 @@ class CloudSyncService {
         'lastLocalSyncAttempt': DateTime.now().toIso8601String(),
         'updatedAt': FieldValue.serverTimestamp(),
         'updatedBy': currentUserName(),
-        'ownerUid': FirebaseAuth.instance.currentUser?.uid ?? '',
       }, SetOptions(merge: true));
     }
 
@@ -3611,13 +3643,35 @@ class CloudSyncService {
 
     final col = ranch.collection(boxName);
     final box = Hive.box(boxName);
+    final remoteRows = await col.get();
+    final remoteById = {
+      for (final document in remoteRows.docs) document.id: document.data(),
+    };
     WriteBatch batch = db.batch();
     int count = 0;
+    final acknowledged = <dynamic, Map<String, dynamic>>{};
+
+    Future<void> commitBatch() async {
+      await batch.commit();
+      AutoSyncService.beginRemoteWrite();
+      try {
+        for (final saved in acknowledged.entries) {
+          final current = box.get(saved.key);
+          if (current is Map &&
+              current['updatedAtMillis'] == saved.value['updatedAtMillis']) {
+            await box.put(saved.key, saved.value);
+          }
+        }
+      } finally {
+        AutoSyncService.endRemoteWrite();
+      }
+      acknowledged.clear();
+    }
 
     Future<void> flushIfFull() async {
       // Firestore caps a batch at 500 writes; stop well short of it.
       if (count >= 400) {
-        await batch.commit();
+        await commitBatch();
         batch = db.batch();
         count = 0;
       }
@@ -3659,12 +3713,13 @@ class CloudSyncService {
 
         // Last-write-wins guard. A device coming back online must not replace
         // a newer edit that another family member has already synced.
-        final remote = await col.doc(docId).get();
-        final remoteMillis = toInt(remote.data()?['updatedAtMillis']);
+        final remote = remoteById[docId];
+        final remoteMillis = toInt(remote?['updatedAtMillis']);
         final localMillis = toInt(data['updatedAtMillis']);
-        if (remote.exists && remoteMillis > localMillis) {
-          final newerRemote = Map<String, dynamic>.from(remote.data()!);
+        if (remote != null && remoteMillis >= localMillis) {
+          final newerRemote = Map<String, dynamic>.from(remote);
           newerRemote['cloudId'] = docId;
+          newerRemote['pendingUpload'] = false;
           AutoSyncService.beginRemoteWrite();
           try {
             await box.put(entry.key, newerRemote);
@@ -3675,28 +3730,7 @@ class CloudSyncService {
         }
         data['pendingUpload'] = false;
 
-        // Stamp the cloud id back onto the local record so the next download
-        // can match this row instead of duplicating it.
-        final existingLocal = asMap(entry.value);
-        if (txt(existingLocal, 'cloudId') != docId ||
-            existingLocal['pendingUpload'] == true) {
-          AutoSyncService.beginRemoteWrite();
-          try {
-            await box.put(entry.key, data);
-          } finally {
-            AutoSyncService.endRemoteWrite();
-          }
-        }
-
-        // Older builds keyed documents by the raw Hive index. Remove that
-        // stale document so the record does not appear twice in the cloud.
-        final legacyId = '${entry.key}';
-        if (legacyId != docId) {
-          batch.delete(col.doc(legacyId));
-          count++;
-          await flushIfFull();
-        }
-
+        acknowledged[entry.key] = data;
         batch.set(col.doc(docId), data, SetOptions(merge: true));
         count++;
       } else {
@@ -3711,7 +3745,7 @@ class CloudSyncService {
       await flushIfFull();
     }
 
-    if (count > 0) await batch.commit();
+    if (count > 0) await commitBatch();
   }
 
   static Future<void> downloadAll() async {
@@ -3817,7 +3851,12 @@ Future<void> updateAnimalEntryFields(
   data['updatedAtMillis'] = now.millisecondsSinceEpoch;
   data['updatedAtText'] = now.toIso8601String();
   data['updatedBy'] = currentUserName();
-  await box.put(animalKey, data);
+  AutoSyncService.beginRemoteWrite();
+  try {
+    await box.put(animalKey, data);
+  } finally {
+    AutoSyncService.endRemoteWrite();
+  }
 
   final documentId = makeRecordId('animals', '$animalKey', data);
   final payload = <String, dynamic>{
@@ -3831,9 +3870,12 @@ Future<void> updateAnimalEntryFields(
 
   final settings = Hive.box('settings');
   final pending = Map<String, dynamic>.from(
-    asMap(settings.get('pendingAnimalEntryUpdates')),
+    asMap(settings.get('pendingAnimalEntryUpdates') ?? <String, dynamic>{}),
   );
-  pending[documentId] = {...asMap(pending[documentId]), ...payload};
+  pending[documentId] = {
+    ...asMap(pending[documentId] ?? <String, dynamic>{}),
+    ...payload,
+  };
   await settings.put('pendingAnimalEntryUpdates', pending);
   AutoSyncService.markDirty(reason: 'animal health entry', quiet: true);
 
@@ -3852,7 +3894,7 @@ Future<void> flushPendingAnimalEntryUpdates() async {
   if (!CloudSyncService.ready || !Hive.isBoxOpen('settings')) return;
   final settings = Hive.box('settings');
   final pending = Map<String, dynamic>.from(
-    asMap(settings.get('pendingAnimalEntryUpdates')),
+    asMap(settings.get('pendingAnimalEntryUpdates') ?? <String, dynamic>{}),
   );
   if (pending.isEmpty) return;
 
@@ -3861,8 +3903,15 @@ Future<void> flushPendingAnimalEntryUpdates() async {
         .collection('animals')
         .doc(entry.key)
         .set(asMap(entry.value), SetOptions(merge: true));
-    pending.remove(entry.key);
-    await settings.put('pendingAnimalEntryUpdates', pending);
+    final latest = asMap(
+      settings.get('pendingAnimalEntryUpdates') ?? <String, dynamic>{},
+    );
+    if (latest[entry.key] is Map &&
+        latest[entry.key]['updatedAtMillis'] ==
+            entry.value['updatedAtMillis']) {
+      latest.remove(entry.key);
+      await settings.put('pendingAnimalEntryUpdates', latest);
+    }
   }
 }
 
@@ -3909,6 +3958,10 @@ class AutoSyncService {
             if (txt(data, 'cloudId').isEmpty) {
               data['cloudId'] = makeRecordId(boxName, '${event.key}', data);
               data['createdAt'] = txt(data, 'createdAt', now.toIso8601String());
+              data['entryDeviceId'] = settingText('deviceId', '');
+              data['createdByUid'] = firebaseReady
+                  ? FirebaseAuth.instance.currentUser?.uid ?? ''
+                  : '';
             }
             data['updatedAtMillis'] = now.millisecondsSinceEpoch;
             data['updatedAtText'] = now.toIso8601String();
@@ -3974,7 +4027,7 @@ class AutoSyncService {
 
   static Future<void> run({String reason = 'auto'}) async {
     if (_syncing) return;
-    if (!autoSyncEnabled()) return;
+    if (!autoSyncEnabled() && reason != 'manual') return;
     if (!firebaseReady) return;
     if (!Hive.isBoxOpen('settings')) return;
 
@@ -3992,19 +4045,43 @@ class AutoSyncService {
       await settings.put('syncStatus', 'Syncing...');
       await settings.put('lastAutoSyncReason', reason);
 
-      await flushPendingAnimalEntryUpdates().timeout(
-        const Duration(seconds: 45),
-      );
-      await CloudSyncService.uploadAll().timeout(const Duration(seconds: 45));
-      await CloudSyncService.downloadAll().timeout(const Duration(seconds: 45));
+      Object? uploadError;
+      try {
+        await flushPendingAnimalEntryUpdates().timeout(
+          const Duration(seconds: 45),
+        );
+        await CloudSyncService.uploadAll().timeout(const Duration(minutes: 3));
+      } catch (error) {
+        uploadError = error;
+      }
+      await CloudSyncService.downloadAll().timeout(const Duration(minutes: 3));
+      if (uploadError != null) throw uploadError;
 
-      await settings.put('pendingSync', false);
-      await settings.put('pendingSyncCount', 0);
+      final remaining = backupBoxNames
+          .where((name) => name != 'settings')
+          .fold<int>(
+            0,
+            (total, name) =>
+                total +
+                Hive.box(name).values
+                    .where(
+                      (value) => value is Map && value['pendingUpload'] == true,
+                    )
+                    .length,
+          );
+      await settings.put('pendingSync', remaining > 0);
+      await settings.put('pendingSyncCount', remaining);
       await settings.put('lastSyncedAt', DateTime.now().toIso8601String());
-      await settings.put('syncStatus', 'Synced');
+      await settings.put(
+        'syncStatus',
+        remaining > 0 ? 'Waiting to sync' : 'Synced',
+      );
+      await settings.put('lastSyncError', '');
+      if (remaining > 0) scheduleSync(reason: 'remaining entries');
     } catch (e) {
       await settings.put('syncStatus', 'Sync failed');
       await settings.put('lastSyncError', '$e');
+      if (reason == 'manual') rethrow;
     } finally {
       _syncing = false;
     }
@@ -6208,6 +6285,260 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
+bool withinEntryEditWindow(Map<String, dynamic> record, DateTime now) {
+  final created = DateTime.tryParse(txt(record, 'createdAt'));
+  if (created == null) return false;
+  final elapsed = now.difference(created);
+  return !elapsed.isNegative && elapsed < const Duration(minutes: 5);
+}
+
+bool canCorrectEntry(Map<String, dynamic> record) {
+  final uid = firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? '' : '';
+  final device = settingText('deviceId', '');
+  final own =
+      (uid.isNotEmpty && txt(record, 'createdByUid') == uid) ||
+      (device.isNotEmpty && txt(record, 'entryDeviceId') == device);
+  return canRecordEntries &&
+      own &&
+      withinEntryEditWindow(record, DateTime.now());
+}
+
+class RecentEntryCorrections extends StatefulWidget {
+  const RecentEntryCorrections({super.key});
+
+  @override
+  State<RecentEntryCorrections> createState() => _RecentEntryCorrectionsState();
+}
+
+class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
+  Timer? timer;
+  static const boxes = [
+    'milk_records',
+    'stock_records',
+    'expense_records',
+    'sale_records',
+    'doctor_records',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> editEntry(String boxName, dynamic key) async {
+    final box = Hive.box(boxName);
+    final record = asMap(box.get(key));
+    if (!canCorrectEntry(record)) return;
+    final labels = <String, String>{
+      if (boxName == 'milk_records' ||
+          (boxName == 'sale_records' &&
+              !{'Cow', 'Calf'}.contains(txt(record, 'type'))))
+        'quantity': 'அளவு / Quantity',
+      if (boxName == 'stock_records')
+        'quantityKg': 'அளவு (${stockUnit(txt(record, 'item'))})',
+      if (boxName == 'sale_records') 'pricePerUnit': 'விலை / Unit price',
+      if (boxName == 'expense_records' ||
+          (boxName == 'stock_records' && txt(record, 'movement') == 'Purchase'))
+        'amount': 'தொகை / Amount',
+      if (boxName == 'expense_records') 'name': 'பெயர் / Name',
+      if (boxName == 'sale_records' && txt(record, 'type') == 'Milk')
+        'customerName': 'வாங்குபவர் / Customer',
+      if (boxName == 'doctor_records') 'cost': 'தொகை / Cost',
+      if (boxName == 'doctor_records' && txt(record, 'type') != 'Pregnancy')
+        'problem': 'பிரச்சனை / Problem',
+      'notes': 'குறிப்பு / Notes',
+    };
+    const numeric = {
+      'quantity',
+      'quantityKg',
+      'pricePerUnit',
+      'amount',
+      'cost',
+    };
+    final controllers = {
+      for (final field in labels.keys)
+        field: TextEditingController(text: '${record[field] ?? ''}'),
+    };
+    String? error;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, updateDialog) => AlertDialog(
+          title: const Text('பதிவை திருத்து / Edit entry'),
+          content: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final field in labels.entries)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: TextField(
+                        controller: controllers[field.key],
+                        keyboardType: numeric.contains(field.key)
+                            ? const TextInputType.numberWithOptions(
+                                decimal: true,
+                              )
+                            : TextInputType.text,
+                        decoration: InputDecoration(labelText: field.value),
+                      ),
+                    ),
+                  if (error != null)
+                    Text(error!, style: const TextStyle(color: Colors.red)),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('ரத்து / Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final current = asMap(box.get(key));
+                if (!canCorrectEntry(current)) {
+                  updateDialog(
+                    () => error = '5 நிமிடங்கள் முடிந்தது / Edit time expired',
+                  );
+                  return;
+                }
+                for (final field in labels.keys.where(numeric.contains)) {
+                  final value = double.tryParse(
+                    controllers[field]!.text.trim(),
+                  );
+                  if (value == null ||
+                      !value.isFinite ||
+                      value < 0 ||
+                      ({
+                            'quantity',
+                            'quantityKg',
+                            'pricePerUnit',
+                          }.contains(field) &&
+                          value == 0)) {
+                    updateDialog(
+                      () => error =
+                          'சரியான அளவை உள்ளிடவும் / Enter a valid value',
+                    );
+                    return;
+                  }
+                }
+                if (boxName == 'stock_records') {
+                  final quantity = toDouble(controllers['quantityKg']!.text);
+                  final old = numv(current, 'quantityKg');
+                  final balance = stockBalance(txt(current, 'item'));
+                  final newBalance = txt(current, 'movement') == 'Usage'
+                      ? balance + old - quantity
+                      : balance - old + quantity;
+                  if (newBalance < 0) {
+                    updateDialog(
+                      () => error = 'இருப்பு போதவில்லை / Insufficient stock',
+                    );
+                    return;
+                  }
+                }
+                if (boxName == 'sale_records' &&
+                    txt(current, 'type') == 'Milk' &&
+                    toDouble(controllers['quantity']!.text) >
+                        availableMilk('Today') + numv(current, 'quantity')) {
+                  updateDialog(
+                    () => error = 'பால் இருப்பு போதவில்லை / Insufficient milk',
+                  );
+                  return;
+                }
+                Navigator.pop(context, true);
+              },
+              child: const Text('சேமி / Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved == true) {
+      final current = asMap(box.get(key));
+      if (canCorrectEntry(current)) {
+        for (final field in labels.keys) {
+          current[field] = numeric.contains(field)
+              ? toDouble(controllers[field]!.text)
+              : controllers[field]!.text.trim();
+        }
+        if (boxName == 'sale_records') {
+          current['amount'] =
+              numv(current, 'quantity') * numv(current, 'pricePerUnit');
+        }
+        current['updatedAtMillis'] = DateTime.now().millisecondsSinceEpoch;
+        current['pendingUpload'] = true;
+        await box.put(key, current);
+        AutoSyncService.markDirty(reason: 'entry correction');
+      }
+    }
+    for (final controller in controllers.values) {
+      controller.dispose();
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries =
+        <Map<String, dynamic>>[
+          for (final boxName in boxes)
+            for (final entry in Hive.box(boxName).toMap().entries)
+              if (entry.value is Map && canCorrectEntry(asMap(entry.value)))
+                {...asMap(entry.value), '_box': boxName, '_key': entry.key},
+        ]..sort(
+          (left, right) =>
+              txt(right, 'createdAt').compareTo(txt(left, 'createdAt')),
+        );
+    return FormPage(
+      title: isDataEntryUser ? 'சமீபத்திய பதிவுகள்' : 'Recent entries',
+      children: [
+        Text(
+          isDataEntryUser
+              ? 'நீங்கள் சேர்த்த பதிவை 5 நிமிடங்களுக்குள் திருத்தலாம்.'
+              : 'Correct your own entries within 5 minutes of saving.',
+        ),
+        const SizedBox(height: 16),
+        if (entries.isEmpty)
+          const Text('திருத்தக்கூடிய பதிவுகள் இல்லை / No editable entries'),
+        for (final record in entries)
+          Card(
+            child: ListTile(
+              title: Text(
+                txt(
+                  record,
+                  'cow',
+                  txt(
+                    record,
+                    'item',
+                    txt(
+                      record,
+                      'customerName',
+                      txt(record, 'name', txt(record, 'animal', 'Entry')),
+                    ),
+                  ),
+                ),
+              ),
+              subtitle: Text('${txt(record, 'date')} ${txt(record, 'time')}'),
+              trailing: const Icon(Icons.edit_outlined),
+              onTap: () => editEntry(txt(record, '_box'), record['_key']),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _MainShellState extends State<MainShell> {
   int _tab = 0;
 
@@ -6304,15 +6635,29 @@ class _MainShellState extends State<MainShell> {
                   padding: const EdgeInsets.only(right: Gold.s21),
                   child: Align(
                     alignment: Alignment.bottomRight,
-                    child: _QuickAddButton(
-                      onTap: () => guardedPush(
-                        context,
-                        allowed: canRecordEntries,
-                        message: dataEntry
-                            ? 'பதிவு சேர்க்க அனுமதி இல்லை'
-                            : 'Your ranch role does not allow adding entries',
-                        page: const AddEntryScreen(),
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton.filledTonal(
+                          tooltip: isDataEntryUser
+                              ? '5 நிமிடங்களுக்குள் திருத்து'
+                              : 'Edit recent entries (5 minutes)',
+                          onPressed: () =>
+                              push(context, const RecentEntryCorrections()),
+                          icon: const Icon(Icons.history_rounded),
+                        ),
+                        const SizedBox(width: Gold.s8),
+                        _QuickAddButton(
+                          onTap: () => guardedPush(
+                            context,
+                            allowed: canRecordEntries,
+                            message: dataEntry
+                                ? 'பதிவு சேர்க்க அனுமதி இல்லை'
+                                : 'Your ranch role does not allow adding entries',
+                            page: const AddEntryScreen(),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -8066,7 +8411,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
 
               return Scaffold(
                 backgroundColor: Ink.canvasTop,
-                extendBodyBehindAppBar: true,
+                extendBodyBehindAppBar: false,
                 appBar: AppBar(
                   title: Text(
                     isDataEntryUser
@@ -8088,11 +8433,20 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(
                       Gold.s21,
-                      Gold.s55,
+                      Gold.s8,
                       Gold.s21,
                       Gold.s55,
                     ),
                     children: [
+                      _AnimalPortrait(
+                        animal: a,
+                        size: (MediaQuery.sizeOf(context).height * 0.25).clamp(
+                          180.0,
+                          300.0,
+                        ),
+                        rectangular: true,
+                      ),
+                      const SizedBox(height: Gold.s8),
                       Reveal(index: 0, child: _header(context, a, isCow, name)),
                       const SizedBox(height: Gold.s16),
                       Reveal(index: 1, child: _tabBar()),
@@ -8125,8 +8479,6 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AnimalAvatar(animal: a, radius: Gold.s34),
-          const SizedBox(width: Gold.s16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -9591,7 +9943,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       if (quantity > available) {
         snack(
           context,
-          'Only ${available.toStringAsFixed(1)} kg of $item is available',
+          'Only ${available.toStringAsFixed(1)} ${stockUnit(item)} of $item is available',
         );
         return;
       }
@@ -9601,7 +9953,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         'item': item,
         'target': _feedTarget == 0 ? 'Cows' : 'Calves',
         'quantityKg': quantity,
-        'unit': 'kg',
+        'unit': stockUnit(item),
         'amount': 0.0,
         'date': _date.text,
         'time': _time.text,
@@ -9796,8 +10148,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                     ),
                     Text(
                       isDataEntryUser
-                          ? '${stockBalance(_stockItems[i]).toStringAsFixed(1)} கிலோ உள்ளது'
-                          : '${stockBalance(_stockItems[i]).toStringAsFixed(1)} kg left',
+                          ? '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])} உள்ளது'
+                          : '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])} left',
                       style: TextStyle(
                         color: _stockItem == i
                             ? Colors.white.withValues(alpha: 0.80)
@@ -9830,7 +10182,9 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           controller: _qty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
-            isDataEntryUser ? 'பயன்படுத்திய அளவு (கிலோ)' : 'Quantity used (kg)',
+            isDataEntryUser
+                ? 'பயன்படுத்திய அளவு (${stockUnit(_stockItems[_stockItem])})'
+                : 'Quantity used (${stockUnit(_stockItems[_stockItem])})',
             icon: Icons.inventory_2_outlined,
           ),
         ),
@@ -11043,7 +11397,7 @@ class _SellScreenState extends State<SellScreen> {
       'movement': 'Purchase',
       'item': _stockItems[_stockItem],
       'quantityKg': quantity,
-      'unit': 'kg',
+      'unit': stockUnit(_stockItems[_stockItem]),
       'amount': amount,
       'date': _date.text,
       'time': currentTime(),
@@ -11133,7 +11487,7 @@ class _SellScreenState extends State<SellScreen> {
                             ),
                           ),
                           Text(
-                            '${stockBalance(_stockItems[i]).toStringAsFixed(1)} kg',
+                            '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])}',
                             style: const TextStyle(
                               color: Ink.navy,
                               fontSize: Gold.t21,
@@ -11179,8 +11533,8 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                     decoration: fieldStyle(
                       isDataEntryUser
-                          ? 'வாங்கிய அளவு (கிலோ)'
-                          : 'Purchased Quantity (kg)',
+                          ? 'வாங்கிய அளவு (${stockUnit(_stockItems[_stockItem])})'
+                          : 'Purchased Quantity (${stockUnit(_stockItems[_stockItem])})',
                       icon: Icons.scale_rounded,
                     ),
                   ),
@@ -11258,7 +11612,7 @@ class _SellScreenState extends State<SellScreen> {
                           ),
                         ),
                         Text(
-                          '${txt(record, 'movement') == 'Usage' ? '-' : '+'}${numv(record, 'quantityKg').toStringAsFixed(1)} kg',
+                          '${txt(record, 'movement') == 'Usage' ? '-' : '+'}${numv(record, 'quantityKg').toStringAsFixed(1)} ${stockUnit(txt(record, 'item'))}',
                           style: TextStyle(
                             color: txt(record, 'movement') == 'Usage'
                                 ? Ink.red
@@ -12683,7 +13037,7 @@ class ExportReportScreen extends StatelessWidget {
       line(
         txt(r, 'date'),
         'Stock Purchase',
-        '${txt(r, 'item')} - ${numv(r, 'quantityKg').toStringAsFixed(2)} kg',
+        '${txt(r, 'item')} - ${numv(r, 'quantityKg').toStringAsFixed(2)} ${stockUnit(txt(r, 'item'))}',
         numv(r, 'amount'),
         txt(r, 'notes'),
         txt(r, 'addedBy'),
