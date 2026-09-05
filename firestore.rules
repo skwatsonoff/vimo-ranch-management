@@ -187,6 +187,24 @@ service cloud.firestore {
         allow create, update, delete: if canEditAnimals(ranchId);
       }
 
+      match /ranch_messages/{documentId} {
+        allow read, create: if isMember(ranchId);
+        allow update, delete: if signedIn()
+          && isMember(ranchId)
+          && resource.data.createdByUid == request.auth.uid;
+      }
+
+      match /ranch_tasks/{documentId} {
+        allow read, create: if isMember(ranchId);
+        allow update: if isMember(ranchId);
+        allow delete: if isAdmin(ranchId);
+      }
+
+      match /notifications/{documentId} {
+        allow read, create, update: if isMember(ranchId);
+        allow delete: if isAdmin(ranchId);
+      }
+
       match /{document=**} {
         allow read, write: if false;
       }

@@ -57,6 +57,9 @@ const List<String> backupBoxNames = [
   'calving_records',
   'settings',
   'family_users',
+  'ranch_messages',
+  'ranch_tasks',
+  'notifications',
 ];
 
 Future<void> main() async {
@@ -92,6 +95,7 @@ Future<void> main() async {
   await seedAnimals();
   await seedSettingsAndUsers();
   AutoSyncService.start();
+  RanchNotificationService.start();
 
   runApp(const VimoApp());
 }
@@ -6278,6 +6282,597 @@ class _SignupScreenState extends State<SignupScreen> {
 //  Main shell
 // -----------------------------------------------------------------------------
 
+// =============================================================================
+//  RANCH COLLABORATION, TASKS & NOTIFICATIONS
+// =============================================================================
+
+Future<void> addRanchNotification({
+  required String title,
+  required String message,
+  String type = 'info',
+  String targetUser = '',
+  String sourceId = '',
+}) async {
+  final box = Hive.box('notifications');
+  if (sourceId.isNotEmpty &&
+      box.values.whereType<Map>().any(
+        (row) => txt(asMap(row), 'sourceId') == sourceId,
+      )) {
+    return;
+  }
+  await box.add({
+    'title': title,
+    'message': message,
+    'type': type,
+    'targetUser': targetUser,
+    'sourceId': sourceId,
+    'readBy': <String>[],
+    'date': todayDate(),
+    'time': currentTime(),
+    'createdAt': DateTime.now().toIso8601String(),
+    'addedBy': currentUserName(),
+  });
+}
+
+class RanchNotificationService {
+  const RanchNotificationService._();
+  static Timer? _timer;
+
+  static void start() {
+    _timer?.cancel();
+    _tick();
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) => _tick());
+  }
+
+  static Future<void> _tick() async {
+    await _checkDailyReminder();
+    if (!CloudSyncService.ready || !canManageRanch) return;
+    try {
+      final pending = await RanchAccessService.ranchRef(
+        ranchId(),
+      ).collection('join_requests').where('status', isEqualTo: 'pending').get();
+      for (final request in pending.docs) {
+        final data = request.data();
+        await addRanchNotification(
+          title: 'New ranch join request',
+          message:
+              '${txt(data, 'name', 'A member')} wants to join ${farmName()}.',
+          type: 'join',
+          targetUser: currentUserName(),
+          sourceId: 'join-${request.id}',
+        );
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> _checkDailyReminder() async {
+    if (!Hive.isBoxOpen('notifications') || currentUserName().isEmpty) return;
+    final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(days: 1));
+    final date =
+        '${yesterday.year}-${two(yesterday.month)}-${two(yesterday.day)}';
+    final mine = <Map<String, dynamic>>[
+      for (final name in const [
+        'milk_records',
+        'food_records',
+        'stock_records',
+        'expense_records',
+        'doctor_records',
+      ])
+        for (final row in Hive.box(name).values.whereType<Map>())
+          if (txt(asMap(row), 'date') == date &&
+              txt(asMap(row), 'addedBy') == currentUserName())
+            Map<String, dynamic>.from(row),
+    ];
+    if (mine.isEmpty) return;
+    mine.sort((a, b) => txt(a, 'time').compareTo(txt(b, 'time')));
+    final reminderTime = txt(mine.first, 'time');
+    final parts = reminderTime.split(':');
+    if (parts.length < 2) return;
+    final dueMinutes =
+        (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+    final nowMinutes = now.hour * 60 + now.minute;
+    if (nowMinutes < dueMinutes || nowMinutes > dueMinutes + 4) return;
+    await addRanchNotification(
+      title: 'Daily data entry reminder',
+      message:
+          'Yesterday you entered ranch data at $reminderTime. Today’s entry is due now.',
+      type: 'reminder',
+      targetUser: currentUserName(),
+      sourceId: 'daily-${todayDate()}-${currentUserName()}',
+    );
+  }
+}
+
+List<Map<String, dynamic>> visibleNotifications() {
+  final me = currentUserName();
+  final rows = Hive.box('notifications').values
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .where((e) => txt(e, 'targetUser').isEmpty || txt(e, 'targetUser') == me)
+      .toList();
+  rows.sort((a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')));
+  return rows;
+}
+
+bool notificationRead(Map<String, dynamic> row) =>
+    (row['readBy'] is List ? List.from(row['readBy']) : const []).contains(
+      currentUserName(),
+    );
+
+class RanchChatScreen extends StatefulWidget {
+  const RanchChatScreen({super.key});
+  @override
+  State<RanchChatScreen> createState() => _RanchChatScreenState();
+}
+
+class _RanchChatScreenState extends State<RanchChatScreen> {
+  final _message = TextEditingController();
+  @override
+  void dispose() {
+    _message.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final value = _message.text.trim();
+    if (value.isEmpty) return;
+    _message.clear();
+    await Hive.box('ranch_messages').add({
+      'text': value,
+      'sender': currentUserName(),
+      'date': todayDate(),
+      'time': currentTime(),
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> _newTask() async {
+    final title = TextEditingController();
+    final note = TextEditingController();
+    final dueController = TextEditingController(text: todayDate());
+    final users = deduplicateFamilyUsers(
+      Hive.box('family_users').values.whereType<Map>(),
+    );
+    final names = <String>{
+      currentUserName(),
+      ...users.map((u) => txt(u, 'name')),
+    }.where((e) => e.isNotEmpty).toList();
+    String assignee = names.isEmpty ? currentUserName() : names.first;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          shape: const SquircleBorder(radius: Gold.r27),
+          title: const Text('Assign a ranch task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: title,
+                decoration: fieldStyle('Task', icon: Icons.task_alt_rounded),
+              ),
+              const SizedBox(height: Gold.s13),
+              DropdownButtonFormField<String>(
+                initialValue: assignee,
+                isExpanded: true,
+                decoration: fieldStyle(
+                  'Assign to',
+                  icon: Icons.person_outline_rounded,
+                ),
+                items: [
+                  for (final n in names)
+                    DropdownMenuItem(value: n, child: Text(n)),
+                ],
+                onChanged: (v) => setLocal(() => assignee = v ?? assignee),
+              ),
+              const SizedBox(height: Gold.s13),
+              DateField(
+                controller: dueController,
+                label: 'Due date',
+                onChanged: () {},
+              ),
+              const SizedBox(height: Gold.s13),
+              TextField(
+                controller: note,
+                decoration: fieldStyle(
+                  'Note (optional)',
+                  icon: Icons.notes_rounded,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved == true && title.text.trim().isNotEmpty) {
+      final id = 'task_${DateTime.now().microsecondsSinceEpoch}';
+      await Hive.box('ranch_tasks').add({
+        'taskId': id,
+        'title': title.text.trim(),
+        'note': note.text.trim(),
+        'assignee': assignee,
+        'assignedBy': currentUserName(),
+        'dueDate': dueController.text,
+        'completed': false,
+        'createdAt': DateTime.now().toIso8601String(),
+        'date': todayDate(),
+        'time': currentTime(),
+      });
+      await Hive.box('ranch_messages').add({
+        'text': 'Task assigned: ${title.text.trim()}',
+        'sender': currentUserName(),
+        'taskId': id,
+        'date': todayDate(),
+        'time': currentTime(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+      await addRanchNotification(
+        title: 'New task assigned',
+        message: '${title.text.trim()} • by ${currentUserName()}',
+        type: 'task',
+        targetUser: assignee,
+        sourceId: id,
+      );
+    }
+    title.dispose();
+    note.dispose();
+    dueController.dispose();
+  }
+
+  Future<void> _toggleTask(dynamic key, Map<String, dynamic> task) async {
+    if (txt(task, 'assignee') != currentUserName() && !canManageRanch) return;
+    final completed = task['completed'] != true;
+    task['completed'] = completed;
+    task['completedAt'] = completed ? DateTime.now().toIso8601String() : '';
+    task['completedBy'] = completed ? currentUserName() : '';
+    await Hive.box('ranch_tasks').put(key, task);
+    if (completed) {
+      await Hive.box('ranch_messages').add({
+        'text': '✅ Task completed: ${txt(task, 'title')}',
+        'sender': currentUserName(),
+        'taskId': txt(task, 'taskId'),
+        'date': todayDate(),
+        'time': currentTime(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+      await addRanchNotification(
+        title: 'Task completed',
+        message: '${txt(task, 'title')} • by ${currentUserName()}',
+        type: 'task',
+        targetUser: txt(task, 'assignedBy'),
+        sourceId: '${txt(task, 'taskId')}-done',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<Box<dynamic>>(
+    valueListenable: Hive.box('ranch_messages').listenable(),
+    builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
+      valueListenable: Hive.box('ranch_tasks').listenable(),
+      builder: (_, tasksBox, _) {
+        final messages =
+            Hive.box('ranch_messages')
+                .toMap()
+                .entries
+                .map((e) => {...asMap(e.value), '_key': e.key})
+                .toList()
+              ..sort(
+                (a, b) => txt(a, 'createdAt').compareTo(txt(b, 'createdAt')),
+              );
+        final taskById = {
+          for (final e in tasksBox.toMap().entries)
+            txt(asMap(e.value), 'taskId'): {...asMap(e.value), '_key': e.key},
+        };
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Ranch Chat'),
+            actions: [
+              IconButton(
+                tooltip: 'Notifications',
+                onPressed: () =>
+                    push(context, const NotificationHistoryScreen()),
+                icon: ValueListenableBuilder<Box<dynamic>>(
+                  valueListenable: Hive.box('notifications').listenable(),
+                  builder: (_, _, _) {
+                    final count = visibleNotifications()
+                        .where((n) => !notificationRead(n))
+                        .length;
+                    return Badge(
+                      isLabelVisible: count > 0,
+                      label: Text('$count'),
+                      child: const Icon(Icons.notifications_outlined),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: Gold.s8),
+            ],
+          ),
+          body: Shell(
+            child: Column(
+              children: [
+                Expanded(
+                  child: messages.isEmpty
+                      ? const Center(
+                          child: EmptyNote(
+                            icon: Icons.forum_outlined,
+                            title: 'Start the ranch conversation',
+                            message:
+                                'Messages and assigned tasks are shared with everyone in this ranch.',
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(
+                            Gold.s13,
+                            Gold.s13,
+                            Gold.s13,
+                            Gold.s8,
+                          ),
+                          itemCount: messages.length,
+                          itemBuilder: (_, i) {
+                            final m = messages[i];
+                            final mine = txt(m, 'sender') == currentUserName();
+                            final task = taskById[txt(m, 'taskId')];
+                            return Align(
+                              alignment: mine
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 420,
+                                ),
+                                margin: const EdgeInsets.only(bottom: Gold.s8),
+                                padding: const EdgeInsets.all(Gold.s13),
+                                decoration: ShapeDecoration(
+                                  shape: const SquircleBorder(radius: Gold.r21),
+                                  color: mine
+                                      ? Ink.violet.withValues(alpha: .14)
+                                      : Colors.white.withValues(alpha: .78),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      txt(m, 'sender'),
+                                      style: const TextStyle(
+                                        fontSize: Gold.t10,
+                                        color: Ink.violetDeep,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    const SizedBox(height: Gold.s3),
+                                    Text(
+                                      txt(m, 'text'),
+                                      style: const TextStyle(
+                                        color: Ink.navy,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (task != null) ...[
+                                      const SizedBox(height: Gold.s8),
+                                      InkWell(
+                                        onTap: () =>
+                                            _toggleTask(task['_key'], task),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              task['completed'] == true
+                                                  ? Icons.check_box_rounded
+                                                  : Icons
+                                                        .check_box_outline_blank_rounded,
+                                              color: task['completed'] == true
+                                                  ? Ink.green
+                                                  : Ink.violetDeep,
+                                            ),
+                                            const SizedBox(width: Gold.s5),
+                                            Flexible(
+                                              child: Text(
+                                                '${txt(task, 'assignee')} • due ${txt(task, 'dueDate')}',
+                                                style: const TextStyle(
+                                                  fontSize: Gold.t10,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: Gold.s3),
+                                    Text(
+                                      '${txt(m, 'date')} • ${txt(m, 'time')}',
+                                      style: const TextStyle(
+                                        fontSize: Gold.t10,
+                                        color: Ink.faint,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      Gold.s13,
+                      Gold.s5,
+                      Gold.s13,
+                      Gold.s8,
+                    ),
+                    child: Row(
+                      children: [
+                        IconButton.filledTonal(
+                          tooltip: 'Assign task',
+                          onPressed: _newTask,
+                          icon: const Icon(Icons.assignment_add),
+                        ),
+                        const SizedBox(width: Gold.s8),
+                        Expanded(
+                          child: TextField(
+                            controller: _message,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (_) => _send(),
+                            decoration: fieldStyle(
+                              'Message your ranch...',
+                              icon: Icons.chat_bubble_outline_rounded,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: Gold.s8),
+                        IconButton.filled(
+                          onPressed: _send,
+                          icon: const Icon(Icons.send_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+class NotificationHistoryScreen extends StatelessWidget {
+  const NotificationHistoryScreen({super.key});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<Box<dynamic>>(
+    valueListenable: Hive.box('notifications').listenable(),
+    builder: (_, box, _) {
+      final entries =
+          box.toMap().entries.where((e) {
+            final r = asMap(e.value);
+            return txt(r, 'targetUser').isEmpty ||
+                txt(r, 'targetUser') == currentUserName();
+          }).toList()..sort(
+            (a, b) => txt(
+              asMap(b.value),
+              'createdAt',
+            ).compareTo(txt(asMap(a.value), 'createdAt')),
+          );
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Notifications'),
+          leading: const _BackButton(),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                for (final e in entries) {
+                  final r = asMap(e.value);
+                  final read = List<String>.from(
+                    r['readBy'] is List ? r['readBy'] : [],
+                  );
+                  if (!read.contains(currentUserName())) {
+                    read.add(currentUserName());
+                    r['readBy'] = read;
+                    await box.put(e.key, r);
+                  }
+                }
+              },
+              child: const Text('Mark all read'),
+            ),
+          ],
+        ),
+        body: Shell(
+          child: entries.isEmpty
+              ? const Center(
+                  child: EmptyNote(
+                    icon: Icons.notifications_none_rounded,
+                    title: 'No notifications',
+                    message:
+                        'Join requests, important cattle updates, tasks and reminders appear here.',
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(Gold.s21),
+                  children: [
+                    for (final e in entries)
+                      Builder(
+                        builder: (_) {
+                          final n = asMap(e.value);
+                          return Glass(
+                            radius: Gold.r21,
+                            margin: const EdgeInsets.only(bottom: Gold.s13),
+                            padding: const EdgeInsets.all(Gold.s13),
+                            onTap: () async {
+                              final read = List<String>.from(
+                                n['readBy'] is List ? n['readBy'] : [],
+                              );
+                              if (!read.contains(currentUserName())) {
+                                read.add(currentUserName());
+                              }
+                              n['readBy'] = read;
+                              await box.put(e.key, n);
+                            },
+                            child: Row(
+                              children: [
+                                Icon(
+                                  notificationRead(n)
+                                      ? Icons.notifications_none_rounded
+                                      : Icons.notifications_active_rounded,
+                                  color: notificationRead(n)
+                                      ? Ink.faint
+                                      : Ink.violetDeep,
+                                ),
+                                const SizedBox(width: Gold.s13),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        txt(n, 'title'),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: Ink.navy,
+                                        ),
+                                      ),
+                                      Text(
+                                        txt(n, 'message'),
+                                        style: const TextStyle(color: Ink.body),
+                                      ),
+                                      Text(
+                                        '${txt(n, 'date')} • ${txt(n, 'time')}',
+                                        style: const TextStyle(
+                                          color: Ink.faint,
+                                          fontSize: Gold.t10,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+        ),
+      );
+    },
+  );
+}
+
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -6575,21 +7170,28 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final dataEntry = isDataEntryUser;
     final pages = dataEntry
-        ? <Widget>[const AnimalsScreen(), const SellScreen()]
+        ? <Widget>[
+            const AnimalsScreen(),
+            const RanchChatScreen(),
+            const SellScreen(),
+          ]
         : <Widget>[
             DashboardScreen(onOpenCard: _openCard),
             const AnimalsScreen(),
+            const RanchChatScreen(),
             const SellScreen(),
             const ReportsScreen(),
           ];
     final navItems = dataEntry
         ? const <_NavItem>[
             _NavItem('மாடுகள்', null, null),
+            _NavItem('அரட்டை', Icons.forum_rounded, Icons.forum_outlined),
             _NavItem('விற்பனை', Icons.sell_rounded, Icons.sell_outlined),
           ]
         : const <_NavItem>[
             _NavItem('Home', Icons.home_rounded, Icons.home_outlined),
             _NavItem('Cows', null, null),
+            _NavItem('Chat', Icons.forum_rounded, Icons.forum_outlined),
             _NavItem('Sell', Icons.sell_rounded, Icons.sell_outlined),
             _NavItem(
               'Reports',
@@ -8340,6 +8942,246 @@ class PlainAnimalCard extends StatelessWidget {
 //  PART 10 — ANIMAL PROFILE
 // =============================================================================
 
+List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
+  final name = txt(animal, 'name');
+  final events = <Map<String, dynamic>>[];
+  void add(
+    String date,
+    String title,
+    String detail,
+    IconData icon,
+    Color color, {
+    String time = '',
+  }) {
+    if (date.isEmpty) return;
+    final parsed =
+        DateTime.tryParse('$date${time.isEmpty ? '' : 'T$time'}') ??
+        DateTime.tryParse(date) ??
+        DateTime(1900);
+    events.add({
+      'date': date,
+      'time': time,
+      'title': title,
+      'detail': detail,
+      'icon': icon,
+      'color': color,
+      '_sort': parsed,
+    });
+  }
+
+  add(
+    txt(animal, 'dob'),
+    'Born',
+    'Birthday of $name',
+    Icons.cake_rounded,
+    Ink.violet,
+  );
+  add(
+    txt(animal, 'arrivalDate'),
+    'Joined the ranch',
+    txt(animal, 'source', 'Animal added'),
+    Icons.home_work_rounded,
+    Ink.blue,
+  );
+  add(
+    txt(animal, 'pregnancyStartDate'),
+    'Pregnancy started',
+    txt(animal, 'pregnancyInjection', 'Pregnancy recorded'),
+    Icons.favorite_rounded,
+    Ink.amber,
+  );
+  add(
+    txt(animal, 'milkingStopDate'),
+    'Milking stopped',
+    'Dry period started',
+    Icons.pause_circle_rounded,
+    Ink.red,
+  );
+  add(
+    txt(animal, 'milkingStartDate'),
+    'Milking started',
+    'Lactation period started',
+    Icons.water_drop_rounded,
+    Ink.violet,
+  );
+  for (final r in doctorRows().where((r) => txt(r, 'cow') == name)) {
+    add(
+      txt(r, 'date'),
+      txt(r, 'type', 'Treatment'),
+      '${txt(r, 'problem', 'Health entry')}${numv(r, 'cost') > 0 ? ' • ${money(numv(r, 'cost'))}' : ''}',
+      Icons.medical_services_rounded,
+      Ink.blue,
+      time: txt(r, 'time'),
+    );
+  }
+  for (final r in calvingRows().where(
+    (r) => txt(r, 'mother') == name || txt(r, 'calfName') == name,
+  )) {
+    add(
+      txt(r, 'date'),
+      txt(r, 'mother') == name ? 'Calf born' : 'Birth registered',
+      '${txt(r, 'calfName')} • ${txt(r, 'gender')}',
+      Icons.child_care_rounded,
+      Ink.amber,
+      time: txt(r, 'time'),
+    );
+  }
+  for (final r in milkRows().where((r) => txt(r, 'cow') == name)) {
+    add(
+      txt(r, 'date'),
+      'Milk recorded',
+      '${numv(r, 'quantity').toStringAsFixed(1)} L • ${txt(r, 'session')}',
+      Icons.water_drop_rounded,
+      Ink.violet,
+      time: txt(r, 'time'),
+    );
+  }
+  for (final r in expenseRows().where(
+    (r) => [txt(r, 'cow'), txt(r, 'animal')].contains(name),
+  )) {
+    add(
+      txt(r, 'date'),
+      'Expense',
+      '${txt(r, 'name')} • ${money(numv(r, 'amount'))}',
+      Icons.receipt_long_rounded,
+      Ink.red,
+      time: txt(r, 'time'),
+    );
+  }
+  for (final r in purchaseRows().where(
+    (r) => [txt(r, 'cow'), txt(r, 'animal'), txt(r, 'name')].contains(name),
+  )) {
+    add(
+      txt(r, 'date'),
+      'Purchase expense',
+      money(numv(r, 'amount')),
+      Icons.shopping_cart_rounded,
+      Ink.red,
+      time: txt(r, 'time'),
+    );
+  }
+  for (final r in saleRows().where((r) => txt(r, 'animal') == name)) {
+    add(
+      txt(r, 'date'),
+      'Income / Sale',
+      '${txt(r, 'category', 'Sale')} • ${money(numv(r, 'amount'))}',
+      Icons.payments_rounded,
+      Ink.green,
+      time: txt(r, 'time'),
+    );
+  }
+  for (final r in deathRows().where((r) => txt(r, 'animal') == name)) {
+    add(
+      txt(r, 'date'),
+      'Loss recorded',
+      '${txt(r, 'reason')} • ${money(numv(r, 'cost'))}',
+      Icons.warning_amber_rounded,
+      Ink.red,
+      time: txt(r, 'time'),
+    );
+  }
+  events.sort(
+    (a, b) => (b['_sort'] as DateTime).compareTo(a['_sort'] as DateTime),
+  );
+  return events;
+}
+
+class _TimelineEvent extends StatelessWidget {
+  final Map<String, dynamic> event;
+  final bool first;
+  final bool last;
+  const _TimelineEvent({
+    required this.event,
+    required this.first,
+    required this.last,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final color = event['color'] as Color;
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: Gold.s34,
+            child: Column(
+              children: [
+                if (!first)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      color: color.withValues(alpha: .25),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                Container(
+                  width: Gold.s27,
+                  height: Gold.s27,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color.withValues(alpha: .15),
+                    border: Border.all(color: color, width: 2),
+                  ),
+                  child: Icon(
+                    event['icon'] as IconData,
+                    size: Gold.t13,
+                    color: color,
+                  ),
+                ),
+                if (!last)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      color: color.withValues(alpha: .25),
+                    ),
+                  )
+                else
+                  const Spacer(),
+              ],
+            ),
+          ),
+          const SizedBox(width: Gold.s8),
+          Expanded(
+            child: Glass(
+              radius: Gold.r21,
+              margin: const EdgeInsets.only(bottom: Gold.s13),
+              padding: const EdgeInsets.all(Gold.s13),
+              elevation: .5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    txt(event, 'title'),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Ink.navy,
+                    ),
+                  ),
+                  const SizedBox(height: Gold.s3),
+                  Text(
+                    txt(event, 'detail'),
+                    style: const TextStyle(color: Ink.body),
+                  ),
+                  const SizedBox(height: Gold.s5),
+                  Text(
+                    '${txt(event, 'date')}${txt(event, 'time').isEmpty ? '' : ' • ${txt(event, 'time')}'}',
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                      fontSize: Gold.t10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AnimalProfileScreen extends StatefulWidget {
   final dynamic animalKey;
   const AnimalProfileScreen({super.key, required this.animalKey});
@@ -8351,8 +9193,8 @@ class AnimalProfileScreen extends StatefulWidget {
 class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   int _tab = 0;
   List<String> get _tabs => isDataEntryUser
-      ? const ['விவரம்', 'மருத்துவம்', 'பால்', 'வரலாறு']
-      : const ['Overview', 'Health', 'Milk', 'History'];
+      ? const ['விவரம்', 'மருத்துவம்', 'பால்', 'டைம்லைன்']
+      : const ['Overview', 'Health', 'Milk', 'Timeline'];
 
   @override
   Widget build(BuildContext context) {
@@ -8406,7 +9248,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               } else if (_tab == 2) {
                 content = _milk(name);
               } else {
-                content = _history(name);
+                content = _timeline(a);
               }
 
               return Scaffold(
@@ -8896,50 +9738,24 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
     );
   }
 
-  Widget _history(String name) {
-    final births = calvingRows()
-        .where((r) => txt(r, 'mother') == name || txt(r, 'calfName') == name)
-        .take(20)
-        .toList();
-    final sales = saleRows()
-        .where((r) => txt(r, 'animal') == name)
-        .take(20)
-        .toList();
-    final deaths = deathRows().where((r) => txt(r, 'animal') == name).toList();
-
+  Widget _timeline(Map<String, dynamic> animal) {
+    final events = cowTimeline(animal);
+    if (events.isEmpty) {
+      return const EmptyNote(
+        icon: Icons.timeline_rounded,
+        title: 'Timeline is empty',
+        message:
+            'Birth, pregnancy, treatments, calves, milk and money records will appear here.',
+      );
+    }
     return Column(
       children: [
-        panel('Birth / Calving History', 'No calving records.', [
-          for (final r in births)
-            _RecordLine(
-              icon: Icons.child_care_rounded,
-              color: Ink.amber,
-              title: '${txt(r, 'calfName')} \u2022 ${txt(r, 'gender')}',
-              subtitle: '${txt(r, 'date')} \u2022 Mother ${txt(r, 'mother')}',
-            ),
-        ]),
-        const SizedBox(height: Gold.s16),
-        panel('Sale History', 'No sale records.', [
-          for (final r in sales)
-            _RecordLine(
-              icon: Icons.sell_rounded,
-              color: Ink.green,
-              title: '${txt(r, 'category')} \u2022 ${money(numv(r, 'amount'))}',
-              subtitle: '${txt(r, 'date')} \u2022 ${txt(r, 'notes', '-')}',
-            ),
-        ]),
-        if (deaths.isNotEmpty) ...[
-          const SizedBox(height: Gold.s16),
-          panel('Loss Record', '', [
-            for (final r in deaths)
-              _RecordLine(
-                icon: Icons.warning_amber_rounded,
-                color: Ink.red,
-                title: '${txt(r, 'reason')} \u2022 ${money(numv(r, 'cost'))}',
-                subtitle: '${txt(r, 'date')} \u2022 ${txt(r, 'notes', '-')}',
-              ),
-          ]),
-        ],
+        for (int i = 0; i < events.length; i++)
+          _TimelineEvent(
+            event: events[i],
+            first: i == 0,
+            last: i == events.length - 1,
+          ),
       ],
     );
   }
@@ -10369,6 +11185,12 @@ class _DoctorScreenState extends State<DoctorScreen> {
           'pregnancyInjection': _semen,
           'milkingStopDate': '',
         });
+        await addRanchNotification(
+          title: 'Pregnancy recorded',
+          message: '${txt(animal, 'name')} • ${_date.text} • $_semen',
+          type: 'important',
+          sourceId: 'pregnancy-${txt(animal, 'name')}-${_date.text}',
+        );
       }
       AutoSyncService.scheduleSync(reason: 'doctor visit saved');
       if (mounted) Navigator.of(context).pop();
@@ -10652,6 +11474,13 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           birthDate: _dob.text,
           birthTime: _birthTime.text.trim(),
         ),
+      );
+
+      await addRanchNotification(
+        title: 'New calf born',
+        message: '$calfName • Mother ${txt(mother, 'name')} • ${_dob.text}',
+        type: 'important',
+        sourceId: 'calf-$calfId-${_dob.text}',
       );
 
       AutoSyncService.scheduleSync(reason: 'calf birth saved');
