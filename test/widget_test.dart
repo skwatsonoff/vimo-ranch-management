@@ -154,10 +154,10 @@ void main() {
       expect(result!.length, lessThan(700000));
     });
 
-    test('rank textures use the requested gold, purple and green assets', () {
-      expect(rankBackgroundAsset(1), endsWith('rank_gold.jpg'));
-      expect(rankBackgroundAsset(2), endsWith('rank_purple.jpg'));
-      expect(rankBackgroundAsset(3), endsWith('rank_green.jpg'));
+    test('rank animation assigns particles only to the gold champion', () {
+      expect(rankUsesParticles(1), isTrue);
+      expect(rankUsesParticles(2), isFalse);
+      expect(rankUsesParticles(3), isFalse);
     });
 
     test('stock ledger adds purchases and subtracts usage', () {

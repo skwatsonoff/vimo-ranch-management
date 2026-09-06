@@ -205,6 +205,15 @@ service cloud.firestore {
         allow delete: if isAdmin(ranchId);
       }
 
+      match /push_tokens/{tokenId} {
+        allow read: if isMember(ranchId)
+          && resource.data.uid == request.auth.uid;
+        allow create, update: if isMember(ranchId)
+          && request.resource.data.uid == request.auth.uid;
+        allow delete: if isMember(ranchId)
+          && resource.data.uid == request.auth.uid;
+      }
+
       match /{document=**} {
         allow read, write: if false;
       }

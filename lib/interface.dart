@@ -222,7 +222,7 @@ class AppText extends Text {
 }
 
 const _surface = Color(0xFFF5F5F7);
-const _blue = Color(0xFF007AFF);
+const _blue = Ink.violetDeep;
 
 Future<void> showEntryActions(BuildContext context) async {
   await push(context, const AddEntryScreen());

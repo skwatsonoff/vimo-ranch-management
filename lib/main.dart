@@ -33,12 +33,18 @@ import 'package:image/image.dart' as image_lib;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'web_runtime.dart';
 
 part 'interface.dart';
 
 bool firebaseReady = false;
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+}
 
 /// Local visual-QA switch. Production builds keep this false unless the
 /// developer explicitly passes --dart-define=VIMO_PREVIEW_MODE=true.
@@ -86,6 +92,9 @@ Future<void> main() async {
     );
     await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
     firebaseReady = true;
+    if (!kIsWeb) {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    }
   } catch (_) {
     firebaseReady = false;
   }
@@ -2883,11 +2892,7 @@ List<Color> rankPalette(int rank) {
   return const [Colors.white, Colors.white, Colors.white];
 }
 
-String rankBackgroundAsset(int rank) {
-  if (rank == 1) return 'assets/images/rank_gold.jpg';
-  if (rank == 2) return 'assets/images/rank_purple.jpg';
-  return 'assets/images/rank_green.jpg';
-}
+bool rankUsesParticles(int rank) => rank == 1;
 
 Color rankColor(int rank) => rankPalette(rank)[1];
 
@@ -3863,6 +3868,84 @@ class CloudSyncService {
   }
 }
 
+/// Registers this signed-in phone with the ranch so server-side Firestore
+/// notifications can be delivered through Firebase Cloud Messaging.
+class PushNotificationService {
+  const PushNotificationService._();
+
+  static StreamSubscription<String>? _tokenRefresh;
+  static String _registeredFor = '';
+
+  static bool get _supportedNativePlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  static Future<void> start() async {
+    if (!_supportedNativePlatform || !CloudSyncService.ready) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final registrationKey = '${ranchId()}:${user.uid}:${deviceId()}';
+    if (_registeredFor == registrationKey) return;
+
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final permission = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      if (permission.authorizationStatus == AuthorizationStatus.denied) return;
+      await messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        String? apnsToken;
+        for (var attempt = 0; attempt < 10 && apnsToken == null; attempt++) {
+          apnsToken = await messaging.getAPNSToken();
+          if (apnsToken == null) {
+            await Future<void>.delayed(const Duration(milliseconds: 400));
+          }
+        }
+        if (apnsToken == null) return;
+      }
+
+      final token = await messaging.getToken();
+      if (token == null || token.isEmpty) return;
+      await _saveToken(token);
+      _registeredFor = registrationKey;
+
+      await _tokenRefresh?.cancel();
+      _tokenRefresh = messaging.onTokenRefresh.listen(
+        (token) => _saveToken(token),
+        onError: (_) {},
+      );
+    } catch (_) {
+      // Notification setup must never prevent offline ranch work. It is retried
+      // the next time the authenticated member shell is created.
+    }
+  }
+
+  static Future<void> _saveToken(String token) async {
+    if (!CloudSyncService.ready || token.isEmpty) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final tokenId = '${user.uid}_${cloudSafeId(deviceId())}';
+    await CloudSyncService.ranch.collection('push_tokens').doc(tokenId).set({
+      'uid': user.uid,
+      'userName': currentUserName(),
+      'token': token,
+      'platform': defaultTargetPlatform.name,
+      'deviceId': deviceId(),
+      'active': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+}
+
 /// Saves the small set of animal health fields that a Data Entry member is
 /// allowed to record. The direct merge keeps pregnancy and milking state in
 /// sync without granting that role permission to edit the full animal profile.
@@ -4299,7 +4382,8 @@ class _RosettePainter extends CustomPainter {
 //  Rank texture
 // -----------------------------------------------------------------------------
 
-/// Animated sheen and fine grain placed over the user's metallic rank texture.
+/// Fully code-painted premium rank surface. Gold has a cinematic particle field;
+/// purple and green use layered liquid waves. No bitmap is used by these cards.
 class RankTexturePainter extends CustomPainter {
   final int rank;
   final double progress;
@@ -4310,48 +4394,138 @@ class RankTexturePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     final rect = Offset.zero & size;
+    final palette = rankPalette(rank);
+
     canvas.drawRect(
       rect,
       Paint()
         ..shader = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.10),
-            Colors.transparent,
-            Colors.black.withValues(alpha: 0.12),
-          ],
-          stops: const [0.0, Gold.invPhi, 1.0],
+          colors: [palette[0], palette[1], palette[2]],
+          stops: const [0, Gold.invPhi, 1],
         ).createShader(rect),
     );
 
-    // Sheen bands drifting across the surface.
-    for (int i = 0; i < 2; i++) {
-      final phase = (progress + i * Gold.invPhi) % 1.0;
-      final x = -size.width + phase * size.width * 2;
-      final band = Rect.fromLTWH(x, 0, size.width * Gold.minor, size.height);
-      canvas.drawRect(
-        band,
+    if (rankUsesParticles(rank)) {
+      _paintGoldParticles(canvas, size, palette);
+    } else {
+      _paintLiquid(canvas, size, palette);
+    }
+
+    final sheenX = -size.width * .7 + progress * size.width * 2.1;
+    final sheen = Rect.fromLTWH(sheenX, 0, size.width * .52, size.height);
+    canvas.drawRect(
+      sheen,
+      Paint()
+        ..shader = const LinearGradient(
+          colors: [Colors.transparent, Color(0x42FFFFFF), Colors.transparent],
+        ).createShader(sheen),
+    );
+
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(-.72, -.82),
+          radius: 1.25,
+          colors: [
+            Colors.white.withValues(alpha: .34),
+            Colors.transparent,
+            Colors.black.withValues(alpha: .16),
+          ],
+          stops: const [0, .52, 1],
+        ).createShader(rect),
+    );
+  }
+
+  void _paintGoldParticles(Canvas canvas, Size size, List<Color> palette) {
+    final bloom = Paint()
+      ..shader =
+          RadialGradient(
+            colors: [Colors.white.withValues(alpha: .42), Colors.transparent],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width * .72, size.height * .28),
+              radius: size.width * .46,
+            ),
+          );
+    canvas.drawRect(Offset.zero & size, bloom);
+
+    for (int i = 0; i < 48; i++) {
+      final seed = i * Gold.goldenAngle;
+      final orbit = .12 + ((i * 37) % 100) / 100 * .86;
+      final drift = (progress * (i.isEven ? 1 : -1) + orbit) % 1;
+      final x =
+          ((math.cos(seed) + 1) * .5 * size.width + drift * size.width * .23) %
+          size.width;
+      final y =
+          size.height - ((drift + ((i * 19) % 31) / 31) % 1) * size.height;
+      final radius = i % 9 == 0 ? 2.6 : (i % 3 == 0 ? 1.5 : .8);
+      final alpha =
+          .28 + .55 * ((math.sin(seed + progress * math.pi * 2) + 1) / 2);
+      canvas.drawCircle(
+        Offset(x, y),
+        radius * 2.3,
         Paint()
-          ..shader = LinearGradient(
-            colors: [
-              Colors.white.withValues(alpha: 0.0),
-              Colors.white.withValues(alpha: i == 0 ? 0.20 : 0.11),
-              Colors.white.withValues(alpha: 0.0),
-            ],
-          ).createShader(band),
+          ..color = palette[0].withValues(alpha: alpha * .32)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      canvas.drawCircle(
+        Offset(x, y),
+        radius,
+        Paint()..color = Colors.white.withValues(alpha: alpha),
+      );
+    }
+  }
+
+  void _paintLiquid(Canvas canvas, Size size, List<Color> palette) {
+    for (int layer = 0; layer < 3; layer++) {
+      final phase = progress * math.pi * 2 * (layer.isEven ? 1 : -1) + layer;
+      final baseY = size.height * (.42 + layer * .16);
+      final amplitude = size.height * (.07 + layer * .018);
+      final path = Path()..moveTo(0, size.height);
+      path.lineTo(0, baseY);
+      const segments = 36;
+      for (int i = 0; i <= segments; i++) {
+        final x = size.width * i / segments;
+        final y =
+            baseY +
+            math.sin(i / segments * math.pi * 3 + phase) * amplitude +
+            math.sin(i / segments * math.pi * 5 - phase * .62) *
+                amplitude *
+                .35;
+        path.lineTo(x, y);
+      }
+      path
+        ..lineTo(size.width, size.height)
+        ..close();
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color =
+              (layer == 0
+                      ? palette[0]
+                      : layer == 1
+                      ? palette[1]
+                      : palette[2])
+                  .withValues(alpha: .28 + layer * .13),
       );
     }
 
-    // Fine grain. The golden angle keeps the scatter even at any count.
-    final speck = Paint();
-    for (int i = 0; i < 34; i++) {
-      final a = i * Gold.goldenAngle;
-      final radial = math.sqrt(i / 34);
-      final x = (size.width * 0.5) + math.cos(a) * radial * size.width * 0.56;
-      final y = (size.height * 0.5) + math.sin(a) * radial * size.height * 0.60;
-      speck.color = Colors.white.withValues(alpha: i.isEven ? 0.30 : 0.16);
-      canvas.drawCircle(Offset(x, y), i % 5 == 0 ? 1.6 : 0.9, speck);
+    for (int i = 0; i < 9; i++) {
+      final phase = progress * math.pi * 2 + i * Gold.goldenAngle;
+      final center = Offset(
+        size.width * (.08 + ((i * 17) % 83) / 100),
+        size.height * (.18 + math.sin(phase) * .08 + (i % 3) * .17),
+      );
+      canvas.drawCircle(
+        center,
+        12 + (i % 4) * 7,
+        Paint()
+          ..color = Colors.white.withValues(alpha: .055)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+      );
     }
   }
 
@@ -4414,24 +4588,38 @@ class RankAuraPainter extends CustomPainter {
         ..color = Colors.white.withValues(alpha: 0.52),
     );
 
-    for (int i = 0; i < 14; i++) {
-      final a = progress * math.pi * 2 + i * math.pi * 2 / 14;
-      final orbit = radius + (i % 3 - 1) * 2.2;
-      final dotRadius = i % 5 == 0 ? 2.1 : (i.isEven ? 1.3 : 0.8);
-      canvas.drawCircle(
-        Offset(
-          center.dx + math.cos(a) * orbit,
-          center.dy + math.sin(a) * orbit,
-        ),
-        dotRadius,
-        Paint()
-          ..color = (i % 3 == 0 ? Colors.white : palette[0]).withValues(
-            alpha: 0.72 + (i % 4) * 0.07,
-          )
-          ..maskFilter = i % 5 == 0
-              ? const MaskFilter.blur(BlurStyle.normal, 2)
-              : null,
-      );
+    if (rankUsesParticles(rank)) {
+      for (int i = 0; i < 14; i++) {
+        final a = progress * math.pi * 2 + i * math.pi * 2 / 14;
+        final orbit = radius + (i % 3 - 1) * 2.2;
+        canvas.drawCircle(
+          Offset(
+            center.dx + math.cos(a) * orbit,
+            center.dy + math.sin(a) * orbit,
+          ),
+          i % 5 == 0 ? 2.1 : (i.isEven ? 1.3 : .8),
+          Paint()
+            ..color = (i % 3 == 0 ? Colors.white : palette[0]).withValues(
+              alpha: .72 + (i % 4) * .07,
+            ),
+        );
+      }
+    } else {
+      for (int i = 0; i < 3; i++) {
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: radius - i * 2.2),
+          progress * math.pi * 2 + i * 1.7,
+          math.pi * (.56 + i * .12),
+          false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeCap = StrokeCap.round
+            ..strokeWidth = 2.4 - i * .45
+            ..color = (i == 1 ? Colors.white : palette[i]).withValues(
+              alpha: .82 - i * .18,
+            ),
+        );
+      }
     }
   }
 
@@ -5284,6 +5472,7 @@ class _MemberAwareShellState extends State<MemberAwareShell> {
   @override
   void initState() {
     super.initState();
+    unawaited(PushNotificationService.start());
     _subscription =
         RanchAccessService.memberRef(
           widget.ranch,
@@ -6344,6 +6533,9 @@ Future<void> addRanchNotification({
     'time': currentTime(),
     'createdAt': DateTime.now().toIso8601String(),
     'addedBy': currentUserName(),
+    'createdByUid': firebaseReady
+        ? FirebaseAuth.instance.currentUser?.uid ?? ''
+        : '',
   });
 }
 
@@ -6472,13 +6664,21 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
   Future<void> _send() async {
     final value = _message.text.trim();
     if (value.isEmpty) return;
+    final messageId = 'message_${DateTime.now().microsecondsSinceEpoch}';
     await Hive.box('ranch_messages').add({
+      'messageId': messageId,
       'text': value,
       'sender': currentUserName(),
       'date': todayDate(),
       'time': currentTime(),
       'createdAt': DateTime.now().toIso8601String(),
     });
+    await addRanchNotification(
+      title: '${currentUserName()} sent a message',
+      message: value,
+      type: 'chat',
+      sourceId: messageId,
+    );
     if (_message.text.trim() == value) _message.clear();
   }
 
@@ -8537,11 +8737,7 @@ class _RankedCowCardState extends State<RankedCowCard>
         child: Container(
           decoration: ShapeDecoration(
             shape: const SquircleBorder(radius: Gold.r27),
-            image: DecorationImage(
-              image: AssetImage(rankBackgroundAsset(rank)),
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.high,
-            ),
+            color: palette[1],
             shadows: [
               BoxShadow(
                 color: palette[2].withValues(alpha: 0.34),
@@ -10646,7 +10842,6 @@ class AddEntryScreen extends StatefulWidget {
 
 class _AddEntryScreenState extends State<AddEntryScreen> {
   int _mode = 0;
-  int _feedTarget = 0;
   int _stockItem = 0;
   String _session = 'Morning';
   String _cow = '';
@@ -10732,7 +10927,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       await Hive.box('stock_records').add({
         'movement': 'Usage',
         'item': item,
-        'target': _feedTarget == 0 ? 'Cows' : 'Calves',
+        'target': 'Ranch',
         'quantityKg': quantity,
         'unit': stockUnit(item),
         'amount': 0.0,
@@ -10835,20 +11030,6 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   Widget _stockUseForm() {
     return Column(
       children: [
-        Glass(
-          radius: Gold.r21,
-          blur: Gold.s13,
-          padding: const EdgeInsets.all(Gold.s5),
-          elevation: 0.62,
-          child: LiquidSegmentBar(
-            labels: tamilUi
-                ? const ['மாடுகள்', 'கன்றுகள்']
-                : const ['Cows', 'Calves'],
-            index: _feedTarget,
-            onChanged: (value) => setState(() => _feedTarget = value),
-          ),
-        ),
-        const SizedBox(height: Gold.s13),
         for (int i = 0; i < _stockItems.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: Gold.s8),

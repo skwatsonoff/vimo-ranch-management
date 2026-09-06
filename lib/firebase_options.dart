@@ -23,10 +23,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for macos - '
@@ -64,5 +61,14 @@ class DefaultFirebaseOptions {
     messagingSenderId: '577211521804',
     projectId: 'my-ranch-sync',
     storageBucket: 'my-ranch-sync.firebasestorage.app',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyBp6qVuuI0AsrpFOoBXB1olbpDOBLaJyfM',
+    appId: '1:577211521804:ios:5a160b24e325769a034729',
+    messagingSenderId: '577211521804',
+    projectId: 'my-ranch-sync',
+    storageBucket: 'my-ranch-sync.firebasestorage.app',
+    iosBundleId: 'com.example.ranchManagement',
   );
 }
