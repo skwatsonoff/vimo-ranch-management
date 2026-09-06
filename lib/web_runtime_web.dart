@@ -8,6 +8,37 @@ class BrowserRuntime {
   JSFunction? _focusListener;
 
   bool get online => web.window.navigator.onLine;
+  bool get notificationsGranted => web.Notification.permission == 'granted';
+
+  Future<bool> requestNotificationPermission() async {
+    try {
+      if (notificationsGranted) return true;
+      final permission =
+          (await web.Notification.requestPermission().toDart).toDart;
+      return permission == 'granted';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void showNotification({
+    required String title,
+    required String body,
+    required String tag,
+  }) {
+    if (!notificationsGranted) return;
+    try {
+      web.Notification(
+        title,
+        web.NotificationOptions(
+          body: body,
+          tag: tag,
+          icon: 'icons/Icon-192.png',
+          badge: 'icons/Icon-192.png',
+        ),
+      );
+    } catch (_) {}
+  }
 
   void dismissBootSplash() {
     final loading = web.document.getElementById('loading') as web.HTMLElement?;

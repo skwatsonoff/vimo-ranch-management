@@ -40,6 +40,7 @@ import 'web_runtime.dart';
 part 'interface.dart';
 
 bool firebaseReady = false;
+final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -3946,6 +3947,94 @@ class PushNotificationService {
   }
 }
 
+/// Zero-cost browser notification fallback. Firestore remains connected while
+/// the web app or installed PWA is open (including a background tab), so new
+/// ranch notifications can be surfaced without a paid server function.
+class BrowserNotificationService {
+  const BrowserNotificationService._();
+
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _updates;
+  static String _activeRanch = '';
+  static bool _primed = false;
+
+  static Future<void> start() async {
+    if (!kIsWeb || !CloudSyncService.ready) return;
+    final id = ranchId();
+    if (_activeRanch == id && _updates != null) return;
+    await stop();
+    _activeRanch = id;
+    _primed = false;
+    _updates = CloudSyncService.ranch
+        .collection('notifications')
+        .snapshots()
+        .listen((snapshot) {
+          if (!_primed) {
+            _primed = true;
+            return;
+          }
+
+          for (final change in snapshot.docChanges) {
+            if (change.type != DocumentChangeType.added) continue;
+            final notification = change.doc.data();
+            if (notification == null) continue;
+            final target = txt(notification, 'targetUser').toLowerCase();
+            final me = currentUserName().toLowerCase();
+            final senderUid = txt(notification, 'createdByUid');
+            final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+            if ((target.isNotEmpty && target != me) ||
+                (senderUid.isNotEmpty && senderUid == myUid)) {
+              continue;
+            }
+            _browserRuntime.showNotification(
+              title: txt(notification, 'title', 'VIMO Ranch update'),
+              body: txt(
+                notification,
+                'message',
+                'Open VIMO to view the update',
+              ),
+              tag: change.doc.id,
+            );
+            rootMessengerKey.currentState
+              ?..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: Ink.violetDeep,
+                  content: Row(
+                    children: [
+                      const Icon(
+                        Icons.notifications_active_rounded,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: Gold.s13),
+                      Expanded(
+                        child: Text(
+                          '${txt(notification, 'title')}\n${txt(notification, 'message')}',
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+          }
+          unawaited(CloudSyncService.downloadBox('notifications'));
+        }, onError: (_) {});
+  }
+
+  static Future<void> stop() async {
+    await _updates?.cancel();
+    _updates = null;
+    _activeRanch = '';
+    _primed = false;
+  }
+}
+
 /// Saves the small set of animal health fields that a Data Entry member is
 /// allowed to record. The direct merge keeps pregnancy and milking state in
 /// sync without granting that role permission to edit the full animal profile.
@@ -5210,6 +5299,7 @@ class VimoApp extends StatelessWidget {
         'settings',
       ).listenable(keys: const ['languageMode']),
       builder: (_, _, _) => MaterialApp(
+        scaffoldMessengerKey: rootMessengerKey,
         locale: Locale(tamilUi ? 'ta' : 'en'),
         supportedLocales: const [Locale('en'), Locale('ta')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -5473,6 +5563,7 @@ class _MemberAwareShellState extends State<MemberAwareShell> {
   void initState() {
     super.initState();
     unawaited(PushNotificationService.start());
+    unawaited(BrowserNotificationService.start());
     _subscription =
         RanchAccessService.memberRef(
           widget.ranch,
@@ -5506,6 +5597,7 @@ class _MemberAwareShellState extends State<MemberAwareShell> {
   @override
   void dispose() {
     _subscription?.cancel();
+    unawaited(BrowserNotificationService.stop());
     super.dispose();
   }
 
@@ -6636,7 +6728,12 @@ class RanchNotificationButton extends StatelessWidget {
           .length;
       return IconButton(
         tooltip: 'Notifications',
-        onPressed: () => push(context, const NotificationHistoryScreen()),
+        onPressed: () async {
+          await _browserRuntime.requestNotificationPermission();
+          if (context.mounted) {
+            await push(context, const NotificationHistoryScreen());
+          }
+        },
         icon: Badge(
           isLabelVisible: count > 0,
           label: AppText('$count'),
