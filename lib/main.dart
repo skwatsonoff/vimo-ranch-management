@@ -6758,6 +6758,7 @@ class NotificationHistoryScreen extends StatelessWidget {
           ],
         ),
         body: Shell(
+          maxWidth: Gold.wideContentWidth,
           child: entries.isEmpty
               ? const Center(
                   child: EmptyNote(
