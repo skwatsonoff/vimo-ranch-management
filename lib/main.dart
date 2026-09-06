@@ -24,6 +24,8 @@ import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -33,6 +35,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'web_runtime.dart';
+
+part 'interface.dart';
 
 bool firebaseReady = false;
 
@@ -1538,7 +1542,7 @@ class LiquidButton extends StatelessWidget {
                           const SizedBox(width: Gold.s8),
                         ],
                         Flexible(
-                          child: Text(
+                          child: AppText(
                             label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1596,7 +1600,7 @@ class GhostButton extends StatelessWidget {
             const SizedBox(width: Gold.s8),
           ],
           Flexible(
-            child: Text(
+            child: AppText(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1679,7 +1683,7 @@ class Segment extends StatelessWidget {
                 const SizedBox(width: Gold.s5),
               ],
               Flexible(
-                child: Text(
+                child: AppText(
                   title,
                   textAlign: TextAlign.center,
                   maxLines: 1,
@@ -1804,7 +1808,7 @@ class LiquidSegmentBar extends StatelessWidget {
                                           : FontWeight.w700,
                                       fontSize: Gold.t13,
                                     ),
-                                    child: Text(
+                                    child: AppText(
                                       labels[i],
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -1841,7 +1845,7 @@ InputDecoration fieldStyle(
   );
 
   return InputDecoration(
-    labelText: label,
+    labelText: ui(label),
     prefixIcon:
         prefix ??
         (icon == null
@@ -1881,7 +1885,7 @@ void snack(BuildContext context, String message) {
   messenger.clearSnackBars();
   messenger.showSnackBar(
     SnackBar(
-      content: Text(
+      content: AppText(
         message,
         style: const TextStyle(fontWeight: FontWeight.w700),
       ),
@@ -3594,6 +3598,7 @@ class CloudSyncService {
     'lastSyncedAt',
     'lastAutoSyncReason',
     'pendingAnimalEntryUpdates',
+    'languageMode',
   };
 
   static FirebaseFirestore get db => FirebaseFirestore.instance;
@@ -4166,7 +4171,7 @@ class Rosette extends StatelessWidget {
           child: SizedBox(
             height: size,
             child: Center(
-              child: Text(
+              child: AppText(
                 '$rank',
                 style: TextStyle(
                   color: Colors.white,
@@ -4651,7 +4656,7 @@ class SectionTitle extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(
+            child: AppText(
               title,
               style: const TextStyle(
                 fontSize: Gold.t21,
@@ -4664,7 +4669,7 @@ class SectionTitle extends StatelessWidget {
           if (action != null)
             GestureDetector(
               onTap: onAction,
-              child: Text(
+              child: AppText(
                 action!,
                 style: const TextStyle(
                   color: Ink.violetDeep,
@@ -4685,7 +4690,7 @@ Widget panel(String title, String emptyMessage, List<Widget> children) {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppText(
           title,
           style: const TextStyle(
             fontSize: Gold.t16,
@@ -4695,7 +4700,7 @@ Widget panel(String title, String emptyMessage, List<Widget> children) {
         ),
         const SizedBox(height: Gold.s8),
         if (children.isEmpty)
-          Text(
+          AppText(
             emptyMessage,
             style: const TextStyle(color: Ink.muted, fontSize: Gold.t13),
           )
@@ -4741,7 +4746,7 @@ class InfoRow extends StatelessWidget {
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
-            child: Text(
+            child: AppText(
               title,
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
@@ -4806,7 +4811,7 @@ class DataCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
@@ -4814,7 +4819,7 @@ class DataCard extends StatelessWidget {
                     fontSize: Gold.t16,
                   ),
                 ),
-                Text(
+                AppText(
                   subtitle,
                   style: const TextStyle(color: Ink.muted, fontSize: Gold.t11),
                 ),
@@ -4833,7 +4838,7 @@ class DataCard extends StatelessWidget {
                           shape: const SquircleBorder(radius: Gold.r8),
                           color: color.withValues(alpha: 0.09),
                         ),
-                        child: Text(
+                        child: AppText(
                           d,
                           style: const TextStyle(
                             fontSize: Gold.t11,
@@ -4901,7 +4906,7 @@ class SyncChip extends StatelessWidget {
               ),
               const SizedBox(width: Gold.s5),
               Flexible(
-                child: Text(
+                child: AppText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -4953,7 +4958,7 @@ class EmptyNote extends StatelessWidget {
             child: Icon(icon, color: Ink.violet, size: Gold.t27),
           ),
           const SizedBox(height: Gold.s13),
-          Text(
+          AppText(
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
@@ -4963,7 +4968,7 @@ class EmptyNote extends StatelessWidget {
             ),
           ),
           const SizedBox(height: Gold.s5),
-          Text(
+          AppText(
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(
@@ -4992,50 +4997,58 @@ class VimoApp extends StatelessWidget {
       displayColor: Ink.navy,
     );
 
-    return MaterialApp(
-      title: 'VIMO',
-      debugShowCheckedModeBanner: false,
-      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-        value: const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-          systemNavigationBarColor: Ink.canvasLow,
-          systemNavigationBarIconBrightness: Brightness.dark,
-          systemNavigationBarDividerColor: Colors.transparent,
-        ),
-        child: ColoredBox(
-          color: Ink.canvasTop,
-          child: child ?? const SizedBox.shrink(),
-        ),
-      ),
-      scrollBehavior: const _SmoothScroll(),
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: Ink.canvasTop,
-        textTheme: text,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Ink.violet,
-          primary: Ink.violet,
-          surface: Ink.canvasTop,
-        ),
-        splashFactory: NoSplash.splashFactory,
-        highlightColor: Colors.transparent,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          centerTitle: true,
-          foregroundColor: Ink.navy,
-          titleTextStyle: TextStyle(
-            color: Ink.navy,
-            fontWeight: FontWeight.w900,
-            fontSize: Gold.t16,
+    return ValueListenableBuilder<Box<dynamic>>(
+      valueListenable: Hive.box(
+        'settings',
+      ).listenable(keys: const ['languageMode']),
+      builder: (_, _, _) => MaterialApp(
+        locale: Locale(tamilUi ? 'ta' : 'en'),
+        supportedLocales: const [Locale('en'), Locale('ta')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        title: 'VIMO',
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark,
+            statusBarBrightness: Brightness.light,
+            systemNavigationBarColor: Ink.canvasLow,
+            systemNavigationBarIconBrightness: Brightness.dark,
+            systemNavigationBarDividerColor: Colors.transparent,
+          ),
+          child: ColoredBox(
+            color: Ink.canvasTop,
+            child: child ?? const SizedBox.shrink(),
           ),
         ),
-        dividerTheme: const DividerThemeData(space: 0, thickness: 0),
+        scrollBehavior: const _SmoothScroll(),
+        theme: ThemeData(
+          useMaterial3: true,
+          scaffoldBackgroundColor: Ink.canvasTop,
+          textTheme: text,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Ink.violet,
+            primary: Ink.violet,
+            surface: Ink.canvasTop,
+          ),
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: Colors.transparent,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            centerTitle: true,
+            foregroundColor: Ink.navy,
+            titleTextStyle: TextStyle(
+              color: Ink.navy,
+              fontWeight: FontWeight.w900,
+              fontSize: Gold.t16,
+            ),
+          ),
+          dividerTheme: const DividerThemeData(space: 0, thickness: 0),
+        ),
+        home: const AuthGate(),
       ),
-      home: const AuthGate(),
     );
   }
 }
@@ -5174,7 +5187,7 @@ class _AccessLoadingScreen extends StatelessWidget {
             SizedBox(height: Gold.s21),
             CircularProgressIndicator(color: Ink.violet),
             SizedBox(height: Gold.s13),
-            Text(
+            AppText(
               'Checking ranch access...',
               style: TextStyle(color: Ink.muted, fontWeight: FontWeight.w700),
             ),
@@ -5443,7 +5456,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                 children: [
                   const Center(child: BrandMark(size: Gold.s89)),
                   const SizedBox(height: Gold.s13),
-                  const Text(
+                  const AppText(
                     'Set up your ranch',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -5453,7 +5466,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                     ),
                   ),
                   const SizedBox(height: Gold.s5),
-                  const Text(
+                  const AppText(
                     'Create a private ranch or request access to an existing one.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Ink.muted, height: 1.45),
@@ -5509,7 +5522,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                     ),
                     if (_availabilityText.isNotEmpty) ...[
                       const SizedBox(height: Gold.s8),
-                      Text(
+                      AppText(
                         _availabilityText,
                         style: TextStyle(
                           color: _available == true ? Ink.green : Ink.red,
@@ -5637,21 +5650,21 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: const SquircleBorder(radius: Gold.r27),
-        title: const Text(
+        title: const AppText(
           'Cancel join request?',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
-        content: const Text(
+        content: const AppText(
           'You will return to the create or join ranch screen.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep Waiting'),
+            child: const AppText('Keep Waiting'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
+            child: const AppText(
               'Cancel Request',
               style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
             ),
@@ -5712,7 +5725,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 size: Gold.t34,
                               ),
                               const SizedBox(height: Gold.s13),
-                              const Text(
+                              const AppText(
                                 'Waiting for admin approval',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
@@ -5722,7 +5735,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 ),
                               ),
                               const SizedBox(height: Gold.s8),
-                              Text(
+                              AppText(
                                 'Ranch ID  ${widget.ranch}',
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
@@ -5731,7 +5744,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 ),
                               ),
                               const SizedBox(height: Gold.s8),
-                              const Text(
+                              const AppText(
                                 'You will automatically enter the ranch after an admin accepts your request.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
@@ -5747,7 +5760,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                               ],
                               if (_activationError.isNotEmpty) ...[
                                 const SizedBox(height: Gold.s13),
-                                Text(
+                                AppText(
                                   _activationError,
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
@@ -5965,7 +5978,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       index: 1,
                       child: Column(
                         children: [
-                          Text(
+                          AppText(
                             appName(),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
@@ -5997,7 +6010,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         elevation: 1.3,
                         child: Column(
                           children: [
-                            const Text(
+                            const AppText(
                               'Welcome Back!',
                               style: TextStyle(
                                 fontSize: Gold.t21,
@@ -6006,7 +6019,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             const SizedBox(height: Gold.s3),
-                            const Text(
+                            const AppText(
                               'Sign in to continue',
                               style: TextStyle(
                                 color: Ink.muted,
@@ -6069,7 +6082,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: Gold.s8),
-                                const Text(
+                                const AppText(
                                   'Remember me',
                                   style: TextStyle(
                                     fontSize: Gold.t11,
@@ -6080,7 +6093,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const Spacer(),
                                 GestureDetector(
                                   onTap: _resetPassword,
-                                  child: const Text(
+                                  child: const AppText(
                                     'Forgot password?',
                                     style: TextStyle(
                                       fontSize: Gold.t11,
@@ -6107,7 +6120,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
+                          const AppText(
                             'New here? ',
                             style: TextStyle(
                               color: Ink.muted,
@@ -6118,7 +6131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             onTap: _busy
                                 ? null
                                 : () => push(context, const SignupScreen()),
-                            child: const Text(
+                            child: const AppText(
                               'Create Account',
                               style: TextStyle(
                                 color: Ink.violetDeep,
@@ -6212,7 +6225,7 @@ class _SignupScreenState extends State<SignupScreen> {
       children: [
         const Center(child: BrandMark(size: Gold.s89)),
         const SizedBox(height: Gold.s21),
-        const Text(
+        const AppText(
           'Create your VIMO account',
           textAlign: TextAlign.center,
           style: TextStyle(
@@ -6222,7 +6235,7 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
         ),
         const SizedBox(height: Gold.s5),
-        const Text(
+        const AppText(
           'Enter your details here. Your sign-in page stays separate.',
           textAlign: TextAlign.center,
           style: TextStyle(color: Ink.muted),
@@ -6414,7 +6427,7 @@ class RanchNotificationButton extends StatelessWidget {
         onPressed: () => push(context, const NotificationHistoryScreen()),
         icon: Badge(
           isLabelVisible: count > 0,
-          label: Text('$count'),
+          label: AppText('$count'),
           child: const Icon(Icons.notifications_outlined),
         ),
       );
@@ -6439,7 +6452,6 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
   Future<void> _send() async {
     final value = _message.text.trim();
     if (value.isEmpty) return;
-    _message.clear();
     await Hive.box('ranch_messages').add({
       'text': value,
       'sender': currentUserName(),
@@ -6447,136 +6459,12 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
       'time': currentTime(),
       'createdAt': DateTime.now().toIso8601String(),
     });
-  }
-
-  Future<void> _newTask() async {
-    final title = TextEditingController();
-    final note = TextEditingController();
-    final dueController = TextEditingController(text: todayDate());
-    var users = deduplicateFamilyUsers(
-      Hive.box('family_users').values.whereType<Map>(),
-    );
-    if (CloudSyncService.ready) {
-      try {
-        final members = await RanchAccessService.ranchRef(
-          ranchId(),
-        ).collection('members').get();
-        users = members.docs
-            .map((d) => d.data())
-            .where((m) => m['active'] != false && txt(m, 'status') == 'active')
-            .toList();
-      } catch (_) {
-        if (mounted) snack(context, 'Unable to load ranch members. Try again.');
-        title.dispose();
-        note.dispose();
-        dueController.dispose();
-        return;
-      }
-    }
-    if (!mounted) {
-      title.dispose();
-      note.dispose();
-      dueController.dispose();
-      return;
-    }
-    final names = <String>{
-      currentUserName(),
-      ...users.map((u) => txt(u, 'name')),
-    }.where((e) => e.isNotEmpty).toList();
-    String assignee = names.isEmpty ? currentUserName() : names.first;
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          shape: const SquircleBorder(radius: Gold.r27),
-          title: const Text('Assign a ranch task'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: title,
-                decoration: fieldStyle('Task', icon: Icons.task_alt_rounded),
-              ),
-              const SizedBox(height: Gold.s13),
-              DropdownButtonFormField<String>(
-                initialValue: assignee,
-                isExpanded: true,
-                decoration: fieldStyle(
-                  'Assign to',
-                  icon: Icons.person_outline_rounded,
-                ),
-                items: [
-                  for (final n in names)
-                    DropdownMenuItem(value: n, child: Text(n)),
-                ],
-                onChanged: (v) => setLocal(() => assignee = v ?? assignee),
-              ),
-              const SizedBox(height: Gold.s13),
-              DateField(
-                controller: dueController,
-                label: 'Due date',
-                onChanged: () {},
-              ),
-              const SizedBox(height: Gold.s13),
-              TextField(
-                controller: note,
-                decoration: fieldStyle(
-                  'Note (optional)',
-                  icon: Icons.notes_rounded,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Assign'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (saved == true && title.text.trim().isNotEmpty) {
-      final id = 'task_${DateTime.now().microsecondsSinceEpoch}';
-      await Hive.box('ranch_tasks').add({
-        'taskId': id,
-        'title': title.text.trim(),
-        'note': note.text.trim(),
-        'assignee': assignee,
-        'assignedBy': currentUserName(),
-        'dueDate': dueController.text,
-        'completed': false,
-        'createdAt': DateTime.now().toIso8601String(),
-        'date': todayDate(),
-        'time': currentTime(),
-      });
-      await Hive.box('ranch_messages').add({
-        'text': 'Task assigned: ${title.text.trim()}',
-        'sender': currentUserName(),
-        'taskId': id,
-        'date': todayDate(),
-        'time': currentTime(),
-        'createdAt': DateTime.now().toIso8601String(),
-      });
-      await addRanchNotification(
-        title: 'New task assigned',
-        message: '${title.text.trim()} • by ${currentUserName()}',
-        type: 'task',
-        targetUser: assignee,
-        sourceId: id,
-      );
-    }
-    title.dispose();
-    note.dispose();
-    dueController.dispose();
+    if (_message.text.trim() == value) _message.clear();
   }
 
   Future<void> _toggleTask(dynamic key, Map<String, dynamic> task) async {
     if (txt(task, 'assignee') != currentUserName() && !canManageRanch) return;
+    task = Map<String, dynamic>.from(task)..remove('_key');
     final completed = task['completed'] != true;
     task['completed'] = completed;
     task['completedAt'] = completed ? DateTime.now().toIso8601String() : '';
@@ -6602,176 +6490,10 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<Box<dynamic>>(
-    valueListenable: Hive.box('ranch_messages').listenable(),
-    builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
-      valueListenable: Hive.box('ranch_tasks').listenable(),
-      builder: (_, tasksBox, _) {
-        final messages =
-            Hive.box('ranch_messages')
-                .toMap()
-                .entries
-                .map((e) => {...asMap(e.value), '_key': e.key})
-                .toList()
-              ..sort(
-                (a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')),
-              );
-        final taskById = {
-          for (final e in tasksBox.toMap().entries)
-            txt(asMap(e.value), 'taskId'): {...asMap(e.value), '_key': e.key},
-        };
-        return Scaffold(
-          appBar: AppBar(title: const Text('Ranch Chat')),
-          body: Shell(
-            child: Column(
-              children: [
-                Expanded(
-                  child: messages.isEmpty
-                      ? const Center(
-                          child: EmptyNote(
-                            icon: Icons.forum_outlined,
-                            title: 'Start the ranch conversation',
-                            message:
-                                'Messages and assigned tasks are shared with everyone in this ranch.',
-                          ),
-                        )
-                      : ListView.builder(
-                          reverse: true,
-                          padding: const EdgeInsets.fromLTRB(
-                            Gold.s13,
-                            Gold.s13,
-                            Gold.s13,
-                            Gold.s8,
-                          ),
-                          itemCount: messages.length,
-                          itemBuilder: (_, i) {
-                            final m = messages[i];
-                            final mine = txt(m, 'sender') == currentUserName();
-                            final task = taskById[txt(m, 'taskId')];
-                            return Align(
-                              alignment: mine
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Container(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 420,
-                                ),
-                                margin: const EdgeInsets.only(bottom: Gold.s8),
-                                padding: const EdgeInsets.all(Gold.s13),
-                                decoration: ShapeDecoration(
-                                  shape: const SquircleBorder(radius: Gold.r21),
-                                  color: mine
-                                      ? Ink.violet.withValues(alpha: .14)
-                                      : Colors.white.withValues(alpha: .78),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      txt(m, 'sender'),
-                                      style: const TextStyle(
-                                        fontSize: Gold.t10,
-                                        color: Ink.violetDeep,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                    const SizedBox(height: Gold.s3),
-                                    Text(
-                                      txt(m, 'text'),
-                                      style: const TextStyle(
-                                        color: Ink.navy,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    if (task != null) ...[
-                                      const SizedBox(height: Gold.s8),
-                                      InkWell(
-                                        onTap: () =>
-                                            _toggleTask(task['_key'], task),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              task['completed'] == true
-                                                  ? Icons.check_box_rounded
-                                                  : Icons
-                                                        .check_box_outline_blank_rounded,
-                                              color: task['completed'] == true
-                                                  ? Ink.green
-                                                  : Ink.violetDeep,
-                                            ),
-                                            const SizedBox(width: Gold.s5),
-                                            Flexible(
-                                              child: Text(
-                                                '${txt(task, 'assignee')} • due ${txt(task, 'dueDate')}',
-                                                style: const TextStyle(
-                                                  fontSize: Gold.t10,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                    const SizedBox(height: Gold.s3),
-                                    Text(
-                                      '${txt(m, 'date')} • ${txt(m, 'time')}',
-                                      style: const TextStyle(
-                                        fontSize: Gold.t10,
-                                        color: Ink.faint,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      Gold.s13,
-                      Gold.s5,
-                      Gold.s13,
-                      Gold.s8,
-                    ),
-                    child: Row(
-                      children: [
-                        IconButton.filledTonal(
-                          tooltip: 'Assign task',
-                          onPressed: _newTask,
-                          icon: const Icon(Icons.assignment_add),
-                        ),
-                        const SizedBox(width: Gold.s8),
-                        Expanded(
-                          child: TextField(
-                            controller: _message,
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: (_) => _send(),
-                            decoration: fieldStyle(
-                              'Message your ranch...',
-                              icon: Icons.chat_bubble_outline_rounded,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: Gold.s8),
-                        IconButton.filled(
-                          onPressed: _send,
-                          icon: const Icon(Icons.send_rounded),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    ),
+  Widget build(BuildContext context) => _ConversationView(
+    message: _message,
+    onSend: _send,
+    onToggle: _toggleTask,
   );
 }
 
@@ -6794,7 +6516,7 @@ class NotificationHistoryScreen extends StatelessWidget {
           );
       return Scaffold(
         appBar: AppBar(
-          title: const Text('Notifications'),
+          title: const AppText('Notifications'),
           leading: const _BackButton(),
           actions: [
             TextButton(
@@ -6811,7 +6533,7 @@ class NotificationHistoryScreen extends StatelessWidget {
                   }
                 }
               },
-              child: const Text('Mark all read'),
+              child: const AppText('Mark all read'),
             ),
           ],
         ),
@@ -6873,7 +6595,7 @@ class NotificationHistoryScreen extends StatelessWidget {
                                         txt(n, 'message'),
                                         style: const TextStyle(color: Ink.body),
                                       ),
-                                      Text(
+                                      AppText(
                                         '${txt(n, 'date')} • ${txt(n, 'time')}',
                                         style: const TextStyle(
                                           color: Ink.faint,
@@ -6991,7 +6713,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, updateDialog) => AlertDialog(
-          title: const Text('பதிவை திருத்து / Edit entry'),
+          title: const AppText('பதிவை திருத்து / Edit entry'),
           content: SizedBox(
             width: 360,
             child: SingleChildScrollView(
@@ -7012,7 +6734,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                       ),
                     ),
                   if (error != null)
-                    Text(error!, style: const TextStyle(color: Colors.red)),
+                    AppText(error!, style: const TextStyle(color: Colors.red)),
                 ],
               ),
             ),
@@ -7020,7 +6742,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('ரத்து / Cancel'),
+              child: const AppText('ரத்து / Cancel'),
             ),
             TextButton(
               onPressed: () {
@@ -7076,7 +6798,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                 }
                 Navigator.pop(context, true);
               },
-              child: const Text('சேமி / Save'),
+              child: const AppText('சேமி / Save'),
             ),
           ],
         ),
@@ -7119,16 +6841,10 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
               txt(right, 'createdAt').compareTo(txt(left, 'createdAt')),
         );
     return FormPage(
-      title: isDataEntryUser ? 'சமீபத்திய பதிவுகள்' : 'Recent entries',
+      title: tamilUi ? 'சமீபத்திய பதிவுகள்' : 'Recent entries',
       children: [
-        Text(
-          isDataEntryUser
-              ? 'நீங்கள் சேர்த்த பதிவை 5 நிமிடங்களுக்குள் திருத்தலாம்.'
-              : 'Correct your own entries within 5 minutes of saving.',
-        ),
-        const SizedBox(height: 16),
         if (entries.isEmpty)
-          const Text('திருத்தக்கூடிய பதிவுகள் இல்லை / No editable entries'),
+          const AppText('திருத்தக்கூடிய பதிவுகள் இல்லை / No editable entries'),
         for (final record in entries)
           Card(
             child: ListTile(
@@ -7147,7 +6863,9 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                   ),
                 ),
               ),
-              subtitle: Text('${txt(record, 'date')} ${txt(record, 'time')}'),
+              subtitle: AppText(
+                '${txt(record, 'date')} ${txt(record, 'time')}',
+              ),
               trailing: const Icon(Icons.edit_outlined),
               onTap: () => editEntry(txt(record, '_box'), record['_key']),
             ),
@@ -7159,6 +6877,33 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
 
 class _MainShellState extends State<MainShell> {
   int _tab = 0;
+  StreamSubscription<BoxEvent>? _languageChanges;
+  @override
+  void initState() {
+    super.initState();
+    _languageChanges = Hive.box('settings').watch(key: 'languageMode').listen((
+      _,
+    ) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _languageChanges?.cancel();
+    super.dispose();
+  }
+
+  Offset? _swipeStart;
+  bool _openingSettings = false;
+  Future<void> _openSettings() async {
+    if (_openingSettings) return;
+    _openingSettings = true;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
+    _openingSettings = false;
+  }
 
   /// Height reserved under every scroll view so the floating bar and the action
   /// button never sit on top of content.
@@ -7207,9 +6952,9 @@ class _MainShellState extends State<MainShell> {
           ];
     final navItems = dataEntry
         ? const <_NavItem>[
-            _NavItem('மாடுகள்', null, null),
-            _NavItem('விற்பனை', Icons.sell_rounded, Icons.sell_outlined),
-            _NavItem('அரட்டை', Icons.forum_rounded, Icons.forum_outlined),
+            _NavItem('Cows', null, null),
+            _NavItem('Sell', Icons.sell_rounded, Icons.sell_outlined),
+            _NavItem('Chat', Icons.forum_rounded, Icons.forum_outlined),
           ]
         : const <_NavItem>[
             _NavItem('Home', Icons.home_rounded, Icons.home_outlined),
@@ -7232,32 +6977,37 @@ class _MainShellState extends State<MainShell> {
         leading: IconButton(
           tooltip: 'Settings',
           icon: const Icon(Icons.settings_outlined),
-          onPressed: () => push(context, const SettingsScreen()),
+          onPressed: _openSettings,
         ),
         title: Text(farmName(), maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           if (canRecordEntries && tab != pages.length - 1)
-            PopupMenuButton<String>(
-              tooltip: 'Entry actions',
-              icon: const Icon(Icons.add_circle_outline_rounded),
-              onSelected: (value) => push(
-                context,
-                value == 'add'
-                    ? const AddEntryScreen()
-                    : const RecentEntryCorrections(),
-              ),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'add', child: Text('Add entry')),
-                PopupMenuItem(
-                  value: 'edit',
-                  child: Text('Edit recent entries · 5 minutes'),
-                ),
-              ],
+            IconButton(
+              tooltip: ui('New entry'),
+              icon: const Icon(CupertinoIcons.plus_circle, color: _blue),
+              onPressed: () => showEntryActions(context),
             ),
           const RanchNotificationButton(),
         ],
       ),
-      body: pages[tab],
+      body: Listener(
+        onPointerDown: (event) => _swipeStart = event.localPosition,
+        onPointerCancel: (_) => _swipeStart = null,
+        onPointerUp: (event) {
+          final start = _swipeStart;
+          _swipeStart = null;
+          if (start == null) return;
+          final delta = event.localPosition - start;
+          final width = MediaQuery.sizeOf(context).width;
+          if (delta.dy.abs() > 60) return;
+          if (start.dx < 28 && delta.dx > 80) _openSettings();
+          if (start.dx > width - 28 && delta.dx < -80) {
+            FocusScope.of(context).unfocus();
+            setState(() => _tab = pages.length - 1);
+          }
+        },
+        child: pages[tab],
+      ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
@@ -7405,7 +7155,7 @@ class _NavCell extends StatelessWidget {
                     ),
             ),
             const SizedBox(height: Gold.s3),
-            Text(
+            AppText(
               item.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -7555,7 +7305,7 @@ class DashboardScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      const AppText(
                         'Dashboard',
                         style: TextStyle(
                           fontSize: Gold.t34,
@@ -7670,7 +7420,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
                 Icon(Icons.sync_problem_rounded, color: Ink.amber),
                 SizedBox(width: Gold.s13),
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     'Could not check join requests — tap to retry',
                     style: TextStyle(
                       color: Ink.navy,
@@ -7703,7 +7453,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
               const Icon(Icons.person_add_alt_1_rounded, color: Ink.violetDeep),
               const SizedBox(width: Gold.s13),
               Expanded(
-                child: Text(
+                child: AppText(
                   '$count ${count == 1 ? 'person wants' : 'people want'} to join your ranch',
                   style: const TextStyle(
                     color: Ink.navy,
@@ -7711,7 +7461,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
                   ),
                 ),
               ),
-              const Text(
+              const AppText(
                 'Review',
                 style: TextStyle(
                   color: Ink.violetDeep,
@@ -7755,7 +7505,7 @@ class _ActivityRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   '${entry['title']}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -7765,7 +7515,7 @@ class _ActivityRow extends StatelessWidget {
                     color: Ink.navy,
                   ),
                 ),
-                Text(
+                AppText(
                   '${entry['sub']}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -7775,7 +7525,7 @@ class _ActivityRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: Gold.s8),
-          Text(
+          AppText(
             '${entry['value']}',
             style: const TextStyle(
               fontWeight: FontWeight.w900,
@@ -7860,7 +7610,7 @@ class _RanchHero extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: Gold.s3),
-                      const Text(
+                      const AppText(
                         'Manage. Care. Grow.',
                         style: TextStyle(
                           color: Colors.white,
@@ -8004,7 +7754,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                               color: Ink.violetDark,
                             ),
                             SizedBox(width: Gold.s5),
-                            Text(
+                            AppText(
                               'Happy Birthday!',
                               style: TextStyle(
                                 color: Ink.violetDark,
@@ -8028,7 +7778,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                           letterSpacing: -0.5,
                         ),
                       ),
-                      Text(
+                      AppText(
                         years > 0
                             ? 'Turns $years today'
                             : 'Born today \u2022 welcome',
@@ -8040,7 +7790,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                       ),
                       if (others > 0) ...[
                         const SizedBox(height: Gold.s8),
-                        Text(
+                        AppText(
                           others == 1
                               ? '+1 more birthday today'
                               : '+$others more birthdays today',
@@ -8165,7 +7915,7 @@ class _StatTile extends StatelessWidget {
                   child: Center(child: icon),
                 ),
                 const Spacer(),
-                Text(
+                AppText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -8238,8 +7988,8 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(
-          isDataEntryUser
+        title: AppText(
+          tamilUi
               ? (_tab == 0 ? 'மாடுகள்' : 'கன்றுக்குட்டிகள்')
               : (_tab == 0 ? 'All Cows' : 'All Calves'),
         ),
@@ -8295,10 +8045,8 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        isDataEntryUser
-                            ? 'மாடுகள் மற்றும் கன்றுகள்'
-                            : 'Cows & Calves',
+                      AppText(
+                        tamilUi ? 'மாடுகள் மற்றும் கன்றுகள்' : 'Cows & Calves',
                         style: const TextStyle(
                           fontSize: Gold.t27,
                           fontWeight: FontWeight.w900,
@@ -8308,12 +8056,12 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                         ),
                       ),
                       const SizedBox(height: Gold.s2),
-                      Text(
+                      AppText(
                         isCow
-                            ? (isDataEntryUser
+                            ? (tamilUi
                                   ? 'பால் பதிவு செய்ய வேண்டிய மாடுகள்'
                                   : 'Top performing cows this month')
-                            : (isDataEntryUser
+                            : (tamilUi
                                   ? 'பண்ணையில் உள்ள கன்றுக்குட்டிகள்'
                                   : 'Every calf on the ranch'),
                         style: const TextStyle(
@@ -8356,7 +8104,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
               padding: const EdgeInsets.all(Gold.s5),
               elevation: 0.62,
               child: LiquidSegmentBar(
-                labels: isDataEntryUser
+                labels: tamilUi
                     ? const ['மாடுகள்', 'கன்றுகள்']
                     : const ['Cows', 'Calves'],
                 index: _tab,
@@ -8370,14 +8118,14 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
               index: reveal++,
               child: EmptyNote(
                 icon: Icons.add_circle_outline_rounded,
-                title: isDataEntryUser
+                title: tamilUi
                     ? (isCow ? 'மாடுகள் இல்லை' : 'கன்றுகள் இல்லை')
                     : (isCow ? 'No cows yet' : 'No calves yet'),
                 message: isCow
-                    ? (isDataEntryUser
+                    ? (tamilUi
                           ? 'நிர்வாகி மாட்டை சேர்த்த பிறகு இங்கே காட்டப்படும்.'
                           : 'Add your first cow to start tracking milk, health and ranking.')
-                    : (isDataEntryUser
+                    : (tamilUi
                           ? 'புதிய கன்றுகள் இங்கே காட்டப்படும்.'
                           : 'Calves appear here once you add one or record a birth.'),
               ),
@@ -8394,9 +8142,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
             const SizedBox(height: Gold.s8),
             Reveal(
               index: reveal++,
-              child: SectionTitle(
-                title: isDataEntryUser ? 'அனைத்தும்' : 'All Animals',
-              ),
+              child: SectionTitle(title: tamilUi ? 'அனைத்தும்' : 'All Animals'),
             ),
           ],
           for (final a in rest)
@@ -8618,7 +8364,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                           letterSpacing: -0.4,
                                         ),
                                       ),
-                                      Text(
+                                      AppText(
                                         '#${txt(a, 'id')}',
                                         style: const TextStyle(
                                           fontSize: Gold.t13,
@@ -8648,7 +8394,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                                 color: Ink.violetDeep,
                                               ),
                                               SizedBox(width: Gold.s3),
-                                              Text(
+                                              AppText(
                                                 'Birthday today',
                                                 style: TextStyle(
                                                   fontSize: Gold.t10,
@@ -8727,7 +8473,7 @@ class _StatStrip extends StatelessWidget {
             Expanded(
               child: Column(
                 children: [
-                  Text(
+                  AppText(
                     entries[i].label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -8738,7 +8484,7 @@ class _StatStrip extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: Gold.s2),
-                  Text(
+                  AppText(
                     entries[i].value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -8798,7 +8544,7 @@ class PlainAnimalCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: Gold.s5),
-                    Text(
+                    AppText(
                       '#${txt(a, 'id')}',
                       style: const TextStyle(
                         fontSize: Gold.t11,
@@ -8820,8 +8566,8 @@ class PlainAnimalCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: Gold.s2),
-                Text(
-                  isDataEntryUser
+                AppText(
+                  tamilUi
                       ? (isCow
                             ? 'வயது ${ageShort(a)} \u2022 பண்ணையில் ${durationText(txt(a, 'arrivalDate'))}'
                             : 'வயது ${ageShort(a)} \u2022 தாய் ${txt(a, 'mother', 'தெரியவில்லை')}')
@@ -8852,8 +8598,8 @@ class PlainAnimalCard extends StatelessWidget {
                   shape: const SquircleBorder(radius: Gold.r8),
                   color: statusColor(status).withValues(alpha: 0.14),
                 ),
-                child: Text(
-                  isDataEntryUser && status == 'Active' ? 'பண்ணையில்' : status,
+                child: AppText(
+                  tamilUi && status == 'Active' ? 'பண்ணையில்' : status,
                   style: TextStyle(
                     fontSize: Gold.t10,
                     fontWeight: FontWeight.w900,
@@ -9101,7 +8847,7 @@ class _TimelineEvent extends StatelessWidget {
                     style: const TextStyle(color: Ink.body),
                   ),
                   const SizedBox(height: Gold.s5),
-                  Text(
+                  AppText(
                     '${txt(event, 'date')}${txt(event, 'time').isEmpty ? '' : ' • ${txt(event, 'time')}'}',
                     style: TextStyle(
                       color: color,
@@ -9129,7 +8875,7 @@ class AnimalProfileScreen extends StatefulWidget {
 
 class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   int _tab = 0;
-  List<String> get _tabs => isDataEntryUser
+  List<String> get _tabs => tamilUi
       ? const ['விவரம்', 'மருத்துவம்', 'பால்', 'டைம்லைன்']
       : const ['Overview', 'Health', 'Milk', 'Timeline'];
 
@@ -9192,8 +8938,8 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 backgroundColor: Ink.canvasTop,
                 extendBodyBehindAppBar: false,
                 appBar: AppBar(
-                  title: Text(
-                    isDataEntryUser
+                  title: AppText(
+                    tamilUi
                         ? (isCow ? 'மாடு விவரம்' : 'கன்று விவரம்')
                         : (isCow ? 'Cow Profile' : 'Calf Profile'),
                   ),
@@ -9286,7 +9032,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         shape: const SquircleBorder(radius: Gold.r8),
                         color: Ink.violet.withValues(alpha: 0.13),
                       ),
-                      child: Text(
+                      child: AppText(
                         '#${txt(a, 'id')}',
                         style: const TextStyle(
                           color: Ink.violetDeep,
@@ -9298,7 +9044,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   ],
                 ),
                 const SizedBox(height: Gold.s3),
-                Text(
+                AppText(
                   '${txt(a, 'breed', 'Unknown breed')} \u2022 ${txt(a, 'gender', isCow ? 'Female' : 'Not set')}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -9308,7 +9054,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                     fontSize: Gold.t11,
                   ),
                 ),
-                Text(
+                AppText(
                   'Age ${ageText(a)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -9375,7 +9121,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             child: Icon(icon, color: color, size: Gold.t13),
           ),
           const Spacer(),
-          Text(
+          AppText(
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -9488,7 +9234,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                const AppText(
                   'Notes',
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
@@ -9512,7 +9258,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         const SizedBox(height: Gold.s21),
         if (isCow) ...[
           LiquidButton(
-            label: isDataEntryUser ? 'பால் பதிவு செய்' : 'Add Milk Record',
+            label: tamilUi ? 'பால் பதிவு செய்' : 'Add Milk Record',
             icon: Icons.add_rounded,
             onPressed: () => guardedPush(
               context,
@@ -9524,7 +9270,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           const SizedBox(height: Gold.s13),
         ],
         LiquidButton(
-          label: isDataEntryUser ? 'மருத்துவர் பதிவு' : 'Add Doctor Visit',
+          label: tamilUi ? 'மருத்துவர் பதிவு' : 'Add Doctor Visit',
           icon: Icons.medical_services_rounded,
           start: Ink.blue,
           end: Ink.violetDeep,
@@ -9538,7 +9284,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         if (isCow && pregnantDate.isNotEmpty && stopDate.isEmpty) ...[
           const SizedBox(height: Gold.s13),
           LiquidButton(
-            label: isDataEntryUser ? 'பால் கறப்பதை நிறுத்து' : 'Stop Milking',
+            label: tamilUi ? 'பால் கறப்பதை நிறுத்து' : 'Stop Milking',
             icon: Icons.pause_rounded,
             start: Ink.red,
             end: const Color(0xFFA82638),
@@ -9562,7 +9308,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             pregnantDate.isNotEmpty) ...[
           const SizedBox(height: Gold.s13),
           LiquidButton(
-            label: isDataEntryUser ? 'கன்று பிறந்தது' : 'Calf Born',
+            label: tamilUi ? 'கன்று பிறந்தது' : 'Calf Born',
             icon: Icons.child_care_rounded,
             start: Ink.green,
             end: const Color(0xFF1B7A4A),
@@ -9745,7 +9491,7 @@ class _ProfileMenu extends StatelessWidget {
             children: [
               Icon(Icons.edit_rounded, size: Gold.t16, color: Ink.violetDeep),
               SizedBox(width: Gold.s8),
-              Text('Edit details'),
+              AppText('Edit details'),
             ],
           ),
         ),
@@ -9755,7 +9501,7 @@ class _ProfileMenu extends StatelessWidget {
             children: [
               Icon(Icons.sell_rounded, size: Gold.t16, color: Ink.green),
               SizedBox(width: Gold.s8),
-              Text('Record sale'),
+              AppText('Record sale'),
             ],
           ),
         ),
@@ -9765,7 +9511,7 @@ class _ProfileMenu extends StatelessWidget {
             children: [
               Icon(Icons.warning_amber_rounded, size: Gold.t16, color: Ink.red),
               SizedBox(width: Gold.s8),
-              Text('Record death'),
+              AppText('Record death'),
             ],
           ),
         ),
@@ -9791,7 +9537,7 @@ class _Chip extends StatelessWidget {
         shape: const SquircleBorder(radius: Gold.r8),
         color: color.withValues(alpha: 0.14),
       ),
-      child: Text(
+      child: AppText(
         label,
         style: TextStyle(
           fontSize: Gold.t10,
@@ -9837,7 +9583,7 @@ class _RecordLine extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
@@ -9846,7 +9592,7 @@ class _RecordLine extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: Gold.s2),
-                Text(
+                AppText(
                   subtitle,
                   style: const TextStyle(
                     color: Ink.muted,
@@ -9879,7 +9625,7 @@ class FormPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
-      appBar: AppBar(title: Text(title), leading: const _BackButton()),
+      appBar: AppBar(title: AppText(title), leading: const _BackButton()),
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
@@ -9979,7 +9725,7 @@ class _SuggestionFieldState extends State<SuggestionField> {
                       color: Ink.violet,
                       size: Gold.t16,
                     ),
-                    title: Text(
+                    title: AppText(
                       choices[index],
                       style: const TextStyle(
                         color: Ink.navy,
@@ -10122,7 +9868,7 @@ class AgeSelector extends StatelessWidget {
           ),
           items: [
             for (final v in values)
-              DropdownMenuItem<String>(value: v, child: Text(v)),
+              DropdownMenuItem<String>(value: v, child: AppText(v)),
           ],
           onChanged: (v) {
             if (v != null) _apply(v);
@@ -10348,7 +10094,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   isCow ? 'Cow Photo' : 'Calf Photo',
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
@@ -10402,7 +10148,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                       _imageData = '';
                       _imageUrl.clear();
                     }),
-                    child: const Text(
+                    child: const AppText(
                       'Remove photo',
                       style: TextStyle(
                         color: Ink.red,
@@ -10450,7 +10196,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                 size: Gold.t21,
               ),
               const SizedBox(width: Gold.s13),
-              Text(
+              AppText(
                 'ID  $currentId',
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
@@ -10478,7 +10224,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           decoration: fieldStyle('Breed', icon: Icons.category_outlined),
           items: [
             for (final b in breeds)
-              DropdownMenuItem<String>(value: b, child: Text(b)),
+              DropdownMenuItem<String>(value: b, child: AppText(b)),
           ],
           onChanged: (v) => setState(() => _breed = v ?? _breed),
         ),
@@ -10534,7 +10280,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             ),
             items: [
               for (final n in motherNames())
-                DropdownMenuItem<String>(value: n, child: Text(n)),
+                DropdownMenuItem<String>(value: n, child: AppText(n)),
             ],
             onChanged: (v) => setState(() => _mother = v ?? _mother),
           ),
@@ -10545,8 +10291,11 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             borderRadius: BorderRadius.circular(Gold.r21),
             decoration: fieldStyle('Gender', icon: Icons.wc_rounded),
             items: const [
-              DropdownMenuItem<String>(value: 'Female', child: Text('Female')),
-              DropdownMenuItem<String>(value: 'Male', child: Text('Male')),
+              DropdownMenuItem<String>(
+                value: 'Female',
+                child: AppText('Female'),
+              ),
+              DropdownMenuItem<String>(value: 'Male', child: AppText('Male')),
             ],
             onChanged: (v) => setState(() => _gender = v ?? _gender),
           ),
@@ -10658,16 +10407,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       if (_cow.isEmpty) {
         snack(
           context,
-          isDataEntryUser ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
+          tamilUi ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
         );
         return;
       }
       if (quantity <= 0) {
         snack(
           context,
-          isDataEntryUser
-              ? 'பால் அளவை உள்ளிடவும்'
-              : 'Please enter the milk quantity',
+          tamilUi ? 'பால் அளவை உள்ளிடவும்' : 'Please enter the milk quantity',
         );
         return;
       }
@@ -10687,7 +10434,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       if (quantity <= 0) {
         snack(
           context,
-          isDataEntryUser ? 'அளவை உள்ளிடவும்' : 'Please enter the quantity',
+          tamilUi ? 'அளவை உள்ளிடவும்' : 'Please enter the quantity',
         );
         return;
       }
@@ -10759,7 +10506,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             isExpanded: true,
             borderRadius: BorderRadius.circular(Gold.r21),
             decoration: fieldStyle(
-              isDataEntryUser ? 'மாடு' : 'Cow',
+              tamilUi ? 'மாடு' : 'Cow',
               prefix: const Padding(
                 padding: EdgeInsets.only(left: Gold.s13, right: Gold.s8),
                 child: CowHoofIcon(size: Gold.s34),
@@ -10767,21 +10514,21 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             ),
             items: [
               for (final c in cows)
-                DropdownMenuItem<String>(value: c, child: Text(c)),
+                DropdownMenuItem<String>(value: c, child: AppText(c)),
             ],
             onChanged: (v) => setState(() => _cow = v ?? _cow),
           ),
         const SizedBox(height: Gold.s13),
         DateField(
           controller: _date,
-          label: isDataEntryUser ? 'தேதி' : 'Date',
+          label: tamilUi ? 'தேதி' : 'Date',
           onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _time,
           decoration: fieldStyle(
-            isDataEntryUser ? 'நேரம்' : 'Time',
+            tamilUi ? 'நேரம்' : 'Time',
             icon: Icons.schedule_rounded,
           ),
         ),
@@ -10792,7 +10539,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: isDataEntryUser
+            labels: tamilUi
                 ? const ['காலை', 'மதியம்', 'மாலை']
                 : const ['Morning', 'Afternoon', 'Evening'],
             index: const [
@@ -10810,7 +10557,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           controller: _milk,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
-            isDataEntryUser ? 'பால் அளவு (லிட்டர்)' : 'Milk Quantity (Liter)',
+            tamilUi ? 'பால் அளவு (லிட்டர்)' : 'Milk Quantity (Liter)',
             icon: Icons.water_drop_outlined,
           ),
         ),
@@ -10827,7 +10574,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: isDataEntryUser
+            labels: tamilUi
                 ? const ['மாடுகள்', 'கன்றுகள்']
                 : const ['Cows', 'Calves'],
             index: _feedTarget,
@@ -10888,7 +10635,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                     ),
                     const SizedBox(width: Gold.s13),
                     Expanded(
-                      child: Text(
+                      child: AppText(
                         _stockItems[i],
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -10899,8 +10646,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                         ),
                       ),
                     ),
-                    Text(
-                      isDataEntryUser
+                    AppText(
+                      tamilUi
                           ? '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])} உள்ளது'
                           : '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])} left',
                       style: TextStyle(
@@ -10919,14 +10666,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         const SizedBox(height: Gold.s5),
         DateField(
           controller: _date,
-          label: isDataEntryUser ? 'தேதி' : 'Date',
+          label: tamilUi ? 'தேதி' : 'Date',
           onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _time,
           decoration: fieldStyle(
-            isDataEntryUser ? 'நேரம்' : 'Time',
+            tamilUi ? 'நேரம்' : 'Time',
             icon: Icons.schedule_rounded,
           ),
         ),
@@ -10935,7 +10682,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           controller: _qty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
-            isDataEntryUser
+            tamilUi
                 ? 'பயன்படுத்திய அளவு (${stockUnit(_stockItems[_stockItem])})'
                 : 'Quantity used (${stockUnit(_stockItems[_stockItem])})',
             icon: Icons.inventory_2_outlined,
@@ -10978,7 +10725,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   @override
   Widget build(BuildContext context) {
     return FormPage(
-      title: isDataEntryUser ? 'புதிய பதிவு' : 'Add Entry',
+      title: tamilUi ? 'புதிய பதிவு' : 'Add Entry',
       children: [
         Glass(
           radius: Gold.r21,
@@ -10986,10 +10733,10 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: isDataEntryUser
+            labels: tamilUi
                 ? const ['பால்', 'தீவனம்']
                 : const ['Milk', 'Stock Use', 'Others'],
-            icons: isDataEntryUser
+            icons: tamilUi
                 ? const [Icons.water_drop_rounded, Icons.inventory_2_rounded]
                 : const [
                     Icons.water_drop_rounded,
@@ -11017,14 +10764,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
           decoration: fieldStyle(
-            isDataEntryUser ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
+            tamilUi ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
           ),
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: switch (_mode) {
-            0 => isDataEntryUser ? 'பால் பதிவை சேமி' : 'Save Milk Entry',
-            1 => isDataEntryUser ? 'தீவனத்தை கழி' : 'Use Stock',
+            0 => tamilUi ? 'பால் பதிவை சேமி' : 'Save Milk Entry',
+            1 => tamilUi ? 'தீவனத்தை கழி' : 'Use Stock',
             _ => 'Save Other Expense',
           },
           icon: Icons.check_rounded,
@@ -11075,7 +10822,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
     if (!canRecordEntries) {
       snack(
         context,
-        isDataEntryUser
+        tamilUi
             ? 'இந்த பதிவு செய்ய அனுமதி இல்லை'
             : 'Your ranch role does not allow doctor entries',
       );
@@ -11089,7 +10836,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
     if (_visit == 0 && _problem.text.trim().isEmpty) {
       snack(
         context,
-        isDataEntryUser
+        tamilUi
             ? 'உடல்நிலை பிரச்சனையை எழுதவும்'
             : 'Please describe the problem',
       );
@@ -11143,7 +10890,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
       return FormPage(
-        title: isDataEntryUser ? 'மருத்துவர் பதிவு' : 'Doctor Visit',
+        title: tamilUi ? 'மருத்துவர் பதிவு' : 'Doctor Visit',
         children: const [
           EmptyNote(
             icon: Icons.search_off_rounded,
@@ -11156,7 +10903,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
     final animal = asMap(raw);
 
     return FormPage(
-      title: isDataEntryUser ? 'மருத்துவர் / சினை பதிவு' : 'Add Doctor Visit',
+      title: tamilUi ? 'மருத்துவர் / சினை பதிவு' : 'Add Doctor Visit',
       children: [
         Glass(
           radius: Gold.r21,
@@ -11178,7 +10925,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
                   ),
                 ),
               ),
-              Text(
+              AppText(
                 '#${txt(animal, 'id')}',
                 style: const TextStyle(
                   color: Ink.muted,
@@ -11196,7 +10943,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: isDataEntryUser
+            labels: tamilUi
                 ? const ['மருத்துவம்', 'சினை ஊசி']
                 : const ['Problem', 'Pregnancy Injection'],
             index: _visit,
@@ -11206,14 +10953,14 @@ class _DoctorScreenState extends State<DoctorScreen> {
         const SizedBox(height: Gold.s16),
         DateField(
           controller: _date,
-          label: isDataEntryUser ? 'தேதி' : 'Date',
+          label: tamilUi ? 'தேதி' : 'Date',
           onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _time,
           decoration: fieldStyle(
-            isDataEntryUser ? 'நேரம்' : 'Time',
+            tamilUi ? 'நேரம்' : 'Time',
             icon: Icons.schedule_rounded,
           ),
         ),
@@ -11223,7 +10970,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
             controller: _problem,
             textCapitalization: TextCapitalization.sentences,
             decoration: fieldStyle(
-              isDataEntryUser ? 'உடல்நிலை பிரச்சனை' : 'Problem',
+              tamilUi ? 'உடல்நிலை பிரச்சனை' : 'Problem',
               icon: Icons.healing_rounded,
             ),
           ),
@@ -11231,7 +10978,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
           TextField(
             controller: _medicine,
             decoration: fieldStyle(
-              isDataEntryUser ? 'ஊசி / மருந்து' : 'Injection / Medicine',
+              tamilUi ? 'ஊசி / மருந்து' : 'Injection / Medicine',
               icon: Icons.vaccines_rounded,
             ),
           ),
@@ -11241,12 +10988,12 @@ class _DoctorScreenState extends State<DoctorScreen> {
             isExpanded: true,
             borderRadius: BorderRadius.circular(Gold.r21),
             decoration: fieldStyle(
-              isDataEntryUser ? 'சினை ஊசி வகை' : 'Breed Injection Name',
+              tamilUi ? 'சினை ஊசி வகை' : 'Breed Injection Name',
               icon: Icons.science_outlined,
             ),
             items: [
               for (final s in semenTypes)
-                DropdownMenuItem<String>(value: s, child: Text(s)),
+                DropdownMenuItem<String>(value: s, child: AppText(s)),
             ],
             onChanged: (v) => setState(() => _semen = v ?? _semen),
           ),
@@ -11255,7 +11002,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
           controller: _cost,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
-            isDataEntryUser ? 'செலவு' : 'Cost',
+            tamilUi ? 'செலவு' : 'Cost',
             icon: Icons.payments_outlined,
           ),
         ),
@@ -11265,12 +11012,12 @@ class _DoctorScreenState extends State<DoctorScreen> {
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
           decoration: fieldStyle(
-            isDataEntryUser ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
+            tamilUi ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
           ),
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
-          label: isDataEntryUser ? 'பதிவை சேமி' : 'Save Doctor Visit',
+          label: tamilUi ? 'பதிவை சேமி' : 'Save Doctor Visit',
           icon: Icons.check_rounded,
           busy: _saving,
           onPressed: _save,
@@ -11462,7 +11209,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
               ),
               const SizedBox(width: Gold.s13),
               Expanded(
-                child: Text(
+                child: AppText(
                   'Mother  $motherName',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -11505,7 +11252,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           decoration: fieldStyle('Breed', icon: Icons.category_outlined),
           items: [
             for (final b in breeds)
-              DropdownMenuItem<String>(value: b, child: Text(b)),
+              DropdownMenuItem<String>(value: b, child: AppText(b)),
           ],
           onChanged: (v) => setState(() => _breed = v ?? _breed),
         ),
@@ -11516,8 +11263,8 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           borderRadius: BorderRadius.circular(Gold.r21),
           decoration: fieldStyle('Gender', icon: Icons.wc_rounded),
           items: const [
-            DropdownMenuItem<String>(value: 'Female', child: Text('Female')),
-            DropdownMenuItem<String>(value: 'Male', child: Text('Male')),
+            DropdownMenuItem<String>(value: 'Female', child: AppText('Female')),
+            DropdownMenuItem<String>(value: 'Male', child: AppText('Male')),
           ],
           onChanged: (v) => setState(() => _gender = v ?? _gender),
         ),
@@ -11693,7 +11440,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
               contentPadding: EdgeInsets.zero,
               value: _withCalves,
               activeThumbColor: Ink.violet,
-              title: Text(
+              title: AppText(
                 calfCount == 1
                     ? 'Sell 1 calf together'
                     : 'Sell $calfCount calves together',
@@ -11771,11 +11518,11 @@ class _DeathScreenState extends State<DeathScreen> {
       builder: (ctx) => AlertDialog(
         shape: const SquircleBorder(radius: Gold.r27),
         backgroundColor: Colors.white,
-        title: const Text(
+        title: const AppText(
           'Record this death?',
           style: TextStyle(fontWeight: FontWeight.w900, fontSize: Gold.t16),
         ),
-        content: const Text(
+        content: const AppText(
           'The animal will be marked as died and removed from active lists. '
           'Its records stay in your reports.',
           style: TextStyle(fontSize: Gold.t13, height: 1.45),
@@ -11783,11 +11530,11 @@ class _DeathScreenState extends State<DeathScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: const AppText('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
+            child: const AppText(
               'Confirm',
               style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
             ),
@@ -11876,7 +11623,7 @@ class _DeathScreenState extends State<DeathScreen> {
           decoration: fieldStyle('Reason', icon: Icons.help_outline_rounded),
           items: [
             for (final r in deathReasons)
-              DropdownMenuItem<String>(value: r, child: Text(r)),
+              DropdownMenuItem<String>(value: r, child: AppText(r)),
           ],
           onChanged: (v) => setState(() => _reason = v ?? _reason),
         ),
@@ -12079,8 +11826,8 @@ class _SellScreenState extends State<SellScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            isDataEntryUser ? 'இன்றைய பால் இருப்பு' : "Today's Milk Balance",
+          AppText(
+            tamilUi ? 'இன்றைய பால் இருப்பு' : "Today's Milk Balance",
             style: const TextStyle(
               fontSize: Gold.t16,
               fontWeight: FontWeight.w900,
@@ -12089,17 +11836,17 @@ class _SellScreenState extends State<SellScreen> {
           ),
           const SizedBox(height: Gold.s13),
           _BalanceRow(
-            label: isDataEntryUser ? 'கறந்த பால்' : 'Collected',
+            label: tamilUi ? 'கறந்த பால்' : 'Collected',
             value: '${collected.toStringAsFixed(1)} L',
             color: Ink.violet,
           ),
           _BalanceRow(
-            label: isDataEntryUser ? 'ஏற்கனவே விற்றது' : 'Already sold',
+            label: tamilUi ? 'ஏற்கனவே விற்றது' : 'Already sold',
             value: '${sold.toStringAsFixed(1)} L',
             color: Ink.amber,
           ),
           _BalanceRow(
-            label: isDataEntryUser ? 'மீதம் உள்ளது' : 'Available',
+            label: tamilUi ? 'மீதம் உள்ளது' : 'Available',
             value: '${available.toStringAsFixed(1)} L',
             color: Ink.green,
             emphasise: true,
@@ -12110,12 +11857,12 @@ class _SellScreenState extends State<SellScreen> {
               color: Ink.violet.withValues(alpha: 0.10),
             ),
             _BalanceRow(
-              label: isDataEntryUser ? 'இப்போது விற்பது' : 'Selling now',
+              label: tamilUi ? 'இப்போது விற்பது' : 'Selling now',
               value: '${selling.toStringAsFixed(1)} L',
               color: Ink.violetDeep,
             ),
             _BalanceRow(
-              label: isDataEntryUser
+              label: tamilUi
                   ? (over ? 'பால் போதவில்லை' : 'விற்ற பின் மீதம்')
                   : (over ? 'Not enough milk' : 'Balance after sale'),
               value: '${after.toStringAsFixed(1)} L',
@@ -12134,9 +11881,7 @@ class _SellScreenState extends State<SellScreen> {
     padding: const EdgeInsets.all(Gold.s5),
     elevation: 0.72,
     child: LiquidSegmentBar(
-      labels: isDataEntryUser
-          ? const ['விற்பனை', 'தீவனம்']
-          : const ['Sell', 'Stock'],
+      labels: tamilUi ? const ['விற்பனை', 'தீவனம்'] : const ['Sell', 'Stock'],
       icons: const [Icons.sell_rounded, Icons.inventory_2_rounded],
       index: _section,
       onChanged: (value) => setState(() => _section = value),
@@ -12196,8 +11941,8 @@ class _SellScreenState extends State<SellScreen> {
           children: [
             _sectionSwitcher(),
             const SizedBox(height: Gold.s21),
-            Text(
-              isDataEntryUser ? 'தீவன இருப்பு' : 'Stock',
+            AppText(
+              tamilUi ? 'தீவன இருப்பு' : 'Stock',
               style: const TextStyle(
                 fontSize: Gold.t34,
                 fontWeight: FontWeight.w900,
@@ -12207,8 +11952,8 @@ class _SellScreenState extends State<SellScreen> {
               ),
             ),
             const SizedBox(height: Gold.s3),
-            Text(
-              isDataEntryUser
+            AppText(
+              tamilUi
                   ? 'வைக்கோல் மற்றும் தவிடு இருப்பை பதிவு செய்யவும்'
                   : 'Track Vaikol and Thavudu without double-counting expenses',
               style: const TextStyle(
@@ -12243,8 +11988,8 @@ class _SellScreenState extends State<SellScreen> {
                             color: i == 0 ? Ink.amber : Ink.violet,
                           ),
                           const SizedBox(height: Gold.s13),
-                          Text(
-                            isDataEntryUser
+                          AppText(
+                            tamilUi
                                 ? (i == 0 ? 'வைக்கோல்' : 'தவிடு')
                                 : _stockItems[i],
                             style: const TextStyle(
@@ -12252,7 +11997,7 @@ class _SellScreenState extends State<SellScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          Text(
+                          AppText(
                             '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])}',
                             style: const TextStyle(
                               color: Ink.navy,
@@ -12269,9 +12014,7 @@ class _SellScreenState extends State<SellScreen> {
             ),
             const SizedBox(height: Gold.s21),
             SectionTitle(
-              title: isDataEntryUser
-                  ? 'வாங்கிய தீவனத்தை சேர்'
-                  : 'Add Purchased Stock',
+              title: tamilUi ? 'வாங்கிய தீவனத்தை சேர்' : 'Add Purchased Stock',
             ),
             Glass(
               radius: Gold.r27,
@@ -12279,16 +12022,14 @@ class _SellScreenState extends State<SellScreen> {
               child: Column(
                 children: [
                   LiquidSegmentBar(
-                    labels: isDataEntryUser
-                        ? const ['வைக்கோல்', 'தவிடு']
-                        : _stockItems,
+                    labels: tamilUi ? const ['வைக்கோல்', 'தவிடு'] : _stockItems,
                     index: _stockItem,
                     onChanged: (value) => setState(() => _stockItem = value),
                   ),
                   const SizedBox(height: Gold.s13),
                   DateField(
                     controller: _date,
-                    label: isDataEntryUser ? 'வாங்கிய தேதி' : 'Purchase Date',
+                    label: tamilUi ? 'வாங்கிய தேதி' : 'Purchase Date',
                     onChanged: () => setState(() {}),
                   ),
                   const SizedBox(height: Gold.s13),
@@ -12298,7 +12039,7 @@ class _SellScreenState extends State<SellScreen> {
                       decimal: true,
                     ),
                     decoration: fieldStyle(
-                      isDataEntryUser
+                      tamilUi
                           ? 'வாங்கிய அளவு (${stockUnit(_stockItems[_stockItem])})'
                           : 'Purchased Quantity (${stockUnit(_stockItems[_stockItem])})',
                       icon: Icons.scale_rounded,
@@ -12311,7 +12052,7 @@ class _SellScreenState extends State<SellScreen> {
                       decimal: true,
                     ),
                     decoration: fieldStyle(
-                      isDataEntryUser ? 'மொத்த தொகை' : 'Total Purchase Amount',
+                      tamilUi ? 'மொத்த தொகை' : 'Total Purchase Amount',
                       icon: Icons.payments_outlined,
                     ),
                   ),
@@ -12320,14 +12061,12 @@ class _SellScreenState extends State<SellScreen> {
                     controller: _stockNotes,
                     maxLines: 2,
                     decoration: fieldStyle(
-                      isDataEntryUser
-                          ? 'குறிப்பு (விருப்பம்)'
-                          : 'Notes (optional)',
+                      tamilUi ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
                     ),
                   ),
                   const SizedBox(height: Gold.s21),
                   LiquidButton(
-                    label: isDataEntryUser ? 'இருப்பில் சேர்' : 'Add to Stock',
+                    label: tamilUi ? 'இருப்பில் சேர்' : 'Add to Stock',
                     icon: Icons.add_box_rounded,
                     busy: _saving,
                     onPressed: _saveStockPurchase,
@@ -12338,7 +12077,7 @@ class _SellScreenState extends State<SellScreen> {
             if (recent.isNotEmpty) ...[
               const SizedBox(height: Gold.s21),
               SectionTitle(
-                title: isDataEntryUser
+                title: tamilUi
                     ? 'சமீபத்திய தீவன பதிவுகள்'
                     : 'Recent Stock Movements',
               ),
@@ -12363,21 +12102,21 @@ class _SellScreenState extends State<SellScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              AppText(
                                 '${txt(record, 'item')} · ${txt(record, 'movement')}',
                                 style: const TextStyle(
                                   color: Ink.navy,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              Text(
+                              AppText(
                                 '${txt(record, 'date')} · ${txt(record, 'target', txt(record, 'addedBy'))}',
                                 style: const TextStyle(color: Ink.muted),
                               ),
                             ],
                           ),
                         ),
-                        Text(
+                        AppText(
                           '${txt(record, 'movement') == 'Usage' ? '-' : '+'}${numv(record, 'quantityKg').toStringAsFixed(1)} ${stockUnit(txt(record, 'item'))}',
                           style: TextStyle(
                             color: txt(record, 'movement') == 'Usage'
@@ -12428,8 +12167,8 @@ class _SellScreenState extends State<SellScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        isDataEntryUser ? 'பால் விற்பனை' : 'Sell',
+                      AppText(
+                        tamilUi ? 'பால் விற்பனை' : 'Sell',
                         style: const TextStyle(
                           fontSize: Gold.t34,
                           fontWeight: FontWeight.w900,
@@ -12439,8 +12178,8 @@ class _SellScreenState extends State<SellScreen> {
                         ),
                       ),
                       const SizedBox(height: Gold.s3),
-                      Text(
-                        isDataEntryUser
+                      AppText(
+                        tamilUi
                             ? 'விற்ற பால் அளவு மற்றும் தொகையை பதிவு செய்யவும்'
                             : 'Milk, cow, calf and manure sales',
                         style: const TextStyle(
@@ -12490,7 +12229,7 @@ class _SellScreenState extends State<SellScreen> {
                   index: 2,
                   child: DateField(
                     controller: _date,
-                    label: isDataEntryUser ? 'தேதி' : 'Date',
+                    label: tamilUi ? 'தேதி' : 'Date',
                     onChanged: () => setState(() {}),
                   ),
                 ),
@@ -12528,7 +12267,7 @@ class _SellScreenState extends State<SellScreen> {
                               for (final a in list)
                                 DropdownMenuItem<String>(
                                   value: '${a['key']}',
-                                  child: Text(
+                                  child: AppText(
                                     '${txt(a, 'name')}  #${txt(a, 'id')}',
                                   ),
                                 ),
@@ -12562,9 +12301,7 @@ class _SellScreenState extends State<SellScreen> {
                           'customerName',
                           where: (record) => txt(record, 'type') == 'Milk',
                         ),
-                        label: isDataEntryUser
-                            ? 'வாங்குபவர் பெயர்'
-                            : 'Customer Name',
+                        label: tamilUi ? 'வாங்குபவர் பெயர்' : 'Customer Name',
                         icon: Icons.person_outline_rounded,
                         onSelected: (name) {
                           final previous = lastMilkQuantityForCustomer(name);
@@ -12587,9 +12324,7 @@ class _SellScreenState extends State<SellScreen> {
                         decimal: true,
                       ),
                       decoration: fieldStyle(
-                        isDataEntryUser
-                            ? 'பால் அளவு (லிட்டர்)'
-                            : 'Quantity ($_unit)',
+                        tamilUi ? 'பால் அளவு (லிட்டர்)' : 'Quantity ($_unit)',
                         icon: Icons.inventory_2_outlined,
                       ),
                     ),
@@ -12603,7 +12338,7 @@ class _SellScreenState extends State<SellScreen> {
                         decimal: true,
                       ),
                       decoration: fieldStyle(
-                        isDataEntryUser
+                        tamilUi
                             ? 'ஒரு லிட்டர் விலை'
                             : (_type == 0
                                   ? 'Price per Liter'
@@ -12643,10 +12378,8 @@ class _SellScreenState extends State<SellScreen> {
                         ),
                         const SizedBox(width: Gold.s13),
                         Expanded(
-                          child: Text(
-                            isDataEntryUser
-                                ? 'மொத்த தொகை'
-                                : 'Calculated Amount',
+                          child: AppText(
+                            tamilUi ? 'மொத்த தொகை' : 'Calculated Amount',
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               color: Ink.navy,
@@ -12674,9 +12407,7 @@ class _SellScreenState extends State<SellScreen> {
                     maxLines: 3,
                     textCapitalization: TextCapitalization.sentences,
                     decoration: fieldStyle(
-                      isDataEntryUser
-                          ? 'குறிப்பு (விருப்பம்)'
-                          : 'Notes (optional)',
+                      tamilUi ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
                     ),
                   ),
                 ),
@@ -12684,7 +12415,7 @@ class _SellScreenState extends State<SellScreen> {
                 Reveal(
                   index: 8,
                   child: LiquidButton(
-                    label: isDataEntryUser
+                    label: tamilUi
                         ? 'பால் விற்பனையை சேமி'
                         : 'Save ${_types[_type]} Sale',
                     icon: Icons.check_circle_rounded,
@@ -12729,7 +12460,7 @@ class _BalanceRow extends StatelessWidget {
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
-            child: Text(
+            child: AppText(
               label,
               style: TextStyle(
                 fontWeight: emphasise ? FontWeight.w800 : FontWeight.w600,
@@ -12806,7 +12537,7 @@ class RecordListScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
-      appBar: AppBar(title: Text(title), leading: const _BackButton()),
+      appBar: AppBar(title: AppText(title), leading: const _BackButton()),
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
@@ -12902,7 +12633,7 @@ class _MiniStat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AppText(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -12986,7 +12717,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      AppText(
                         'Reports',
                         style: TextStyle(
                           fontSize: Gold.t34,
@@ -12997,7 +12728,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         ),
                       ),
                       SizedBox(height: Gold.s3),
-                      Text(
+                      AppText(
                         'Track, analyze and grow your ranch',
                         style: TextStyle(
                           color: Ink.muted,
@@ -13091,7 +12822,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   Row(
                     children: [
                       const Expanded(
-                        child: Text(
+                        child: AppText(
                           'Net Result',
                           style: TextStyle(
                             fontSize: Gold.t16,
@@ -13114,7 +12845,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   const SizedBox(height: Gold.s13),
                   ProfitBar(income: income, expense: expense),
                   const SizedBox(height: Gold.s8),
-                  Text(
+                  AppText(
                     net >= 0
                         ? 'Profit for ${_period.toLowerCase()}'
                         : 'Loss for ${_period.toLowerCase()}',
@@ -13206,7 +12937,7 @@ class _SummaryTile extends StatelessWidget {
             child: Icon(icon, color: color, size: Gold.t16),
           ),
           const Spacer(),
-          Text(
+          AppText(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -13286,7 +13017,7 @@ class ProfitBar extends StatelessWidget {
           children: [
             const _Dot(color: Ink.green),
             const SizedBox(width: Gold.s5),
-            Text(
+            AppText(
               'Income ${money(income)}',
               style: const TextStyle(
                 fontSize: Gold.t10,
@@ -13297,7 +13028,7 @@ class ProfitBar extends StatelessWidget {
             const Spacer(),
             const _Dot(color: Ink.red),
             const SizedBox(width: Gold.s5),
-            Text(
+            AppText(
               'Expense ${money(expense)}',
               style: const TextStyle(
                 fontSize: Gold.t10,
@@ -13365,7 +13096,7 @@ class _ReportLink extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -13373,18 +13104,6 @@ class _ReportLink extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     color: Ink.navy,
                     fontSize: Gold.t16,
-                  ),
-                ),
-                const SizedBox(height: Gold.s2),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Ink.muted,
-                    fontSize: Gold.t10,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -13502,7 +13221,7 @@ class ReportDetailScreen extends StatelessWidget {
                   color: Ink.navy,
                 ),
               ),
-              Text(
+              AppText(
                 '${ownerName()} \u2022 ${placeName()}',
                 style: const TextStyle(color: Ink.muted, fontSize: Gold.t11),
               ),
@@ -13590,7 +13309,7 @@ class ReportDetailScreen extends StatelessWidget {
       return Scaffold(
         backgroundColor: Ink.canvasTop,
         extendBodyBehindAppBar: true,
-        appBar: AppBar(title: Text(_title), leading: const _BackButton()),
+        appBar: AppBar(title: AppText(_title), leading: const _BackButton()),
         body: Shell(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
@@ -13610,7 +13329,7 @@ class ReportDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
-      appBar: AppBar(title: Text(_title), leading: const _BackButton()),
+      appBar: AppBar(title: AppText(_title), leading: const _BackButton()),
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
@@ -13650,7 +13369,7 @@ class ReportDetailScreen extends StatelessWidget {
                           Row(
                             children: [
                               Expanded(
-                                child: Text(
+                                child: AppText(
                                   buckets[i].key,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
@@ -13659,7 +13378,7 @@ class ReportDetailScreen extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              Text(
+                              AppText(
                                 money(net),
                                 style: TextStyle(
                                   fontWeight: FontWeight.w900,
@@ -13710,7 +13429,7 @@ class _Cell extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AppText(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -13909,13 +13628,6 @@ class ExportReportScreen extends StatelessWidget {
     return FormPage(
       title: 'Export',
       children: [
-        const EmptyNote(
-          icon: Icons.table_view_rounded,
-          title: 'Open everything in Excel',
-          message:
-              'Download one workbook with separate sheets for every ranch record, or use the individual CSV files below.',
-        ),
-        const SizedBox(height: Gold.s21),
         _ExportTile(
           title: 'All Data - Excel Workbook',
           subtitle:
@@ -14044,7 +13756,7 @@ class _ExportTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -14052,16 +13764,6 @@ class _ExportTile extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     color: Ink.navy,
                     fontSize: Gold.t13,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Ink.muted,
-                    fontSize: Gold.t10,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -14093,7 +13795,7 @@ class SettingsScreen extends StatelessWidget {
         backgroundColor: Ink.canvasTop,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
-          title: const Text('Settings'),
+          title: const AppText('Settings'),
           leading: const _BackButton(),
         ),
         body: Shell(
@@ -14121,7 +13823,7 @@ class SettingsScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
+                            AppText(
                               appName(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -14144,7 +13846,7 @@ class SettingsScreen extends StatelessWidget {
                                 color: Ink.body,
                               ),
                             ),
-                            Text(
+                            AppText(
                               '${ownerName()} \u2022 ${placeName()}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -14164,6 +13866,37 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: Gold.s21),
+              _InsetGroup(
+                children: [
+                  ListTile(
+                    leading: const Icon(CupertinoIcons.globe, color: _blue),
+                    title: const AppText('Language'),
+                    trailing: DropdownButton<String>(
+                      value: tamilUi ? 'Tamil' : 'English',
+                      underline: const SizedBox.shrink(),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'English',
+                          child: AppText('English'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Tamil',
+                          child: AppText('தமிழ்'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setSetting('languageMode', v);
+                      },
+                    ),
+                  ),
+                  _ActionRow(
+                    icon: CupertinoIcons.info_circle,
+                    label: 'Info',
+                    onTap: () => push(context, const AppInfoScreen()),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
               Reveal(index: 1, child: const SectionTitle(title: 'Ranch')),
               Reveal(
                 index: 2,
@@ -14230,14 +13963,14 @@ class SettingsScreen extends StatelessWidget {
                       builder: (ctx) => AlertDialog(
                         shape: const SquircleBorder(radius: Gold.r27),
                         backgroundColor: Colors.white,
-                        title: const Text(
+                        title: const AppText(
                           'Restore from backup?',
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: Gold.t16,
                           ),
                         ),
-                        content: const Text(
+                        content: const AppText(
                           'This replaces everything currently on this device '
                           'with the contents of the backup file.',
                           style: TextStyle(fontSize: Gold.t13, height: 1.45),
@@ -14245,11 +13978,11 @@ class SettingsScreen extends StatelessWidget {
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancel'),
+                            child: const AppText('Cancel'),
                           ),
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text(
+                            child: const AppText(
                               'Choose file',
                               style: TextStyle(
                                 color: Ink.violetDeep,
@@ -14284,7 +14017,7 @@ class SettingsScreen extends StatelessWidget {
               ],
               const SizedBox(height: Gold.s21),
               const Center(
-                child: Text(
+                child: AppText(
                   'VIMO \u2022 Manage. Care. Grow.',
                   style: TextStyle(
                     color: Ink.faint,
@@ -14342,7 +14075,7 @@ class _SettingLink extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -14350,18 +14083,6 @@ class _SettingLink extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     color: Ink.navy,
                     fontSize: Gold.t13,
-                  ),
-                ),
-                const SizedBox(height: Gold.s2),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Ink.muted,
-                    fontSize: Gold.t10,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -14500,18 +14221,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
           ),
         ),
         const SizedBox(height: Gold.s8),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: Gold.s5),
-          child: Text(
-            'Members join with this ID and require admin approval. The Ranch ID '
-            'cannot be changed after creation.',
-            style: TextStyle(
-              color: Ink.muted,
-              fontSize: Gold.t10,
-              height: 1.45,
-            ),
-          ),
-        ),
+
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: 'Save Settings',
@@ -14560,7 +14270,7 @@ class FamilyUsersScreen extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           shape: const SquircleBorder(radius: Gold.r27),
-          title: Text(
+          title: AppText(
             '${txt(request, 'name', 'New member')} wants to join',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
@@ -14588,7 +14298,7 @@ class FamilyUsersScreen extends StatelessWidget {
                     setLocal(() => role = value ?? 'Data Entry'),
               ),
               const SizedBox(height: Gold.s13),
-              Text(
+              AppText(
                 rolePermissionSummary(role),
                 style: const TextStyle(color: Ink.muted, height: 1.35),
               ),
@@ -14597,18 +14307,18 @@ class FamilyUsersScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, null),
-              child: const Text('Later'),
+              child: const AppText('Later'),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(
+              child: const AppText(
                 'Reject',
                 style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
               ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(
+              child: const AppText(
                 'Accept',
                 style: TextStyle(color: Ink.green, fontWeight: FontWeight.w900),
               ),
@@ -14647,7 +14357,7 @@ class FamilyUsersScreen extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           shape: const SquircleBorder(radius: Gold.r27),
-          title: Text(
+          title: AppText(
             'Manage ${txt(member, 'name', 'member')}',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
@@ -14668,7 +14378,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 onChanged: (value) => setLocal(() => role = value ?? role),
               ),
               const SizedBox(height: Gold.s13),
-              Text(
+              AppText(
                 rolePermissionSummary(role),
                 style: const TextStyle(color: Ink.muted, height: 1.35),
               ),
@@ -14677,18 +14387,18 @@ class FamilyUsersScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'remove'),
-              child: const Text(
+              child: const AppText(
                 'Remove',
                 style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
               ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: const AppText('Cancel'),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'save'),
-              child: const Text(
+              child: const AppText(
                 'Save Role',
                 style: TextStyle(
                   color: Ink.violetDeep,
@@ -14711,21 +14421,21 @@ class FamilyUsersScreen extends StatelessWidget {
           context: context,
           builder: (ctx) => AlertDialog(
             shape: const SquircleBorder(radius: Gold.r27),
-            title: const Text(
+            title: const AppText(
               'Remove from ranch?',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
-            content: Text(
+            content: AppText(
               '${txt(member, 'name', 'This member')} will immediately lose access to ranch data.',
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
+                child: const AppText('Cancel'),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text(
+                child: const AppText(
                   'Remove',
                   style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
                 ),
@@ -14773,7 +14483,7 @@ class FamilyUsersScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   '${txt(member, 'name', 'Ranch Member')}${self ? ' (You)' : ''}',
                   style: const TextStyle(
                     color: Ink.navy,
@@ -14799,7 +14509,7 @@ class FamilyUsersScreen extends StatelessWidget {
               shape: const SquircleBorder(radius: Gold.r13),
               color: color.withValues(alpha: 0.14),
             ),
-            child: Text(
+            child: AppText(
               role,
               style: TextStyle(
                 color: color,
@@ -14826,7 +14536,7 @@ class FamilyUsersScreen extends StatelessWidget {
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Ranch Members'),
+        title: const AppText('Ranch Members'),
         leading: const _BackButton(),
       ),
       body: Shell(
@@ -14849,14 +14559,14 @@ class FamilyUsersScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        const AppText(
                           'Ranch ID',
                           style: TextStyle(
                             color: Ink.muted,
                             fontSize: Gold.t10,
                           ),
                         ),
-                        Text(
+                        AppText(
                           ranchId(),
                           style: const TextStyle(
                             color: Ink.navy,
@@ -14873,14 +14583,14 @@ class FamilyUsersScreen extends StatelessWidget {
                         Icons.admin_panel_settings_rounded,
                         size: Gold.t13,
                       ),
-                      label: Text('Admin'),
+                      label: AppText('Admin'),
                     ),
                 ],
               ),
             ),
             if (canManageRanch) ...[
               const SizedBox(height: Gold.s21),
-              const Text(
+              const AppText(
                 'Join Requests',
                 style: TextStyle(
                   color: Ink.navy,
@@ -14954,7 +14664,7 @@ class FamilyUsersScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              const Text(
+                              const AppText(
                                 'Review',
                                 style: TextStyle(
                                   color: Ink.violetDeep,
@@ -14970,7 +14680,7 @@ class FamilyUsersScreen extends StatelessWidget {
               ),
             ],
             const SizedBox(height: Gold.s21),
-            const Text(
+            const AppText(
               'Members',
               style: TextStyle(
                 color: Ink.navy,
@@ -15051,7 +14761,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
         builder: (ctx, setLocal) => AlertDialog(
           shape: const SquircleBorder(radius: Gold.r27),
           backgroundColor: Colors.white,
-          title: const Text(
+          title: const AppText(
             'Add family user',
             style: TextStyle(fontWeight: FontWeight.w900, fontSize: Gold.t16),
           ),
@@ -15074,7 +14784,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                 decoration: fieldStyle('Role', icon: Icons.badge_outlined),
                 items: [
                   for (final r in familyRoles)
-                    DropdownMenuItem<String>(value: r, child: Text(r)),
+                    DropdownMenuItem<String>(value: r, child: AppText(r)),
                 ],
                 onChanged: (v) => setLocal(() => role = v ?? role),
               ),
@@ -15083,11 +14793,11 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: const AppText('Cancel'),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(
+              child: const AppText(
                 'Add',
                 style: TextStyle(
                   color: Ink.violetDeep,
@@ -15142,7 +14852,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
           backgroundColor: Ink.canvasTop,
           extendBodyBehindAppBar: true,
           appBar: AppBar(
-            title: const Text('Family Users'),
+            title: const AppText('Family Users'),
             leading: const _BackButton(),
           ),
           body: Shell(
@@ -15212,7 +14922,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                         fontSize: Gold.t16,
                                       ),
                                     ),
-                                    Text(
+                                    AppText(
                                       roleNotes[role] ?? role,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -15235,7 +14945,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                   shape: const SquircleBorder(radius: Gold.r8),
                                   color: color.withValues(alpha: 0.14),
                                 ),
-                                child: Text(
+                                child: AppText(
                                   role,
                                   style: TextStyle(
                                     fontSize: Gold.t10,
@@ -15305,7 +15015,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
           backgroundColor: Ink.canvasTop,
           extendBodyBehindAppBar: true,
           appBar: AppBar(
-            title: const Text('Cloud Sync'),
+            title: const AppText('Cloud Sync'),
             leading: const _BackButton(),
           ),
           body: Shell(
@@ -15336,7 +15046,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                             ),
                             const SizedBox(width: Gold.s13),
                             Expanded(
-                              child: Text(
+                              child: AppText(
                                 signedIn ? 'Connected' : 'Working offline',
                                 style: const TextStyle(
                                   fontSize: Gold.t21,
@@ -15346,17 +15056,6 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                               ),
                             ),
                           ],
-                        ),
-                        const SizedBox(height: Gold.s13),
-                        Text(
-                          signedIn
-                              ? 'Your records sync automatically every 4 hours, when the app opens, and whenever the network returns.'
-                              : 'Everything you save is stored safely on this device and will upload once you sign in.',
-                          style: const TextStyle(
-                            color: Ink.muted,
-                            fontSize: Gold.t11,
-                            height: 1.5,
-                          ),
                         ),
                       ],
                     ),
@@ -15416,7 +15115,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                       contentPadding: EdgeInsets.zero,
                       value: autoSyncEnabled(),
                       activeThumbColor: Ink.violet,
-                      title: const Text(
+                      title: const AppText(
                         'Auto Sync',
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
@@ -15424,7 +15123,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                           color: Ink.navy,
                         ),
                       ),
-                      subtitle: const Text(
+                      subtitle: const AppText(
                         'Sync in the background without asking',
                         style: TextStyle(fontSize: Gold.t10, color: Ink.muted),
                       ),
@@ -15515,7 +15214,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                           child: Row(
                             children: [
                               Expanded(
-                                child: Text(
+                                child: AppText(
                                   entry.key.replaceAll('_', ' '),
                                   style: const TextStyle(
                                     fontSize: Gold.t11,
@@ -15524,7 +15223,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                                   ),
                                 ),
                               ),
-                              Text(
+                              AppText(
                                 '${entry.value}',
                                 style: const TextStyle(
                                   fontSize: Gold.t11,
@@ -15583,7 +15282,7 @@ class WorksOfflineScreen extends StatelessWidget {
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Works Offline'),
+        title: const AppText('Works Offline'),
         leading: const _BackButton(),
       ),
       body: Shell(
@@ -15634,7 +15333,7 @@ class WorksOfflineScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            AppText(
                               _points[i][0],
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
@@ -15643,7 +15342,7 @@ class WorksOfflineScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: Gold.s2),
-                            Text(
+                            AppText(
                               _points[i][1],
                               style: const TextStyle(
                                 color: Ink.muted,
