@@ -48,9 +48,13 @@ void main() {
           home: const TaskComposerScreen(),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       expect(tester.takeException(), isNull);
-      expect(ui('New task'), 'புதிய பணி');
+      expect(ui('New task'), 'புதிய வேலை');
+      expect(find.text('முடிக்க வேண்டிய நேரம்'), findsOneWidget);
+      await tester.drag(find.byType(ListView), const Offset(0, -500));
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.ensureVisible(find.byType(FilledButton));
       await tester.tap(find.byType(FilledButton));
       await tester.pumpAndSettle();
@@ -67,6 +71,57 @@ void main() {
     expect(tamilUi, isFalse);
     await Hive.box('settings').put('languageMode', 'Tamil');
     expect(isDataEntryUser, isTrue);
-    expect(ui('Tasks'), 'பணிகள்');
+    expect(ui('Tasks'), 'வேலைகள்');
+  });
+
+  testWidgets('daily entry form hides automatic date and time fields', (
+    tester,
+  ) async {
+    await tester.runAsync(
+      () => Hive.box('settings').putAll({
+        'languageMode': 'English',
+        'currentUser': 'Appa',
+        'currentRole': 'Admin',
+      }),
+    );
+    await tester.pumpWidget(const MaterialApp(home: AddEntryScreen()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(find.byType(DateField), findsNothing);
+    expect(find.text('Date'), findsNothing);
+    expect(find.text('Time'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test('recent activity keeps its record target for menu actions', () async {
+    await Hive.box('settings').putAll({
+      'currentUser': 'Appa',
+      'currentRole': 'Admin',
+      'deviceId': 'test-device',
+    });
+    await Hive.box('milk_records').clear();
+    final key = await Hive.box('milk_records').add({
+      'cow': 'Mala',
+      'quantity': 4.5,
+      'date': todayDate(),
+      'time': currentTime(),
+      'addedBy': 'Appa',
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+
+    final activity = recentActivities(limit: 1).single;
+    expect(activity['_box'], 'milk_records');
+    expect(activity['_key'], key);
+    expect(canCorrectEntry(asMap(Hive.box('milk_records').get(key))), isTrue);
+  });
+
+  test('ranch details never leaves a standalone separator', () async {
+    await Hive.box('settings').putAll({'ownerName': '', 'place': ''});
+    expect(ranchDetails(), isEmpty);
+    await Hive.box('settings').putAll({'ownerName': 'Kumar', 'place': ''});
+    expect(ranchDetails(), 'Kumar');
+    await Hive.box('settings').put('place', 'Erode');
+    expect(ranchDetails(), 'Kumar • Erode');
   });
 }

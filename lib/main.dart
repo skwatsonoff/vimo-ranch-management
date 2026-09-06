@@ -1677,7 +1677,7 @@ class Segment extends StatelessWidget {
               if (icon != null) ...[
                 Icon(
                   icon,
-                  size: Gold.t16,
+                  size: Gold.t21,
                   color: active ? Colors.white : Ink.muted,
                 ),
                 const SizedBox(width: Gold.s5),
@@ -1787,7 +1787,7 @@ class LiquidSegmentBar extends StatelessWidget {
                                     child: Icon(
                                       icons![i],
                                       key: ValueKey<bool>(selected == i),
-                                      size: Gold.t16,
+                                      size: Gold.t21,
                                       color: selected == i
                                           ? Ink.violetDeep
                                           : Ink.faint,
@@ -2292,6 +2292,10 @@ String appName() => settingText('appName', 'VIMO');
 String farmName() => settingText('farmName', 'My Ranch');
 String ownerName() => settingText('ownerName', '');
 String placeName() => settingText('place', '');
+String ranchDetails() => [
+  ownerName().trim(),
+  placeName().trim(),
+].where((value) => value.isNotEmpty).join(' • ');
 String currencySymbol() => settingText('currency', '\u20b9');
 String currentUserName() {
   final stored = settingText('currentUser', '').trim();
@@ -3014,7 +3018,7 @@ class _AnimalPortraitState extends State<_AnimalPortrait> {
 List<Map<String, dynamic>> recentActivities({int limit = 6}) {
   final list = <Map<String, dynamic>>[];
 
-  for (final r in milkRows()) {
+  for (final r in boxRows('milk_records')) {
     list.add({
       'title': 'Milk recorded for ${txt(r, 'cow')}',
       'sub': '${txt(r, 'date')} \u2022 ${txt(r, 'time')}',
@@ -3022,9 +3026,11 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'icon': Icons.water_drop_rounded,
       'color': Ink.violet,
       'sort': activityDate(r),
+      '_box': 'milk_records',
+      '_key': r['key'],
     });
   }
-  for (final r in foodRows()) {
+  for (final r in boxRows('food_records')) {
     list.add({
       'title': 'Feed added',
       'sub':
@@ -3033,9 +3039,11 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'icon': Icons.grass_rounded,
       'color': Ink.green,
       'sort': activityDate(r),
+      '_box': 'food_records',
+      '_key': r['key'],
     });
   }
-  for (final r in stockRows()) {
+  for (final r in boxRows('stock_records')) {
     list.add({
       'title': '${txt(r, 'item')} ${txt(r, 'movement').toLowerCase()}',
       'sub': '${txt(r, 'date')} \u2022 ${txt(r, 'target', 'Stock')}',
@@ -3044,9 +3052,11 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'icon': Icons.inventory_2_rounded,
       'color': txt(r, 'movement') == 'Usage' ? Ink.amber : Ink.green,
       'sort': activityDate(r),
+      '_box': 'stock_records',
+      '_key': r['key'],
     });
   }
-  for (final r in expenseRows()) {
+  for (final r in boxRows('expense_records')) {
     list.add({
       'title': '${txt(r, 'name')} expense',
       'sub': '${txt(r, 'date')} \u2022 Others',
@@ -3054,9 +3064,11 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'icon': Icons.receipt_long_rounded,
       'color': Ink.red,
       'sort': activityDate(r),
+      '_box': 'expense_records',
+      '_key': r['key'],
     });
   }
-  for (final r in doctorRows()) {
+  for (final r in boxRows('doctor_records')) {
     list.add({
       'title': 'Health record for ${txt(r, 'cow')}',
       'sub': '${txt(r, 'type')} \u2022 ${txt(r, 'date')}',
@@ -3064,9 +3076,11 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'icon': Icons.medical_services_rounded,
       'color': Ink.blue,
       'sort': activityDate(r),
+      '_box': 'doctor_records',
+      '_key': r['key'],
     });
   }
-  for (final r in saleRows()) {
+  for (final r in boxRows('sale_records')) {
     list.add({
       'title': '${txt(r, 'category', 'Sale')} saved',
       'sub': '${txt(r, 'animal')} \u2022 ${txt(r, 'date')}',
@@ -3074,9 +3088,11 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'icon': Icons.sell_rounded,
       'color': Ink.green,
       'sort': activityDate(r),
+      '_box': 'sale_records',
+      '_key': r['key'],
     });
   }
-  for (final r in calvingRows()) {
+  for (final r in boxRows('calving_records')) {
     list.add({
       'title': 'New calf born',
       'sub': '${txt(r, 'calfName')} \u2022 Mother ${txt(r, 'mother')}',
@@ -3084,6 +3100,8 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'icon': Icons.child_care_rounded,
       'color': Ink.amber,
       'sort': activityDate(r),
+      '_box': 'calving_records',
+      '_key': r['key'],
     });
   }
 
@@ -4742,7 +4760,7 @@ class InfoRow extends StatelessWidget {
               ),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(icon, color: color, size: Gold.t16),
+            child: Icon(icon, color: color, size: Gold.t21),
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
@@ -4804,7 +4822,7 @@ class DataCard extends StatelessWidget {
               ),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(icon, color: color, size: Gold.t16),
+            child: Icon(icon, color: color, size: Gold.t21),
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
@@ -4967,16 +4985,18 @@ class EmptyNote extends StatelessWidget {
               fontSize: Gold.t16,
             ),
           ),
-          const SizedBox(height: Gold.s5),
-          AppText(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Ink.muted,
-              fontSize: Gold.t13,
-              height: 1.4,
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: Gold.s5),
+            AppText(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Ink.muted,
+                fontSize: Gold.t13,
+                height: 1.4,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -6428,7 +6448,7 @@ class RanchNotificationButton extends StatelessWidget {
         icon: Badge(
           isLabelVisible: count > 0,
           label: AppText('$count'),
-          child: const Icon(Icons.notifications_outlined),
+          child: const Icon(Icons.notifications_outlined, size: 26),
         ),
       );
     },
@@ -6543,8 +6563,7 @@ class NotificationHistoryScreen extends StatelessWidget {
                   child: EmptyNote(
                     icon: Icons.notifications_none_rounded,
                     title: 'No notifications',
-                    message:
-                        'Join requests, important cattle updates, tasks and reminders appear here.',
+                    message: '',
                   ),
                 )
               : ListView(
@@ -6632,15 +6651,243 @@ bool withinEntryEditWindow(Map<String, dynamic> record, DateTime now) {
   return !elapsed.isNegative && elapsed < const Duration(minutes: 5);
 }
 
+const correctableEntryBoxes = {
+  'milk_records',
+  'stock_records',
+  'expense_records',
+  'sale_records',
+  'doctor_records',
+};
+
 bool canCorrectEntry(Map<String, dynamic> record) {
   final uid = firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? '' : '';
   final device = settingText('deviceId', '');
   final own =
       (uid.isNotEmpty && txt(record, 'createdByUid') == uid) ||
-      (device.isNotEmpty && txt(record, 'entryDeviceId') == device);
+      (device.isNotEmpty && txt(record, 'entryDeviceId') == device) ||
+      txt(record, 'addedBy') == currentUserName();
   return canRecordEntries &&
       own &&
       withinEntryEditWindow(record, DateTime.now());
+}
+
+bool canAddEntryNote(Map<String, dynamic> record) {
+  final uid = firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? '' : '';
+  final device = settingText('deviceId', '');
+  return canRecordEntries &&
+      (canManageRanch ||
+          txt(record, 'addedBy') == currentUserName() ||
+          (uid.isNotEmpty && txt(record, 'createdByUid') == uid) ||
+          (device.isNotEmpty && txt(record, 'entryDeviceId') == device));
+}
+
+Map<String, String> editableEntryFields(
+  String boxName,
+  Map<String, dynamic> record,
+) => <String, String>{
+  if (boxName == 'milk_records' ||
+      (boxName == 'sale_records' &&
+          !{'Cow', 'Calf'}.contains(txt(record, 'type'))))
+    'quantity': 'அளவு / Quantity',
+  if (boxName == 'stock_records')
+    'quantityKg': 'அளவு (${stockUnit(txt(record, 'item'))})',
+  if (boxName == 'sale_records') 'pricePerUnit': 'விலை / Unit price',
+  if (boxName == 'expense_records' ||
+      (boxName == 'stock_records' && txt(record, 'movement') == 'Purchase'))
+    'amount': 'தொகை / Amount',
+  if (boxName == 'expense_records') 'name': 'பெயர் / Name',
+  if (boxName == 'sale_records' && txt(record, 'type') == 'Milk')
+    'customerName': 'வாங்குபவர் / Customer',
+  if (boxName == 'doctor_records') 'cost': 'தொகை / Cost',
+  if (boxName == 'doctor_records' && txt(record, 'type') != 'Pregnancy')
+    'problem': 'பிரச்சனை / Problem',
+  'notes': 'குறிப்பு / Notes',
+};
+
+Future<void> editRecentEntry(
+  BuildContext context,
+  String boxName,
+  dynamic key,
+) async {
+  final box = Hive.box(boxName);
+  final record = asMap(box.get(key));
+  if (!canCorrectEntry(record)) {
+    snack(
+      context,
+      tamilUi
+          ? 'Edit பண்ணும் 5 நிமிஷம் முடிஞ்சிடுச்சு'
+          : 'The five-minute edit time has expired',
+    );
+    return;
+  }
+  final labels = editableEntryFields(boxName, record);
+  const numeric = {'quantity', 'quantityKg', 'pricePerUnit', 'amount', 'cost'};
+  final controllers = {
+    for (final field in labels.keys)
+      field: TextEditingController(text: '${record[field] ?? ''}'),
+  };
+  String? error;
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (context, updateDialog) => AlertDialog(
+        title: AppText(tamilUi ? 'பதிவை மாற்று' : 'Edit entry'),
+        content: SizedBox(
+          width: 360,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final field in labels.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextField(
+                      controller: controllers[field.key],
+                      keyboardType: numeric.contains(field.key)
+                          ? const TextInputType.numberWithOptions(decimal: true)
+                          : TextInputType.text,
+                      decoration: InputDecoration(labelText: field.value),
+                    ),
+                  ),
+                if (error != null)
+                  AppText(error!, style: const TextStyle(color: Colors.red)),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const AppText('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final current = asMap(box.get(key));
+              if (!canCorrectEntry(current)) {
+                updateDialog(
+                  () => error = tamilUi
+                      ? 'Edit பண்ணும் 5 நிமிஷம் முடிஞ்சிடுச்சு'
+                      : 'Edit time expired',
+                );
+                return;
+              }
+              for (final field in labels.keys.where(numeric.contains)) {
+                final value = double.tryParse(controllers[field]!.text.trim());
+                if (value == null ||
+                    !value.isFinite ||
+                    value < 0 ||
+                    ({
+                          'quantity',
+                          'quantityKg',
+                          'pricePerUnit',
+                        }.contains(field) &&
+                        value == 0)) {
+                  updateDialog(
+                    () => error = tamilUi
+                        ? 'சரியான எண்ணை போடுங்க'
+                        : 'Enter a valid value',
+                  );
+                  return;
+                }
+              }
+              if (boxName == 'stock_records') {
+                final quantity = toDouble(controllers['quantityKg']!.text);
+                final old = numv(current, 'quantityKg');
+                final balance = stockBalance(txt(current, 'item'));
+                final newBalance = txt(current, 'movement') == 'Usage'
+                    ? balance + old - quantity
+                    : balance - old + quantity;
+                if (newBalance < 0) {
+                  updateDialog(
+                    () =>
+                        error = tamilUi ? 'Stock போதாது' : 'Insufficient stock',
+                  );
+                  return;
+                }
+              }
+              if (boxName == 'sale_records' &&
+                  txt(current, 'type') == 'Milk' &&
+                  toDouble(controllers['quantity']!.text) >
+                      availableMilk('Today') + numv(current, 'quantity')) {
+                updateDialog(
+                  () => error = tamilUi ? 'பால் போதாது' : 'Insufficient milk',
+                );
+                return;
+              }
+              Navigator.pop(dialogContext, true);
+            },
+            child: const AppText('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (saved == true) {
+    final current = asMap(box.get(key));
+    if (canCorrectEntry(current)) {
+      for (final field in labels.keys) {
+        current[field] = numeric.contains(field)
+            ? toDouble(controllers[field]!.text)
+            : controllers[field]!.text.trim();
+      }
+      if (boxName == 'sale_records') {
+        current['amount'] =
+            numv(current, 'quantity') * numv(current, 'pricePerUnit');
+      }
+      current['updatedAtMillis'] = DateTime.now().millisecondsSinceEpoch;
+      current['pendingUpload'] = true;
+      await box.put(key, current);
+      AutoSyncService.markDirty(reason: 'entry correction');
+    }
+  }
+  for (final controller in controllers.values) {
+    controller.dispose();
+  }
+}
+
+Future<void> addRecentEntryNote(
+  BuildContext context,
+  String boxName,
+  dynamic key,
+) async {
+  final box = Hive.box(boxName);
+  final record = asMap(box.get(key));
+  if (!canAddEntryNote(record)) return;
+  final controller = TextEditingController(text: txt(record, 'notes'));
+  final note = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: AppText(tamilUi ? 'Note சேர்க்க' : 'Add note'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 5,
+        maxLength: 1000,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: InputDecoration(hintText: ui('Note')),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const AppText('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+          child: const AppText('Save'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  if (note == null) return;
+  final latest = asMap(box.get(key));
+  if (!canAddEntryNote(latest)) return;
+  latest['notes'] = note;
+  latest['updatedAtMillis'] = DateTime.now().millisecondsSinceEpoch;
+  latest['pendingUpload'] = true;
+  await box.put(key, latest);
+  AutoSyncService.markDirty(reason: 'entry note');
 }
 
 class RecentEntryCorrections extends StatefulWidget {
@@ -6976,15 +7223,15 @@ class _MainShellState extends State<MainShell> {
         toolbarHeight: 52,
         leading: IconButton(
           tooltip: 'Settings',
-          icon: const Icon(Icons.settings_outlined),
+          icon: const Icon(Icons.settings_outlined, size: 26),
           onPressed: _openSettings,
         ),
-        title: Text(farmName(), maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(appName(), maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           if (canRecordEntries && tab != pages.length - 1)
             IconButton(
               tooltip: ui('New entry'),
-              icon: const Icon(CupertinoIcons.plus_circle, color: _blue),
+              icon: const Icon(CupertinoIcons.plus_circle, size: 27),
               onPressed: () => showEntryActions(context),
             ),
           const RanchNotificationButton(),
@@ -7145,12 +7392,12 @@ class _NavCell extends StatelessWidget {
               height: Gold.s27,
               child: item.active == null
                   ? CowHoofIcon(
-                      size: Gold.s27,
+                      size: 28,
                       color: active ? Ink.violetDeep : Ink.faint,
                     )
                   : Icon(
                       active ? item.active : item.idle,
-                      size: Gold.t21,
+                      size: 25,
                       color: color,
                     ),
             ),
@@ -7213,7 +7460,7 @@ class DashboardScreen extends StatelessWidget {
         type: 'cows',
         label: 'Total Cows',
         value: '${animalsBy('cow').length}',
-        icon: const CowMark(size: Gold.s21),
+        icon: const CowMark(size: 25),
         ghost: const CowMark(size: Gold.s89),
         accent: Ink.violet,
         onTap: onOpenCard,
@@ -7222,7 +7469,7 @@ class DashboardScreen extends StatelessWidget {
         type: 'milk',
         label: "Today's Milk",
         value: '${milkTotal('Today').toStringAsFixed(1)} L',
-        icon: const RanchIcon(type: 'bottle', size: Gold.s21, color: Ink.blue),
+        icon: const RanchIcon(type: 'bottle', size: 25, color: Ink.blue),
         ghost: const RanchIcon(type: 'milk', size: Gold.s89, color: Ink.blue),
         accent: Ink.blue,
         onTap: onOpenCard,
@@ -7231,7 +7478,7 @@ class DashboardScreen extends StatelessWidget {
         type: 'calves',
         label: 'Calves',
         value: '${animalsBy('calf').length}',
-        icon: const CowMark(size: Gold.s21),
+        icon: const CowMark(size: 25),
         ghost: const CowMark(size: Gold.s89),
         accent: Ink.amber,
         onTap: onOpenCard,
@@ -7242,7 +7489,7 @@ class DashboardScreen extends StatelessWidget {
         value: money(totalExpense('Today')),
         icon: const Icon(
           Icons.account_balance_wallet_outlined,
-          size: Gold.t21,
+          size: 25,
           color: Ink.amber,
         ),
         ghost: const Icon(
@@ -7259,7 +7506,7 @@ class DashboardScreen extends StatelessWidget {
         value: '${pregnantCowCount()}',
         icon: const Icon(
           Icons.favorite_border_rounded,
-          size: Gold.t21,
+          size: 25,
           color: Ink.violetDeep,
         ),
         ghost: const Icon(
@@ -7274,7 +7521,7 @@ class DashboardScreen extends StatelessWidget {
         type: 'expenses',
         label: 'Today Sales',
         value: money(saleIncome('Today')),
-        icon: const Icon(Icons.sell_outlined, size: Gold.t21, color: Ink.green),
+        icon: const Icon(Icons.sell_outlined, size: 25, color: Ink.green),
         ghost: const Icon(
           Icons.sell_outlined,
           size: Gold.s89,
@@ -7313,17 +7560,6 @@ class DashboardScreen extends StatelessWidget {
                           fontWeight: FontWeight.w900,
                           color: Ink.navy,
                           letterSpacing: -1,
-                        ),
-                      ),
-                      const SizedBox(height: Gold.s3),
-                      Text(
-                        farmName(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Ink.muted,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -7483,6 +7719,17 @@ class _ActivityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = entry['color'] as Color? ?? Ink.violet;
+    final boxName = txt(entry, '_box');
+    final key = entry['_key'];
+    final raw = boxName.isNotEmpty && Hive.isBoxOpen(boxName)
+        ? Hive.box(boxName).get(key)
+        : null;
+    final record = raw is Map ? asMap(raw) : <String, dynamic>{};
+    final editable =
+        correctableEntryBoxes.contains(boxName) &&
+        record.isNotEmpty &&
+        canCorrectEntry(record);
+    final canNote = record.isNotEmpty && canAddEntryNote(record);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: Gold.s5),
       child: Row(
@@ -7496,7 +7743,7 @@ class _ActivityRow extends StatelessWidget {
             ),
             child: Icon(
               entry['icon'] as IconData? ?? Icons.circle,
-              size: Gold.t16,
+              size: Gold.t21,
               color: color,
             ),
           ),
@@ -7505,15 +7752,30 @@ class _ActivityRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppText(
-                  '${entry['title']}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: Gold.t13,
-                    color: Ink.navy,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: AppText(
+                        '${entry['title']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: Gold.t13,
+                          color: Ink.navy,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: Gold.s8),
+                    AppText(
+                      '${entry['value']}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: Gold.t13,
+                        color: Ink.navy,
+                      ),
+                    ),
+                  ],
                 ),
                 AppText(
                   '${entry['sub']}',
@@ -7524,14 +7786,52 @@ class _ActivityRow extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: Gold.s8),
-          AppText(
-            '${entry['value']}',
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: Gold.t13,
-              color: Ink.navy,
+          PopupMenuButton<String>(
+            tooltip: tamilUi ? 'பதிவு options' : 'Entry options',
+            enabled: canNote,
+            icon: Icon(
+              CupertinoIcons.ellipsis,
+              size: 26,
+              color: canNote ? Ink.navy : Ink.faint,
             ),
+            onSelected: (value) async {
+              if (value == 'edit') {
+                await editRecentEntry(context, boxName, key);
+              } else if (value == 'note') {
+                await addRecentEntryNote(context, boxName, key);
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem<String>(
+                value: 'edit',
+                enabled: editable,
+                child: Row(
+                  children: [
+                    const Icon(CupertinoIcons.pencil, size: 22),
+                    const SizedBox(width: Gold.s13),
+                    Expanded(
+                      child: AppText(
+                        editable
+                            ? (tamilUi ? 'Edit பண்ணு' : 'Edit entry')
+                            : (tamilUi
+                                  ? '5 நிமிஷ edit time முடிஞ்சிடுச்சு'
+                                  : 'Five-minute edit expired'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'note',
+                child: Row(
+                  children: [
+                    const Icon(CupertinoIcons.doc_text, size: 22),
+                    const SizedBox(width: Gold.s13),
+                    AppText(tamilUi ? 'Note சேர்க்க' : 'Add note'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -8053,21 +8353,6 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                           color: Ink.navy,
                           height: 1.1,
                           letterSpacing: -0.6,
-                        ),
-                      ),
-                      const SizedBox(height: Gold.s2),
-                      AppText(
-                        isCow
-                            ? (tamilUi
-                                  ? 'பால் பதிவு செய்ய வேண்டிய மாடுகள்'
-                                  : 'Top performing cows this month')
-                            : (tamilUi
-                                  ? 'பண்ணையில் உள்ள கன்றுக்குட்டிகள்'
-                                  : 'Every calf on the ranch'),
-                        style: const TextStyle(
-                          color: Ink.muted,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -9489,7 +9774,7 @@ class _ProfileMenu extends StatelessWidget {
           value: 'edit',
           child: Row(
             children: [
-              Icon(Icons.edit_rounded, size: Gold.t16, color: Ink.violetDeep),
+              Icon(Icons.edit_rounded, size: Gold.t21, color: Ink.violetDeep),
               SizedBox(width: Gold.s8),
               AppText('Edit details'),
             ],
@@ -9499,7 +9784,7 @@ class _ProfileMenu extends StatelessWidget {
           value: 'sell',
           child: Row(
             children: [
-              Icon(Icons.sell_rounded, size: Gold.t16, color: Ink.green),
+              Icon(Icons.sell_rounded, size: Gold.t21, color: Ink.green),
               SizedBox(width: Gold.s8),
               AppText('Record sale'),
             ],
@@ -9509,7 +9794,7 @@ class _ProfileMenu extends StatelessWidget {
           value: 'died',
           child: Row(
             children: [
-              Icon(Icons.warning_amber_rounded, size: Gold.t16, color: Ink.red),
+              Icon(Icons.warning_amber_rounded, size: Gold.t21, color: Ink.red),
               SizedBox(width: Gold.s8),
               AppText('Record death'),
             ],
@@ -9723,7 +10008,7 @@ class _SuggestionFieldState extends State<SuggestionField> {
                     leading: Icon(
                       widget.icon,
                       color: Ink.violet,
-                      size: Gold.t16,
+                      size: Gold.t21,
                     ),
                     title: AppText(
                       choices[index],
@@ -9783,7 +10068,7 @@ class DateField extends StatelessWidget {
                 splashRadius: Gold.s21,
                 icon: const Icon(
                   Icons.close_rounded,
-                  size: Gold.t16,
+                  size: Gold.t21,
                   color: Ink.muted,
                 ),
                 onPressed: () {
@@ -10367,8 +10652,6 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   String _cow = '';
   bool _saving = false;
 
-  final _date = TextEditingController(text: todayDate());
-  final _time = TextEditingController(text: currentTime());
   final _milk = TextEditingController();
   final _qty = TextEditingController();
   final _expenseName = TextEditingController();
@@ -10387,8 +10670,6 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
 
   @override
   void dispose() {
-    _date.dispose();
-    _time.dispose();
     _milk.dispose();
     _qty.dispose();
     _expenseName.dispose();
@@ -10421,8 +10702,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       setState(() => _saving = true);
       await Hive.box('milk_records').add({
         'cow': _cow,
-        'date': _date.text,
-        'time': _time.text,
+        'date': todayDate(),
+        'time': currentTime(),
         'session': _session,
         'quantity': quantity,
         'notes': _notes.text.trim(),
@@ -10455,8 +10736,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         'quantityKg': quantity,
         'unit': stockUnit(item),
         'amount': 0.0,
-        'date': _date.text,
-        'time': _time.text,
+        'date': todayDate(),
+        'time': currentTime(),
         'notes': _notes.text.trim(),
         'addedBy': currentUserName(),
         'createdAt': DateTime.now().toIso8601String(),
@@ -10477,8 +10758,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         'category': 'Others',
         'name': name,
         'amount': amount,
-        'date': _date.text,
-        'time': _time.text,
+        'date': todayDate(),
+        'time': currentTime(),
         'notes': _notes.text.trim(),
         'addedBy': currentUserName(),
         'createdAt': DateTime.now().toIso8601String(),
@@ -10518,20 +10799,6 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             ],
             onChanged: (v) => setState(() => _cow = v ?? _cow),
           ),
-        const SizedBox(height: Gold.s13),
-        DateField(
-          controller: _date,
-          label: tamilUi ? 'தேதி' : 'Date',
-          onChanged: () => setState(() {}),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _time,
-          decoration: fieldStyle(
-            tamilUi ? 'நேரம்' : 'Time',
-            icon: Icons.schedule_rounded,
-          ),
-        ),
         const SizedBox(height: Gold.s13),
         Glass(
           radius: Gold.r21,
@@ -10663,20 +10930,6 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
               ),
             ),
           ),
-        const SizedBox(height: Gold.s5),
-        DateField(
-          controller: _date,
-          label: tamilUi ? 'தேதி' : 'Date',
-          onChanged: () => setState(() {}),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _time,
-          decoration: fieldStyle(
-            tamilUi ? 'நேரம்' : 'Time',
-            icon: Icons.schedule_rounded,
-          ),
-        ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _qty,
@@ -10700,17 +10953,6 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           suggestions: frequentNameSuggestions(expenseRows(), 'name'),
           label: 'Expense Name',
           icon: Icons.receipt_long_outlined,
-        ),
-        const SizedBox(height: Gold.s13),
-        DateField(
-          controller: _date,
-          label: 'Date',
-          onChanged: () => setState(() {}),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _time,
-          decoration: fieldStyle('Time', icon: Icons.schedule_rounded),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
@@ -10803,8 +11045,6 @@ class _DoctorScreenState extends State<DoctorScreen> {
   final _problem = TextEditingController();
   final _medicine = TextEditingController();
   final _cost = TextEditingController();
-  final _date = TextEditingController(text: todayDate());
-  final _time = TextEditingController(text: currentTime());
   final _notes = TextEditingController();
 
   @override
@@ -10812,8 +11052,6 @@ class _DoctorScreenState extends State<DoctorScreen> {
     _problem.dispose();
     _medicine.dispose();
     _cost.dispose();
-    _date.dispose();
-    _time.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -10856,8 +11094,8 @@ class _DoctorScreenState extends State<DoctorScreen> {
         'problem': _visit == 0 ? _problem.text.trim() : 'Pregnancy injection',
         'injection': _visit == 0 ? _medicine.text.trim() : _semen,
         'cost': toDouble(_cost.text),
-        'date': _date.text,
-        'time': _time.text,
+        'date': todayDate(),
+        'time': currentTime(),
         'notes': _notes.text.trim(),
         'addedBy': currentUserName(),
         'createdAt': DateTime.now().toIso8601String(),
@@ -10865,15 +11103,15 @@ class _DoctorScreenState extends State<DoctorScreen> {
 
       if (_visit == 1) {
         await updateAnimalEntryFields(widget.animalKey, {
-          'pregnancyStartDate': _date.text,
+          'pregnancyStartDate': todayDate(),
           'pregnancyInjection': _semen,
           'milkingStopDate': '',
         });
         await addRanchNotification(
           title: 'Pregnancy recorded',
-          message: '${txt(animal, 'name')} • ${_date.text} • $_semen',
+          message: '${txt(animal, 'name')} • ${todayDate()} • $_semen',
           type: 'important',
-          sourceId: 'pregnancy-${txt(animal, 'name')}-${_date.text}',
+          sourceId: 'pregnancy-${txt(animal, 'name')}-${todayDate()}',
         );
       }
       AutoSyncService.scheduleSync(reason: 'doctor visit saved');
@@ -10948,20 +11186,6 @@ class _DoctorScreenState extends State<DoctorScreen> {
                 : const ['Problem', 'Pregnancy Injection'],
             index: _visit,
             onChanged: (value) => setState(() => _visit = value),
-          ),
-        ),
-        const SizedBox(height: Gold.s16),
-        DateField(
-          controller: _date,
-          label: tamilUi ? 'தேதி' : 'Date',
-          onChanged: () => setState(() {}),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _time,
-          decoration: fieldStyle(
-            tamilUi ? 'நேரம்' : 'Time',
-            icon: Icons.schedule_rounded,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -11041,8 +11265,6 @@ class CalfBornScreen extends StatefulWidget {
 
 class _CalfBornScreenState extends State<CalfBornScreen> {
   final _name = TextEditingController();
-  final _dob = TextEditingController(text: todayDate());
-  final _birthTime = TextEditingController(text: currentTime());
   final _notes = TextEditingController();
   String _breed = breeds.first;
   String _gender = 'Female';
@@ -11061,8 +11283,6 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
   @override
   void dispose() {
     _name.dispose();
-    _dob.dispose();
-    _birthTime.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -11102,6 +11322,8 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
     dynamic calfKey;
     dynamic calvingKey;
     try {
+      final birthDate = todayDate();
+      final birthTime = currentTime();
       final wasCalf = txt(mother, 'type') == 'calf';
       final motherCowId = wasCalf ? nextId('cow') : txt(mother, 'id');
       final newborn = <String, dynamic>{
@@ -11109,18 +11331,18 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
         'name': calfName,
         'id': calfId,
         'breed': _breed,
-        'dob': _dob.text,
+        'dob': birthDate,
         'ageYears': 0,
         'ageMonths': 0,
         'ageDays': 0,
         'status': 'Active',
         'mother': txt(mother, 'name'),
         'motherId': motherCowId,
-        'arrivalDate': _dob.text,
+        'arrivalDate': birthDate,
         'source': 'Born',
         'purchaseAmount': 0.0,
         'gender': _gender,
-        'birthTime': _birthTime.text.trim(),
+        'birthTime': birthTime,
         'pregnancyStartDate': '',
         'pregnancyInjection': '',
         'milkingStopDate': '',
@@ -11137,8 +11359,8 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
         'motherId': motherCowId,
         'calfName': calfName,
         'calfId': calfId,
-        'date': _dob.text,
-        'time': _birthTime.text.trim(),
+        'date': birthDate,
+        'time': birthTime,
         'gender': _gender,
         'breed': _breed,
         'notes': _notes.text.trim(),
@@ -11155,16 +11377,16 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           cowId: motherCowId,
           calfName: calfName,
           calfId: calfId,
-          birthDate: _dob.text,
-          birthTime: _birthTime.text.trim(),
+          birthDate: birthDate,
+          birthTime: birthTime,
         ),
       );
 
       await addRanchNotification(
         title: 'New calf born',
-        message: '$calfName • Mother ${txt(mother, 'name')} • ${_dob.text}',
+        message: '$calfName • Mother ${txt(mother, 'name')} • $birthDate',
         type: 'important',
-        sourceId: 'calf-$calfId-${_dob.text}',
+        sourceId: 'calf-$calfId-$birthDate',
       );
 
       AutoSyncService.scheduleSync(reason: 'calf birth saved');
@@ -11233,18 +11455,6 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           ),
         ),
         const SizedBox(height: Gold.s13),
-        DateField(
-          controller: _dob,
-          label: 'Birth Date',
-          onChanged: () => setState(() {}),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _birthTime,
-          keyboardType: TextInputType.datetime,
-          decoration: fieldStyle('Birth Time', icon: Icons.schedule_rounded),
-        ),
-        const SizedBox(height: Gold.s13),
         DropdownButtonFormField<String>(
           initialValue: _breed,
           isExpanded: true,
@@ -11303,7 +11513,6 @@ class SellAnimalScreen extends StatefulWidget {
 
 class _SellAnimalScreenState extends State<SellAnimalScreen> {
   final _amount = TextEditingController();
-  final _date = TextEditingController(text: todayDate());
   final _notes = TextEditingController();
   bool _withCalves = false;
   bool _saving = false;
@@ -11311,7 +11520,6 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
   @override
   void dispose() {
     _amount.dispose();
-    _date.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -11347,7 +11555,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       'unit': 'Animal',
       'pricePerUnit': price,
       'amount': price,
-      'date': _date.text,
+      'date': todayDate(),
       'time': currentTime(),
       'notes': _notes.text.trim(),
       'withCalves': _withCalves,
@@ -11411,12 +11619,6 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
               ),
             ],
           ),
-        ),
-        const SizedBox(height: Gold.s13),
-        DateField(
-          controller: _date,
-          label: 'Sale Date',
-          onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
@@ -11490,14 +11692,12 @@ class DeathScreen extends StatefulWidget {
 class _DeathScreenState extends State<DeathScreen> {
   String _reason = deathReasons.first;
   final _cost = TextEditingController();
-  final _date = TextEditingController(text: todayDate());
   final _notes = TextEditingController();
   bool _saving = false;
 
   @override
   void dispose() {
     _cost.dispose();
-    _date.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -11552,7 +11752,7 @@ class _DeathScreenState extends State<DeathScreen> {
       'type': txt(animal, 'type'),
       'reason': _reason,
       'cost': toDouble(_cost.text),
-      'date': _date.text,
+      'date': todayDate(),
       'time': currentTime(),
       'notes': _notes.text.trim(),
       'addedBy': currentUserName(),
@@ -11608,12 +11808,6 @@ class _DeathScreenState extends State<DeathScreen> {
               ),
             ],
           ),
-        ),
-        const SizedBox(height: Gold.s13),
-        DateField(
-          controller: _date,
-          label: 'Date',
-          onChanged: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         DropdownButtonFormField<String>(
@@ -11678,7 +11872,6 @@ class _SellScreenState extends State<SellScreen> {
   String _animal = '';
   bool _saving = false;
 
-  final _date = TextEditingController(text: todayDate());
   final _customer = TextEditingController();
   final _qty = TextEditingController();
   final _price = TextEditingController();
@@ -11703,7 +11896,6 @@ class _SellScreenState extends State<SellScreen> {
   void dispose() {
     _qty.removeListener(_refresh);
     _price.removeListener(_refresh);
-    _date.dispose();
     _customer.dispose();
     _qty.dispose();
     _price.dispose();
@@ -11792,7 +11984,7 @@ class _SellScreenState extends State<SellScreen> {
       'unit': _unit,
       'pricePerUnit': perUnit,
       'amount': amount,
-      'date': _date.text,
+      'date': todayDate(),
       'time': currentTime(),
       'notes': _notes.text.trim(),
       'addedBy': currentUserName(),
@@ -11910,7 +12102,7 @@ class _SellScreenState extends State<SellScreen> {
       'quantityKg': quantity,
       'unit': stockUnit(_stockItems[_stockItem]),
       'amount': amount,
-      'date': _date.text,
+      'date': todayDate(),
       'time': currentTime(),
       'notes': _stockNotes.text.trim(),
       'addedBy': currentUserName(),
@@ -11949,17 +12141,6 @@ class _SellScreenState extends State<SellScreen> {
                 color: Ink.navy,
                 height: 1.05,
                 letterSpacing: -1,
-              ),
-            ),
-            const SizedBox(height: Gold.s3),
-            AppText(
-              tamilUi
-                  ? 'வைக்கோல் மற்றும் தவிடு இருப்பை பதிவு செய்யவும்'
-                  : 'Track Vaikol and Thavudu without double-counting expenses',
-              style: const TextStyle(
-                color: Ink.muted,
-                fontSize: Gold.t13,
-                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: Gold.s21),
@@ -12025,12 +12206,6 @@ class _SellScreenState extends State<SellScreen> {
                     labels: tamilUi ? const ['வைக்கோல்', 'தவிடு'] : _stockItems,
                     index: _stockItem,
                     onChanged: (value) => setState(() => _stockItem = value),
-                  ),
-                  const SizedBox(height: Gold.s13),
-                  DateField(
-                    controller: _date,
-                    label: tamilUi ? 'வாங்கிய தேதி' : 'Purchase Date',
-                    onChanged: () => setState(() {}),
                   ),
                   const SizedBox(height: Gold.s13),
                   TextField(
@@ -12177,17 +12352,6 @@ class _SellScreenState extends State<SellScreen> {
                           letterSpacing: -1,
                         ),
                       ),
-                      const SizedBox(height: Gold.s3),
-                      AppText(
-                        tamilUi
-                            ? 'விற்ற பால் அளவு மற்றும் தொகையை பதிவு செய்யவும்'
-                            : 'Milk, cow, calf and manure sales',
-                        style: const TextStyle(
-                          color: Ink.muted,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -12224,15 +12388,6 @@ class _SellScreenState extends State<SellScreen> {
                       ),
                     ),
                   ),
-                const SizedBox(height: Gold.s21),
-                Reveal(
-                  index: 2,
-                  child: DateField(
-                    controller: _date,
-                    label: tamilUi ? 'தேதி' : 'Date',
-                    onChanged: () => setState(() {}),
-                  ),
-                ),
                 const SizedBox(height: Gold.s13),
                 if (_type == 0) ...[
                   Reveal(index: 3, child: _milkBalance()),
@@ -12373,7 +12528,7 @@ class _SellScreenState extends State<SellScreen> {
                           child: const Icon(
                             Icons.calculate_rounded,
                             color: Ink.green,
-                            size: Gold.t16,
+                            size: Gold.t21,
                           ),
                         ),
                         const SizedBox(width: Gold.s13),
@@ -12727,15 +12882,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           letterSpacing: -1,
                         ),
                       ),
-                      SizedBox(height: Gold.s3),
-                      AppText(
-                        'Track, analyze and grow your ranch',
-                        style: TextStyle(
-                          color: Ink.muted,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -12934,7 +13080,7 @@ class _SummaryTile extends StatelessWidget {
               ),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(icon, color: color, size: Gold.t16),
+            child: Icon(icon, color: color, size: Gold.t21),
           ),
           const Spacer(),
           AppText(
@@ -13089,7 +13235,7 @@ class _ReportLink extends StatelessWidget {
               ),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(icon, color: color, size: Gold.t16),
+            child: Icon(icon, color: color, size: Gold.t21),
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
@@ -13749,7 +13895,7 @@ class _ExportTile extends StatelessWidget {
               ),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(icon, color: color, size: Gold.t16),
+            child: Icon(icon, color: color, size: Gold.t21),
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
@@ -13846,16 +13992,17 @@ class SettingsScreen extends StatelessWidget {
                                 color: Ink.body,
                               ),
                             ),
-                            AppText(
-                              '${ownerName()} \u2022 ${placeName()}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: Gold.t13,
-                                color: Ink.muted,
-                                fontWeight: FontWeight.w700,
+                            if (ranchDetails().isNotEmpty)
+                              AppText(
+                                ranchDetails(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: Gold.t13,
+                                  color: Ink.muted,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            ),
                             const SizedBox(height: Gold.s13),
                             const SyncChip(),
                           ],
@@ -14068,7 +14215,7 @@ class _SettingLink extends StatelessWidget {
               ),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(icon, color: color, size: Gold.t16),
+            child: Icon(icon, color: color, size: Gold.t21),
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
@@ -14476,7 +14623,7 @@ class FamilyUsersScreen extends StatelessWidget {
               shape: const SquircleBorder(radius: Gold.r13),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(roleIcon(role), color: color, size: Gold.t16),
+            child: Icon(roleIcon(role), color: color, size: Gold.t21),
           ),
           const SizedBox(width: Gold.s13),
           Expanded(
@@ -14904,7 +15051,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                 child: Icon(
                                   roleIcon(role),
                                   color: color,
-                                  size: Gold.t16,
+                                  size: Gold.t21,
                                 ),
                               ),
                               const SizedBox(width: Gold.s13),

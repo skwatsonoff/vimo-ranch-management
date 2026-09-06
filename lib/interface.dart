@@ -12,51 +12,52 @@ const _tamilLabels = <String, String>{
   'Calves': 'கன்றுகள்',
   'Sell': 'விற்பனை',
   'Sales': 'விற்பனை',
-  'Reports': 'அறிக்கைகள்',
-  'Chat': 'அரட்டை',
-  'Messages': 'செய்திகள்',
-  'Tasks': 'பணிகள்',
-  'Settings': 'அமைப்புகள்',
-  'Info': 'தகவல்',
+  'Reports': 'ரிப்போர்ட்',
+  'Chat': 'சாட்',
+  'Messages': 'மெசேஜ்கள்',
+  'Tasks': 'வேலைகள்',
+  'Settings': 'செட்டிங்ஸ்',
+  'Info': 'உதவி',
   'Language': 'மொழி',
   'Notifications': 'அறிவிப்புகள்',
-  'Mark all read': 'அனைத்தையும் படித்ததாகக் குறி',
-  'No notifications': 'அறிவிப்புகள் இல்லை',
+  'Mark all read': 'எல்லாத்தையும் பார்த்ததாக வை',
+  'No notifications': 'அறிவிப்பு எதுவும் இல்லை',
   'New entry': 'புதிய பதிவு',
-  'Add entry': 'பதிவு சேர்',
-  'Recent entries': 'சமீபத்திய பதிவுகள்',
+  'Add entry': 'பதிவு போடு',
+  'Recent entries': 'கடைசி பதிவுகள்',
   'Entry actions': 'பதிவுகள்',
-  'Cancel': 'ரத்து',
-  'Done': 'முடிந்தது',
+  'Cancel': 'வேண்டாம்',
+  'Done': 'முடிச்சாச்சு',
   'Save': 'சேமி',
-  'Assign': 'ஒதுக்கு',
-  'New task': 'புதிய பணி',
-  'Task': 'பணி',
-  'Assign to': 'பொறுப்பாளர்',
-  'Due date': 'கடைசி தேதி',
+  'Assign': 'வேலை கொடு',
+  'New task': 'புதிய வேலை',
+  'Task': 'செய்ய வேண்டிய வேலை',
+  'Assign to': 'யாருக்கு',
+  'Due date': 'முடிக்க வேண்டிய நாள்',
+  'Target time': 'முடிக்க வேண்டிய நேரம்',
   'Note': 'குறிப்பு',
-  'Message': 'செய்தி',
+  'Message': 'மெசேஜ்',
   'Send': 'அனுப்பு',
-  'Assigned': 'ஒதுக்கப்பட்டது',
-  'Completed': 'முடிந்தது',
-  'Open': 'நிலுவை',
-  'No messages': 'செய்திகள் இல்லை',
-  'No tasks': 'பணிகள் இல்லை',
-  'Task title is required': 'பணியின் பெயரை உள்ளிடவும்',
-  'Unable to save. Try again.': 'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
-  'Unable to load members': 'உறுப்பினர்களை ஏற்ற முடியவில்லை',
+  'Assigned': 'வேலை கொடுத்தாச்சு',
+  'Completed': 'முடிச்சாச்சு',
+  'Open': 'முடிக்க வேண்டியது',
+  'No messages': 'மெசேஜ் எதுவும் இல்லை',
+  'No tasks': 'வேலை எதுவும் இல்லை',
+  'Task title is required': 'என்ன வேலைன்னு எழுதுங்க',
+  'Unable to save. Try again.': 'சேமிக்க முடியல. மறுபடியும் முயற்சி பண்ணுங்க.',
+  'Unable to load members': 'ஆட்கள் பட்டியல் வரல',
   'Retry': 'மீண்டும் முயற்சி',
-  'App Settings': 'பண்ணை அமைப்புகள்',
-  'Family Users': 'உறுப்பினர்கள்',
+  'App Settings': 'ஆப் செட்டிங்ஸ்',
+  'Family Users': 'வீட்டு ஆட்கள்',
   'Ranch': 'பண்ணை',
-  'Data': 'தரவு',
-  'Cloud Sync': 'தரவு ஒத்திசைவு',
-  'Works Offline': 'இணையமின்றி பயன்படுத்துதல்',
-  'Export and Backup': 'ஏற்றுமதி மற்றும் காப்புப்பிரதி',
-  'Restore Backup': 'காப்புப்பிரதியை மீட்டெடு',
+  'Data': 'பதிவுகள்',
+  'Cloud Sync': 'கிளவுட் சிங்க்',
+  'Works Offline': 'இன்டர்நெட் இல்லாமலும் வேலை செய்யும்',
+  'Export and Backup': 'எக்ஸ்போர்ட் / பேக்கப்',
+  'Restore Backup': 'பேக்கப்பை திரும்ப எடு',
   'Sign Out': 'வெளியேறு',
-  'Export': 'ஏற்றுமதி',
-  'Full Backup': 'முழு காப்புப்பிரதி',
+  'Export': 'எக்ஸ்போர்ட்',
+  'Full Backup': 'முழு பேக்கப்',
   'All Data - Excel Workbook': 'அனைத்து தரவு — Excel',
   'Individual files': 'தனித்தனி கோப்புகள்',
   'Animals': 'கால்நடைகள்',
@@ -64,9 +65,9 @@ const _tamilLabels = <String, String>{
   'Expenses': 'செலவுகள்',
   'Milk': 'பால்',
   'Stock': 'இருப்பு',
-  'Overview': 'கண்ணோட்டம்',
+  'Overview': 'முழு விவரம்',
   'Health': 'மருத்துவம்',
-  'Timeline': 'காலவரிசை',
+  'Timeline': 'டைம்லைன்',
   'Cow Profile': 'மாடு விவரம்',
   'Calf Profile': 'கன்று விவரம்',
   'All Cows': 'அனைத்து மாடுகள்',
@@ -78,9 +79,9 @@ const _tamilLabels = <String, String>{
   'Last Month': 'கடந்த மாதம்',
   'All': 'அனைத்தும்',
   'Month': 'மாதம்',
-  'Daily Report': 'தினசரி அறிக்கை',
-  'Monthly Report': 'மாத அறிக்கை',
-  'Overall Report': 'மொத்த அறிக்கை',
+  'Daily Report': 'இன்றைய ரிப்போர்ட்',
+  'Monthly Report': 'மாத ரிப்போர்ட்',
+  'Overall Report': 'முழு ரிப்போர்ட்',
   'Total Cows': 'மொத்த மாடுகள்',
   'Total Calves': 'மொத்த கன்றுகள்',
   'Total Milk': 'மொத்த பால்',
@@ -91,24 +92,24 @@ const _tamilLabels = <String, String>{
   'Today Milk': 'இன்றைய பால்',
   'Last Entry': 'கடைசி பதிவு',
   'Lactation': 'கறவைக் காலம்',
-  'Last Doctor Visit': 'கடைசி மருத்துவப் பதிவு',
+  'Last Doctor Visit': 'கடைசியாக டாக்டர் பார்த்தது',
   'Notes': 'குறிப்புகள்',
   'Pregnancy Duration': 'சினைக் காலம்',
   'Pregnancy Injection': 'சினை ஊசி',
   'Milking Stopped': 'பால் கறப்பது நிறுத்தப்பட்டது',
   'Add Milk Record': 'பால் பதிவு சேர்',
-  'Add Doctor Visit': 'மருத்துவப் பதிவு சேர்',
+  'Add Doctor Visit': 'டாக்டர் பதிவு போடு',
   'Stop Milking': 'பால் கறப்பதை நிறுத்து',
   'Calf Born': 'கன்று பிறந்தது',
   'Milk History': 'பால் வரலாறு',
-  'Health Records': 'மருத்துவப் பதிவுகள்',
+  'Health Records': 'டாக்டர் பதிவுகள்',
   'Add Cow': 'மாடு சேர்',
   'Add Calf': 'கன்று சேர்',
-  'Edit Cow': 'மாட்டைத் திருத்து',
-  'Edit Calf': 'கன்றைத் திருத்து',
-  'Save Cow': 'மாட்டைச் சேமி',
-  'Save Calf': 'கன்றைச் சேமி',
-  'Save Changes': 'மாற்றங்களைச் சேமி',
+  'Edit Cow': 'மாட்டை மாற்று',
+  'Edit Calf': 'கன்றை மாற்று',
+  'Save Cow': 'மாட்டை சேமி',
+  'Save Calf': 'கன்றை சேமி',
+  'Save Changes': 'மாற்றத்தை சேமி',
   'Cow Name': 'மாட்டின் பெயர்',
   'Calf Name': 'கன்றின் பெயர்',
   'Cow': 'மாடு',
@@ -123,7 +124,7 @@ const _tamilLabels = <String, String>{
   'Date': 'தேதி',
   'Time': 'நேரம்',
   'Age': 'வயது',
-  'Source': 'வருகை வகை',
+  'Source': 'எப்படி வந்தது',
   'Arrival Date': 'வருகை தேதி',
   'Purchase Amount': 'வாங்கிய தொகை',
   'Cow Photo': 'மாட்டின் படம்',
@@ -140,15 +141,15 @@ const _tamilLabels = <String, String>{
   'Price': 'விலை',
   'Expense Name': 'செலவின் பெயர்',
   'Notes (optional)': 'குறிப்பு',
-  'Doctor Visit': 'மருத்துவப் பதிவு',
+  'Doctor Visit': 'டாக்டர் பதிவு',
   'Treatment': 'சிகிச்சை',
   'Problem / Treatment': 'பிரச்சனை / சிகிச்சை',
   'Pregnancy': 'சினை',
   'Problem': 'பிரச்சனை',
   'Medicine': 'மருந்து',
-  'Save Entry': 'பதிவைச் சேமி',
-  'Save Sale': 'விற்பனையைச் சேமி',
-  'Customer Name': 'வாடிக்கையாளர் பெயர்',
+  'Save Entry': 'பதிவை சேமி',
+  'Save Sale': 'விற்றதை சேமி',
+  'Customer Name': 'வாங்குபவர் பெயர்',
   'Milk Sale': 'பால் விற்பனை',
   'Manure': 'சாணம்',
   'Milk Details': 'பால் விவரங்கள்',
@@ -156,14 +157,14 @@ const _tamilLabels = <String, String>{
   'Farm Name': 'பண்ணையின் பெயர்',
   'Owner Name': 'உரிமையாளர் பெயர்',
   'Place': 'இடம்',
-  'Currency Symbol': 'நாணயக் குறியீடு',
-  'Save Settings': 'அமைப்புகளைச் சேமி',
-  'Default Milk Price per Liter': 'ஒரு லிட்டர் பாலின் இயல்பு விலை',
-  'Ranch ID (permanent)': 'பண்ணை அடையாள எண்',
-  'Ranch ID': 'பண்ணை அடையாள எண்',
-  'Admin': 'நிர்வாகி',
-  'Editor': 'திருத்துநர்',
-  'Data Entry': 'பதிவாளர்',
+  'Currency Symbol': 'பண குறி',
+  'Save Settings': 'செட்டிங்ஸை சேமி',
+  'Default Milk Price per Liter': 'ஒரு லிட்டர் பால் விலை',
+  'Ranch ID (permanent)': 'ராஞ்ச் ID (மாறாது)',
+  'Ranch ID': 'ராஞ்ச் ID',
+  'Admin': 'அட்மின்',
+  'Editor': 'எடிட்டர்',
+  'Data Entry': 'பதிவு போடுபவர்',
   'Active': 'செயலில்',
   'Sold': 'விற்கப்பட்டது',
   'Died': 'இறந்தது',
@@ -172,18 +173,18 @@ const _tamilLabels = <String, String>{
   'Existing': 'ஏற்கெனவே உள்ளது',
   'Born': 'பிறந்தது',
   'Purchased': 'வாங்கப்பட்டது',
-  'Pending': 'நிலுவையில்',
-  'Accept': 'ஏற்றுக்கொள்',
-  'Reject': 'நிராகரி',
+  'Pending': 'காத்திருக்கிறது',
+  'Accept': 'சேர்த்துக்கொள்',
+  'Reject': 'வேண்டாம்',
   'Later': 'பிறகு',
   'Remove': 'நீக்கு',
-  'Confirm': 'உறுதிசெய்',
-  'Choose file': 'கோப்பைத் தேர்ந்தெடு',
-  'Email': 'மின்னஞ்சல்',
-  'Password': 'கடவுச்சொல்',
-  'Sign In': 'உள்நுழை',
-  'Create Account': 'கணக்கு உருவாக்கு',
-  'Forgot Password?': 'கடவுச்சொல் மறந்துவிட்டதா?',
+  'Confirm': 'சரி',
+  'Choose file': 'ஃபைலை தேர்வு செய்',
+  'Email': 'இமெயில்',
+  'Password': 'பாஸ்வேர்டு',
+  'Sign In': 'லாகின்',
+  'Create Account': 'புது அக்கவுண்ட்',
+  'Forgot Password?': 'பாஸ்வேர்டு மறந்துடுச்சா?',
 };
 
 /// A label widget, retaining const call sites and native text scaling.
@@ -224,49 +225,7 @@ const _surface = Color(0xFFF5F5F7);
 const _blue = Color(0xFF007AFF);
 
 Future<void> showEntryActions(BuildContext context) async {
-  final action = await showModalBottomSheet<String>(
-    context: context,
-    useSafeArea: true,
-    showDragHandle: true,
-    backgroundColor: _surface,
-    constraints: const BoxConstraints(maxWidth: 520),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-    ),
-    builder: (ctx) => Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppText(
-            'New entry',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 20),
-          _InsetGroup(
-            children: [
-              _ActionRow(
-                icon: CupertinoIcons.plus,
-                label: 'Add entry',
-                onTap: () => Navigator.pop(ctx, 'add'),
-              ),
-              _ActionRow(
-                icon: CupertinoIcons.clock,
-                label: 'Recent entries',
-                onTap: () => Navigator.pop(ctx, 'edit'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-  if (action != null && context.mounted) {
-    push(
-      context,
-      action == 'add' ? const AddEntryScreen() : const RecentEntryCorrections(),
-    );
-  }
+  await push(context, const AddEntryScreen());
 }
 
 class _InsetGroup extends StatelessWidget {
@@ -308,7 +267,7 @@ class _ActionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListTile(
     minTileHeight: 60,
-    leading: Icon(icon, color: _blue, size: 22),
+    leading: Icon(icon, color: _blue, size: 24),
     title: AppText(
       label,
       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
@@ -335,6 +294,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
   late final Future<List<String>> _members = _loadMembers();
   String? _assignee;
   DateTime _due = DateTime.now();
+  TimeOfDay _dueTime = const TimeOfDay(hour: 18, minute: 0);
   bool _saving = false;
   Future<List<String>> _loadMembers() async {
     final people = CloudSyncService.ready
@@ -376,6 +336,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
         'assignee': assignee,
         'assignedBy': currentUserName(),
         'dueDate': '${_due.year}-${two(_due.month)}-${two(_due.day)}',
+        'dueTime': '${two(_dueTime.hour)}:${two(_dueTime.minute)}',
         'completed': false,
         'createdAt': now,
         'date': todayDate(),
@@ -509,6 +470,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                           leading: const Icon(
                             CupertinoIcons.calendar,
                             color: _blue,
+                            size: 24,
                           ),
                           title: const AppText('Due date'),
                           trailing: Text(
@@ -529,6 +491,30 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                                   );
                                   if (picked != null && mounted) {
                                     setState(() => _due = picked);
+                                  }
+                                },
+                        ),
+                        ListTile(
+                          leading: const Icon(
+                            CupertinoIcons.clock,
+                            color: _blue,
+                            size: 24,
+                          ),
+                          title: const AppText('Target time'),
+                          trailing: Text(
+                            MaterialLocalizations.of(
+                              context,
+                            ).formatTimeOfDay(_dueTime),
+                          ),
+                          onTap: _saving
+                              ? null
+                              : () async {
+                                  final picked = await showTimePicker(
+                                    context: context,
+                                    initialTime: _dueTime,
+                                  );
+                                  if (picked != null && mounted) {
+                                    setState(() => _dueTime = picked);
                                   }
                                 },
                         ),
@@ -674,7 +660,10 @@ class _ConversationViewState extends State<_ConversationView> {
                       style: const TextStyle(fontSize: 12, color: Ink.muted),
                     ),
                     Text(
-                      txt(task, 'dueDate'),
+                      [
+                        txt(task, 'dueDate'),
+                        txt(task, 'dueTime'),
+                      ].where((part) => part.isNotEmpty).join(' · '),
                       style: const TextStyle(fontSize: 12, color: Ink.muted),
                     ),
                     AppText(
@@ -730,21 +719,34 @@ class _ConversationViewState extends State<_ConversationView> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: CupertinoSlidingSegmentedControl<int>(
-                        groupValue: _section,
-                        children: const {
-                          0: Padding(
-                            padding: EdgeInsets.all(8),
-                            child: AppText('Messages'),
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE9E9EE),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: CupertinoSlidingSegmentedControl<int>(
+                            groupValue: _section,
+                            padding: EdgeInsets.zero,
+                            backgroundColor: Colors.transparent,
+                            thumbColor: Colors.white,
+                            children: const {
+                              0: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 10),
+                                child: AppText('Messages'),
+                              ),
+                              1: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 10),
+                                child: AppText('Tasks'),
+                              ),
+                            },
+                            onValueChanged: (v) {
+                              if (v != null) setState(() => _section = v);
+                            },
                           ),
-                          1: Padding(
-                            padding: EdgeInsets.all(8),
-                            child: AppText('Tasks'),
-                          ),
-                        },
-                        onValueChanged: (v) {
-                          if (v != null) setState(() => _section = v);
-                        },
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -755,6 +757,7 @@ class _ConversationViewState extends State<_ConversationView> {
                       icon: const Icon(
                         CupertinoIcons.square_pencil,
                         color: _blue,
+                        size: 26,
                       ),
                     ),
                   ],
@@ -957,64 +960,79 @@ class _ConversationViewState extends State<_ConversationView> {
 
 const _helpEntries = <(String, String, String)>[
   (
+    'Dashboard',
+    'The dashboard shows today’s milk, animals, expenses, sales and the latest ranch activity.',
+    'Dashboard-ல இன்றைய பால், மாடுகள், செலவு, விற்பனை, கடைசி பதிவுகள் எல்லாம் ஒரே இடத்தில் தெரியும்.',
+  ),
+  (
+    'Cows & Calves',
+    'Add cows and calves, open a profile, and review milk, health and timeline records.',
+    'மாடு, கன்றை சேர்க்கலாம். Profile-ஐ திறந்தா பால், டாக்டர் பதிவு, முழு timeline எல்லாம் பார்க்கலாம்.',
+  ),
+  (
     'Entry actions',
-    'Use + to add milk, stock use or an expense. Recent entries lets you correct your own entries within five minutes of saving.',
-    'பால், இருப்புப் பயன்பாடு அல்லது செலவைச் சேர்க்க + ஐத் தொடவும். நீங்கள் சேர்த்த பதிவுகளைச் சேமித்த ஐந்து நிமிடங்களுக்குள் சமீபத்திய பதிவுகளில் திருத்தலாம்.',
+    'Use + to add milk, stock use or an expense. On Recent Activity, use the three-dot menu to edit your entry for five minutes or add a note.',
+    '+ பட்டனை தொட்டு பால், தீவனம் அல்லது செலவு பதிவு போடலாம். Recent Activity-ல மூன்று புள்ளியை தொட்டா 5 நிமிஷத்துக்குள் edit பண்ணலாம்; note-ம் சேர்க்கலாம்.',
   ),
   (
     'Chat',
     'Share messages with your ranch. Swipe inward from the right edge to open Chat. Swipe inward from the left edge to open Settings.',
-    'பண்ணை உறுப்பினர்களுடன் செய்திகளைப் பகிரவும். வலது விளிம்பிலிருந்து உள்ளே இழுத்தால் அரட்டை; இடது விளிம்பிலிருந்து உள்ளே இழுத்தால் அமைப்புகள் திறக்கும்.',
+    'ராஞ்ச் ஆட்களுக்கு இங்கே message அனுப்பலாம். வலது ஓரத்திலிருந்து உள்ளே swipe பண்ணா Chat; இடது ஓரத்திலிருந்து swipe பண்ணா Settings திறக்கும்.',
   ),
   (
     'Tasks',
-    'Create a task with a member and due date. The assignee or an admin can mark it complete. The Tasks tab keeps all assignments together.',
-    'உறுப்பினர் மற்றும் கடைசி தேதியுடன் பணி உருவாக்கவும். பொறுப்பாளர் அல்லது நிர்வாகி பணியை முடிந்ததாகக் குறிக்கலாம். பணிகள் பகுதியில் அனைத்து பணிகளும் இருக்கும்.',
+    'Create a task with a member, due date and target time. The assignee or an admin can mark it complete.',
+    'யாருக்கு வேலை கொடுக்கணுமோ அவரை தேர்வு பண்ணி, முடிக்க வேண்டிய நாள் மற்றும் நேரம் போடலாம். அவர் அல்லது Admin முடிச்சதா mark பண்ணலாம்.',
   ),
   (
     'Timeline',
     'Open a cow profile to see dated birth, pregnancy, treatment, calving, milk and linked financial records. Shared ranch expenses are not assigned to an individual cow.',
-    'மாட்டின் விவரத்தில் பிறப்பு, சினை, சிகிச்சை, கன்று பிறப்பு, பால் மற்றும் தொடர்புடைய பணப் பதிவுகளைக் காணலாம். பண்ணையின் பொதுச் செலவுகள் தனி மாட்டுக்கு ஒதுக்கப்படாது.',
+    'மாட்டோட profile-ல பிறந்த நாள், சினை, doctor, கன்று பிறப்பு, பால், பணப்பதிவு எல்லாம் date-ோடு பார்க்கலாம். பொதுச் செலவு தனி மாட்டில் வராது.',
   ),
   (
     'Notifications',
     'The bell opens notification history. Tap an item to mark it read. Daily reminders currently require the app to be active at the reminder time.',
-    'மணி குறியீட்டில் அறிவிப்பு வரலாற்றைக் காணலாம். அறிவிப்பைத் தொட்டால் படித்ததாகக் குறிக்கப்படும். தினசரி நினைவூட்டலுக்கு அந்த நேரத்தில் செயலி திறந்திருக்க வேண்டும்.',
+    'Bell பட்டனை தொட்டா notification history வரும். ஒன்றை தொட்டா பார்த்ததாக mark ஆகும். தினசரி reminder வர அந்த நேரத்தில் app open-ஆ இருக்கணும்.',
   ),
   (
     'Family Users',
     'Members join using your permanent Ranch ID. An admin approves requests and controls member roles. Role restrictions still apply in every language.',
-    'நிரந்தர பண்ணை அடையாள எண்ணைப் பயன்படுத்தி உறுப்பினர்கள் இணைகிறார்கள். நிர்வாகி கோரிக்கைகளை ஏற்று அனுமதிகளை வழங்குகிறார். மொழி மாற்றினாலும் அனுமதிகள் மாறாது.',
+    'உங்களோட Ranch ID வைத்து வீட்டு ஆட்கள் join பண்ணலாம். Admin request-ஐ accept பண்ணி யாருக்கு என்ன accessன்னு தேர்வு பண்ணலாம்.',
   ),
   (
     'Cloud Sync',
     'Records are saved on this device first and sync to your ranch account. Manual upload and download are available in Cloud Sync.',
-    'பதிவுகள் முதலில் இந்தச் சாதனத்தில் சேமிக்கப்பட்டு பண்ணைக் கணக்குடன் ஒத்திசைக்கப்படும். தரவு ஒத்திசைவில் கைமுறையாகப் பதிவேற்றவும் பதிவிறக்கவும் முடியும்.',
+    'பதிவு முதலில் இந்த phone-ல save ஆகும்; அப்புறம் ranch account-க்கு sync ஆகும். Cloud Sync-ல upload அல்லது download பண்ணலாம்.',
   ),
   (
     'Export and Backup',
     'Export the complete Excel workbook or individual CSV reports. Full Backup saves a restorable JSON file. Restore Backup replaces this device’s data with the selected backup.',
-    'முழு Excel கோப்பையோ தனித்தனி CSV அறிக்கைகளையோ பதிவிறக்கலாம். முழு காப்புப்பிரதி மீட்டெடுக்கக்கூடிய JSON கோப்பைச் சேமிக்கிறது. மீட்டெடுத்தல் இந்தச் சாதனத்தின் தரவைத் தேர்ந்தெடுத்த காப்புப்பிரதியால் மாற்றும்.',
+    'முழு Excel file அல்லது தனித்தனி CSV report download பண்ணலாம். Full Backup எடுத்தா பிறகு அதே data-வை திரும்ப restore பண்ணலாம்.',
   ),
   (
     'Calf Born',
     'Register a calf from a pregnant female’s profile. First calving moves a heifer to Cows and starts her lactation.',
-    'சினையான பெண் கால்நடையின் விவரத்திலிருந்து கன்று பிறப்பைப் பதிவு செய்யவும். முதல் ஈற்றில் கிடேரி மாடுகள் பட்டியலுக்கு மாற்றப்பட்டு கறவை தொடங்கும்.',
+    'சினை மாட்டோட profile-ல இருந்து கன்று பிறந்ததை பதிவு பண்ணலாம். முதல் கன்று பிறந்ததும் கிடேரி தானாக மாடு list-க்கு மாறும்.',
   ),
   (
     'Stock',
     'Stock purchases increase the balance. Daily use reduces it. Straw is recorded in bundles; bran in kilograms.',
-    'வாங்குதல் இருப்பை அதிகரிக்கும். தினசரி பயன்பாடு இருப்பைக் குறைக்கும். வைக்கோல் கட்டுகளிலும் தவிடு கிலோகிராமிலும் பதிவாகும்.',
+    'தீவனம் வாங்கினா stock கூடும்; தினமும் எடுத்ததை போட்டா stock குறையும். வைக்கோல் கட்டிலும், தவிடு kg-லவும் பதிவு ஆகும்.',
+  ),
+  (
+    'Sell',
+    'Record milk, cow, calf and manure sales. New sales automatically use the current date and time.',
+    'பால், மாடு, கன்று, சாணம் விற்றதை இங்கே பதிவு பண்ணலாம். Date, time தானாகவே இப்போதைய நேரத்துக்கு save ஆகும்.',
   ),
   (
     'Reports',
     'Daily, monthly and overall reports combine milk, expenses and sales. Export them from Settings.',
-    'தினசரி, மாத மற்றும் மொத்த அறிக்கைகள் பால், செலவு மற்றும் விற்பனையைத் தொகுக்கின்றன. அமைப்புகளிலிருந்து ஏற்றுமதி செய்யலாம்.',
+    'Daily, monthly, full report-ல பால், செலவு, விற்பனை எல்லாம் வரும். Settings-ல இருந்து file-ஆ download பண்ணலாம்.',
   ),
   (
     'App Settings',
     'Set the farm name, owner, place, currency and default milk price. Ranch ID stays permanent.',
-    'பண்ணையின் பெயர், உரிமையாளர், இடம், நாணயம் மற்றும் இயல்பு பால் விலையை அமைக்கவும். பண்ணை அடையாள எண் நிரந்தரமானது.',
+    'பண்ணை பெயர், owner பெயர், இடம், பண குறி, வழக்கமான பால் விலை எல்லாம் இங்கே மாற்றலாம். Ranch ID மட்டும் மாறாது.',
   ),
 ];
 
