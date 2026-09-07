@@ -191,7 +191,10 @@ service cloud.firestore {
         allow read, create: if isMember(ranchId);
         allow update, delete: if signedIn()
           && isMember(ranchId)
-          && resource.data.createdByUid == request.auth.uid;
+          && (
+            isAdmin(ranchId)
+            || resource.data.createdByUid == request.auth.uid
+          );
       }
 
       match /ranch_tasks/{documentId} {

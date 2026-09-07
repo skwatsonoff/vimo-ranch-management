@@ -37,6 +37,24 @@ const _tamilLabels = <String, String>{
   'Target time': 'முடிக்க வேண்டிய நேரம்',
   'Note': 'குறிப்பு',
   'Message': 'மெசேஜ்',
+  'Delete message': 'மெசேஜை நீக்கு',
+  'Delete this message?': 'இந்த மெசேஜை நீக்கலாமா?',
+  'This removes the message for everyone in the ranch.':
+      'இந்த மெசேஜ் ராஞ்சில் உள்ள எல்லாருக்கும் நீக்கப்படும்.',
+  'Delete': 'நீக்கு',
+  'Message deleted': 'மெசேஜ் நீக்கப்பட்டது',
+  'Unable to delete. Try again.': 'நீக்க முடியல. மறுபடியும் முயற்சி பண்ணுங்க.',
+  'Voice message': 'குரல் மெசேஜ்',
+  'Record voice message': 'குரல் மெசேஜ் பதிவு செய்',
+  'Send voice message': 'குரல் மெசேஜை அனுப்பு',
+  'Cancel recording': 'பதிவை வேண்டாம்',
+  'Microphone permission is needed': 'மைக் அனுமதி தேவை',
+  'Unable to record. Try again.':
+      'குரலை பதிவு செய்ய முடியல. மறுபடியும் முயற்சி பண்ணுங்க.',
+  'Voice messages need an internet connection':
+      'குரல் மெசேஜுக்கு இன்டர்நெட் தேவை.',
+  'Voice message is too long':
+      'குரல் மெசேஜ் ரொம்ப நீளமா இருக்கு. மறுபடியும் பதிவு பண்ணுங்க.',
   'Send': 'அனுப்பு',
   'Assigned': 'வேலை கொடுத்தாச்சு',
   'Completed': 'முடிச்சாச்சு',
@@ -351,6 +369,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
         'time': currentTime(),
         'createdAt': now,
       });
+      AutoSyncService.scheduleSync(reason: 'new task');
       unawaited(
         addRanchNotification(
           title: 'New task assigned',
@@ -551,19 +570,147 @@ class _ConversationView extends StatefulWidget {
   final TextEditingController message;
   final Future<void> Function() onSend;
   final Future<void> Function(dynamic, Map<String, dynamic>) onToggle;
+  final Future<void> Function(dynamic, Map<String, dynamic>) onDelete;
+  final Future<void> Function(Uint8List, int) onSendVoice;
   const _ConversationView({
     required this.message,
     required this.onSend,
     required this.onToggle,
+    required this.onDelete,
+    required this.onSendVoice,
   });
   @override
   State<_ConversationView> createState() => _ConversationViewState();
 }
 
 class _ConversationViewState extends State<_ConversationView> {
+  static const int _voiceSampleRate = 8000;
+  static const int _maxVoiceSeconds = 35;
   int _section = 0;
   bool _sending = false;
+  bool _recording = false;
+  bool _sendingVoice = false;
+  int _recordingSeconds = 0;
   final _pendingTasks = <dynamic>{};
+  final _pendingMessages = <dynamic>{};
+  final AudioRecorder _recorder = AudioRecorder();
+  BytesBuilder _recordedAudio = BytesBuilder(copy: false);
+  StreamSubscription<Uint8List>? _audioSubscription;
+  Completer<void>? _audioComplete;
+  Timer? _recordingTimer;
+
+  @override
+  void dispose() {
+    _recordingTimer?.cancel();
+    final subscription = _audioSubscription;
+    if (subscription != null) unawaited(subscription.cancel());
+    unawaited(_recorder.cancel().catchError((Object _) {}));
+    unawaited(_recorder.dispose().catchError((Object _) {}));
+    super.dispose();
+  }
+
+  Future<void> _startRecording() async {
+    if (_recording || _sendingVoice || _sending) return;
+    try {
+      if (!await _recorder.hasPermission()) {
+        if (mounted) snack(context, ui('Microphone permission is needed'));
+        return;
+      }
+      _recordedAudio = BytesBuilder(copy: false);
+      final complete = Completer<void>();
+      _audioComplete = complete;
+      final stream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: _voiceSampleRate,
+          numChannels: 1,
+          autoGain: true,
+          echoCancel: true,
+          noiseSuppress: true,
+        ),
+      );
+      _audioSubscription = stream.listen(
+        _recordedAudio.add,
+        onDone: () {
+          if (!complete.isCompleted) complete.complete();
+        },
+        onError: (Object error) {
+          if (!complete.isCompleted) complete.completeError(error);
+        },
+      );
+      if (!mounted) {
+        await _recorder.cancel();
+        return;
+      }
+      setState(() {
+        _recording = true;
+        _recordingSeconds = 0;
+      });
+      _recordingTimer?.cancel();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted || !_recording) return;
+        setState(() => _recordingSeconds++);
+        if (_recordingSeconds >= _maxVoiceSeconds) {
+          unawaited(_finishVoiceRecording());
+        }
+      });
+    } catch (_) {
+      if (mounted) snack(context, ui('Unable to record. Try again.'));
+    }
+  }
+
+  Future<void> _cancelVoiceRecording() async {
+    if (!_recording) return;
+    _recordingTimer?.cancel();
+    if (mounted) setState(() => _recording = false);
+    try {
+      await _recorder.cancel();
+    } catch (_) {}
+    await _audioSubscription?.cancel();
+    _audioSubscription = null;
+    _audioComplete = null;
+    _recordedAudio = BytesBuilder(copy: false);
+  }
+
+  Future<void> _finishVoiceRecording() async {
+    if (!_recording || _sendingVoice) return;
+    _recordingTimer?.cancel();
+    setState(() {
+      _recording = false;
+      _sendingVoice = true;
+    });
+    try {
+      final duration = math.max(1, _recordingSeconds);
+      final complete = _audioComplete;
+      await _recorder.stop();
+      if (complete != null) {
+        await complete.future.timeout(const Duration(seconds: 3));
+      }
+      await _audioSubscription?.cancel();
+      final pcm = _recordedAudio.takeBytes();
+      if (pcm.isEmpty) throw StateError('No audio was recorded');
+      await widget.onSendVoice(
+        pcm16ToWave(pcm, sampleRate: _voiceSampleRate),
+        duration,
+      );
+    } catch (error) {
+      if (mounted) {
+        final errorText = '$error';
+        final message = errorText.contains('internet connection')
+            ? 'Voice messages need an internet connection'
+            : errorText.contains('too long')
+            ? 'Voice message is too long'
+            : 'Unable to record. Try again.';
+        snack(context, ui(message));
+      }
+    } finally {
+      _audioSubscription = null;
+      _audioComplete = null;
+      _recordedAudio = BytesBuilder(copy: false);
+      if (mounted) setState(() => _sendingVoice = false);
+    }
+  }
+
   Future<void> _send() async {
     if (_sending || widget.message.text.trim().isEmpty) return;
     setState(() => _sending = true);
@@ -589,10 +736,158 @@ class _ConversationViewState extends State<_ConversationView> {
     }
   }
 
-  Widget _taskCard(Map<String, dynamic> task) {
+  Future<void> _delete(Map<String, dynamic> message) async {
+    if (!canManageRanch) return;
+    final key = message['_key'];
+    if (key == null || _pendingMessages.contains(key)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: const SquircleBorder(radius: Gold.r27),
+        title: const AppText(
+          'Delete this message?',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: const AppText(
+          'This removes the message for everyone in the ranch.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const AppText('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const AppText(
+              'Delete',
+              style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _pendingMessages.add(key));
+    try {
+      await widget.onDelete(key, message);
+      if (mounted) snack(context, ui('Message deleted'));
+    } catch (_) {
+      if (mounted) snack(context, ui('Unable to delete. Try again.'));
+    } finally {
+      if (mounted) setState(() => _pendingMessages.remove(key));
+    }
+  }
+
+  Widget _messageWithAdminAction(Map<String, dynamic> message, Widget child) {
+    if (!canManageRanch) return child;
+    final key = message['_key'];
+    final pending = _pendingMessages.contains(key);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: pending ? null : () => _delete(message),
+      child: AnimatedOpacity(
+        opacity: pending ? .45 : 1,
+        duration: const Duration(milliseconds: 180),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _chatBubble(Map<String, dynamic> message, bool mine) {
+    final sender = txt(message, 'sender', 'Ranch member');
+    final participantColor = chatParticipantColor(sender);
+    final bubbleColor = Color.lerp(
+      Colors.white,
+      participantColor,
+      mine ? .18 : .10,
+    )!;
+    final isVoice =
+        txt(message, 'messageType') == 'voice' &&
+        (txt(message, 'audioData').isNotEmpty ||
+            txt(message, 'audioUrl').isNotEmpty);
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: math.min(420, MediaQuery.sizeOf(context).width * .82),
+        ),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.fromLTRB(14, 10, 12, 7),
+        decoration: BoxDecoration(
+          color: bubbleColor,
+          border: Border.all(
+            color: participantColor.withValues(alpha: .18),
+            width: .7,
+          ),
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(mine ? 18 : 5),
+            topRight: Radius.circular(mine ? 5 : 18),
+            bottomLeft: const Radius.circular(18),
+            bottomRight: const Radius.circular(18),
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x10000000),
+              blurRadius: 5,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              sender,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: participantColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            if (isVoice)
+              _VoiceMessageBubble(
+                url: txt(message, 'audioUrl'),
+                encodedAudio: txt(message, 'audioData'),
+                durationSeconds: toInt(message['audioDuration']),
+                color: participantColor,
+              )
+            else
+              Text(
+                txt(message, 'text'),
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.35,
+                  color: Ink.navy,
+                ),
+              ),
+            const SizedBox(height: 3),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                txt(message, 'time'),
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w500,
+                  color: participantColor.withValues(alpha: .72),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _taskCard(Map<String, dynamic> task, {String sender = ''}) {
     final done = task['completed'] == true;
     final canComplete =
         txt(task, 'assignee') == currentUserName() || canManageRanch;
+    final assignee = txt(task, 'assignee');
+    final assigneeColor = chatParticipantColor(assignee);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -629,6 +924,17 @@ class _ConversationViewState extends State<_ConversationView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (sender.isNotEmpty) ...[
+                  Text(
+                    sender,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: chatParticipantColor(sender),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                ],
                 Text(
                   txt(task, 'title'),
                   style: TextStyle(
@@ -655,16 +961,37 @@ class _ConversationViewState extends State<_ConversationView> {
                   spacing: 12,
                   runSpacing: 6,
                   children: [
-                    Text(
-                      txt(task, 'assignee'),
-                      style: const TextStyle(fontSize: 12, color: Ink.muted),
-                    ),
-                    Text(
-                      [
-                        txt(task, 'dueDate'),
-                        txt(task, 'dueTime'),
-                      ].where((part) => part.isNotEmpty).join(' · '),
-                      style: const TextStyle(fontSize: 12, color: Ink.muted),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: assigneeColor.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: assigneeColor.withValues(alpha: .24),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            CupertinoIcons.person_fill,
+                            size: 13,
+                            color: assigneeColor,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            assignee,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: assigneeColor,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     AppText(
                       done ? 'Completed' : 'Open',
@@ -692,7 +1019,12 @@ class _ConversationViewState extends State<_ConversationView> {
     ]),
     builder: (context, _) {
       final messages =
-          Hive.box('ranch_messages').values.whereType<Map>().map(asMap).toList()
+          Hive.box('ranch_messages')
+              .toMap()
+              .entries
+              .where((entry) => entry.value is Map)
+              .map((entry) => {...asMap(entry.value), '_key': entry.key})
+              .toList()
             ..sort(
               (a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')),
             );
@@ -777,7 +1109,10 @@ class _ConversationViewState extends State<_ConversationView> {
                                 horizontal: 20,
                               ),
                               itemCount: tasks.length,
-                              itemBuilder: (_, i) => _taskCard(tasks[i]),
+                              itemBuilder: (_, i) => _taskCard(
+                                tasks[i],
+                                sender: txt(tasks[i], 'assignedBy'),
+                              ),
                             )
                     : messages.isEmpty
                     ? const Center(
@@ -796,6 +1131,7 @@ class _ConversationViewState extends State<_ConversationView> {
                           final m = messages[i];
                           final mine = txt(m, 'sender') == currentUserName();
                           final task = byId[txt(m, 'taskId')];
+                          final showTaskCard = taskMessageShowsCard(m, task);
                           final showDate =
                               i == messages.length - 1 ||
                               txt(messages[i + 1], 'date') != txt(m, 'date');
@@ -806,87 +1142,41 @@ class _ConversationViewState extends State<_ConversationView> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 18,
                                   ),
-                                  child: Text(
-                                    txt(m, 'date'),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Ink.muted,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              if (task != null)
-                                _taskCard(task)
-                              else
-                                Align(
-                                  alignment: mine
-                                      ? Alignment.centerRight
-                                      : Alignment.centerLeft,
                                   child: Container(
-                                    constraints: BoxConstraints(
-                                      maxWidth: math.min(
-                                        400,
-                                        MediaQuery.sizeOf(context).width * .78,
-                                      ),
-                                    ),
-                                    margin: const EdgeInsets.only(bottom: 10),
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
+                                      horizontal: 12,
+                                      vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: mine
-                                          ? _blue
-                                          : const Color(0xFFE9E9EB),
-                                      borderRadius: BorderRadius.only(
-                                        topLeft: const Radius.circular(22),
-                                        topRight: const Radius.circular(22),
-                                        bottomLeft: Radius.circular(
-                                          mine ? 22 : 6,
-                                        ),
-                                        bottomRight: Radius.circular(
-                                          mine ? 6 : 22,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        if (!mine) ...[
-                                          Text(
-                                            txt(m, 'sender'),
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: _blue,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                        ],
-                                        Text(
-                                          txt(m, 'text'),
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            height: 1.4,
-                                            color: mine
-                                                ? Colors.white
-                                                : Ink.navy,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 5),
-                                        Text(
-                                          txt(m, 'time'),
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: mine
-                                                ? Colors.white70
-                                                : Ink.muted,
-                                          ),
+                                      color: const Color(0xEFFFFFFF),
+                                      borderRadius: BorderRadius.circular(999),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Color(0x12000000),
+                                          blurRadius: 5,
+                                          offset: Offset(0, 2),
                                         ),
                                       ],
                                     ),
+                                    child: AppText(
+                                      chatDateLabel(txt(m, 'date')),
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Ink.muted,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
                                   ),
+                                ),
+                              if (showTaskCard)
+                                _messageWithAdminAction(
+                                  m,
+                                  _taskCard(task!, sender: txt(m, 'sender')),
+                                )
+                              else
+                                _messageWithAdminAction(
+                                  m,
+                                  _chatBubble(m, mine),
                                 ),
                             ],
                           );
@@ -908,45 +1198,119 @@ class _ConversationViewState extends State<_ConversationView> {
                           width: .7,
                         ),
                       ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: widget.message,
-                              minLines: 1,
-                              maxLines: 5,
-                              textCapitalization: TextCapitalization.sentences,
-                              textInputAction: TextInputAction.newline,
-                              decoration: InputDecoration(
-                                hintText: ui('Message'),
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+                      child: _recording || _sendingVoice
+                          ? Row(
+                              children: [
+                                IconButton(
+                                  tooltip: ui('Cancel recording'),
+                                  onPressed: _sendingVoice
+                                      ? null
+                                      : _cancelVoiceRecording,
+                                  icon: const Icon(
+                                    CupertinoIcons.delete,
+                                    color: Ink.red,
+                                  ),
                                 ),
-                              ),
-                            ),
-                          ),
-                          ValueListenableBuilder<TextEditingValue>(
-                            valueListenable: widget.message,
-                            builder: (_, v, _) => IconButton(
-                              tooltip: ui('Send'),
-                              onPressed: _sending || v.text.trim().isEmpty
-                                  ? null
-                                  : _send,
-                              icon: _sending
-                                  ? const CupertinoActivityIndicator()
-                                  : Icon(
-                                      CupertinoIcons.arrow_up_circle_fill,
-                                      size: 34,
-                                      color: v.text.trim().isEmpty
-                                          ? const Color(0xFFC7C7CC)
-                                          : _blue,
+                                Expanded(
+                                  child: _sendingVoice
+                                      ? const Center(
+                                          child: CupertinoActivityIndicator(),
+                                        )
+                                      : Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.fiber_manual_record,
+                                              size: 13,
+                                              color: Ink.red,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              voiceDurationLabel(
+                                                _recordingSeconds,
+                                              ),
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700,
+                                                color: Ink.navy,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Expanded(
+                                              child: AppText(
+                                                'Voice message',
+                                                style: TextStyle(
+                                                  color: Ink.muted,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                                IconButton(
+                                  tooltip: ui('Send voice message'),
+                                  onPressed: _sendingVoice
+                                      ? null
+                                      : _finishVoiceRecording,
+                                  icon: const Icon(
+                                    CupertinoIcons.arrow_up_circle_fill,
+                                    size: 34,
+                                    color: _blue,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: widget.message,
+                                    minLines: 1,
+                                    maxLines: 5,
+                                    textCapitalization:
+                                        TextCapitalization.sentences,
+                                    textInputAction: TextInputAction.newline,
+                                    decoration: InputDecoration(
+                                      hintText: ui('Message'),
+                                      border: InputBorder.none,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
                                     ),
+                                  ),
+                                ),
+                                ValueListenableBuilder<TextEditingValue>(
+                                  valueListenable: widget.message,
+                                  builder: (_, v, _) {
+                                    final hasText = v.text.trim().isNotEmpty;
+                                    return IconButton(
+                                      tooltip: ui(
+                                        hasText
+                                            ? 'Send'
+                                            : 'Record voice message',
+                                      ),
+                                      onPressed: _sending
+                                          ? null
+                                          : hasText
+                                          ? _send
+                                          : _startRecording,
+                                      icon: _sending
+                                          ? const CupertinoActivityIndicator()
+                                          : Icon(
+                                              hasText
+                                                  ? CupertinoIcons
+                                                        .arrow_up_circle_fill
+                                                  : CupertinoIcons
+                                                        .mic_circle_fill,
+                                              size: 34,
+                                              color: _blue,
+                                            ),
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ),
@@ -956,6 +1320,137 @@ class _ConversationViewState extends State<_ConversationView> {
       );
     },
   );
+}
+
+class _VoiceMessageBubble extends StatefulWidget {
+  final String url;
+  final String encodedAudio;
+  final int durationSeconds;
+  final Color color;
+  const _VoiceMessageBubble({
+    required this.url,
+    required this.encodedAudio,
+    required this.durationSeconds,
+    required this.color,
+  });
+
+  @override
+  State<_VoiceMessageBubble> createState() => _VoiceMessageBubbleState();
+}
+
+class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
+  final AudioPlayer _player = AudioPlayer();
+  StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<Duration>? _durationSubscription;
+  StreamSubscription<PlayerState>? _stateSubscription;
+  StreamSubscription<void>? _completeSubscription;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  PlayerState _state = PlayerState.stopped;
+
+  @override
+  void initState() {
+    super.initState();
+    _duration = Duration(seconds: widget.durationSeconds);
+    _positionSubscription = _player.onPositionChanged.listen((value) {
+      if (mounted) setState(() => _position = value);
+    });
+    _durationSubscription = _player.onDurationChanged.listen((value) {
+      if (mounted) setState(() => _duration = value);
+    });
+    _stateSubscription = _player.onPlayerStateChanged.listen((value) {
+      if (mounted) setState(() => _state = value);
+    });
+    _completeSubscription = _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _position = Duration.zero;
+          _state = PlayerState.stopped;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    final positionSubscription = _positionSubscription;
+    final durationSubscription = _durationSubscription;
+    final stateSubscription = _stateSubscription;
+    final completeSubscription = _completeSubscription;
+    if (positionSubscription != null) unawaited(positionSubscription.cancel());
+    if (durationSubscription != null) unawaited(durationSubscription.cancel());
+    if (stateSubscription != null) unawaited(stateSubscription.cancel());
+    if (completeSubscription != null) unawaited(completeSubscription.cancel());
+    unawaited(_player.dispose());
+    super.dispose();
+  }
+
+  Future<void> _togglePlayback() async {
+    if (_state == PlayerState.playing) {
+      await _player.pause();
+    } else {
+      final source = widget.encodedAudio.isNotEmpty
+          ? BytesSource(base64Decode(widget.encodedAudio))
+          : UrlSource(widget.url);
+      await _player.play(source);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final durationMs = math.max(1, _duration.inMilliseconds);
+    final positionMs = math.min(_position.inMilliseconds, durationMs);
+    final shownSeconds = _state == PlayerState.playing
+        ? _position.inSeconds
+        : math.max(widget.durationSeconds, _duration.inSeconds);
+    return SizedBox(
+      width: math.min(280, MediaQuery.sizeOf(context).width * .64),
+      child: Row(
+        children: [
+          IconButton.filled(
+            tooltip: _state == PlayerState.playing ? 'Pause' : 'Play',
+            style: IconButton.styleFrom(
+              backgroundColor: widget.color.withValues(alpha: .14),
+              foregroundColor: widget.color,
+            ),
+            onPressed: _togglePlayback,
+            icon: Icon(
+              _state == PlayerState.playing
+                  ? CupertinoIcons.pause_fill
+                  : CupertinoIcons.play_fill,
+              size: 20,
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: widget.color,
+                inactiveTrackColor: widget.color.withValues(alpha: .2),
+                thumbColor: widget.color,
+                overlayColor: widget.color.withValues(alpha: .1),
+                trackHeight: 2.5,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+              ),
+              child: Slider(
+                value: positionMs.toDouble(),
+                max: durationMs.toDouble(),
+                onChanged: (value) =>
+                    _player.seek(Duration(milliseconds: value.round())),
+              ),
+            ),
+          ),
+          Text(
+            voiceDurationLabel(shownSeconds),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: widget.color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 const _helpEntries = <(String, String, String)>[

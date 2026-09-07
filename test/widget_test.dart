@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as image_lib;
@@ -44,6 +45,56 @@ void main() {
     test('cloud ids are Firestore-safe and deterministic', () {
       expect(cloudSafeId(' Cow / C-001 '), 'cow_c-001');
       expect(cloudSafeId(' Cow / C-001 '), cloudSafeId(' Cow / C-001 '));
+    });
+
+    test('only one chat event renders the task card', () {
+      final task = {'taskId': 'task_1', 'title': 'Feed the calf'};
+      expect(
+        taskMessageShowsCard({
+          'taskId': 'task_1',
+          'eventType': 'assigned',
+          'text': 'Feed the calf',
+        }, task),
+        isTrue,
+      );
+      expect(
+        taskMessageShowsCard({
+          'taskId': 'task_1',
+          'eventType': 'completed',
+          'text': 'Task completed: Feed the calf',
+        }, task),
+        isFalse,
+      );
+      expect(
+        taskMessageShowsCard({
+          'taskId': 'task_1',
+          'text': 'Task completed: Feed the calf',
+        }, task),
+        isFalse,
+      );
+    });
+
+    test('group chat helpers keep identities and voice metadata stable', () {
+      expect(chatParticipantColor('Appa'), chatParticipantColor(' appa '));
+      expect(chatParticipantColor('Appa'), isNot(chatParticipantColor('Amma')));
+      expect(voiceDurationLabel(0), '00:00');
+      expect(voiceDurationLabel(65), '01:05');
+      expect(
+        chatDateLabel('2026-09-07', now: DateTime(2026, 9, 7, 20)),
+        'Today',
+      );
+      expect(
+        chatDateLabel('2026-09-06', now: DateTime(2026, 9, 7, 20)),
+        'Yesterday',
+      );
+    });
+
+    test('voice PCM is wrapped in a playable WAV container', () {
+      final wave = pcm16ToWave(Uint8List.fromList([0, 1, 2, 3]));
+      expect(String.fromCharCodes(wave.sublist(0, 4)), 'RIFF');
+      expect(String.fromCharCodes(wave.sublist(8, 12)), 'WAVE');
+      expect(String.fromCharCodes(wave.sublist(36, 40)), 'data');
+      expect(wave.length, 48);
     });
 
     test('feed labels are normalized before reports are generated', () {

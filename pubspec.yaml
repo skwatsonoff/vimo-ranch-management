@@ -49,6 +49,8 @@ dependencies:
   cloud_firestore: ^6.6.0
   firebase_messaging: ^16.6.0
   image: ^4.9.2
+  record: ^7.1.1
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:

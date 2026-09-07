@@ -19,8 +19,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -34,6 +36,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:record/record.dart';
 import 'firebase_options.dart';
 import 'web_runtime.dart';
 
@@ -238,6 +241,74 @@ Future<void> seedSettingsAndUsers() async {
   );
 
   await normalizeFamilyUsers();
+
+  if (vimoPreviewMode) {
+    await settings.putAll({
+      'currentUser': 'Appa',
+      'currentRole': 'Admin',
+      'languageMode': 'English',
+    });
+    final users = Hive.box('family_users');
+    if (users.isEmpty) {
+      await users.addAll([
+        {'name': 'Appa', 'role': 'Admin', 'active': true},
+        {'name': 'Amma', 'role': 'Editor', 'active': true},
+        {'name': 'Selva', 'role': 'Data Entry', 'active': true},
+      ]);
+    }
+    final taskBox = Hive.box('ranch_tasks');
+    final messageBox = Hive.box('ranch_messages');
+    if (taskBox.isEmpty && messageBox.isEmpty) {
+      const taskId = 'preview_task';
+      final taskKey = await taskBox.add({
+        'taskId': taskId,
+        'title': 'Upload milk data',
+        'note': "Don't forget",
+        'assignee': 'Selva',
+        'assignedBy': 'Appa',
+        'dueDate': todayDate(),
+        'dueTime': '18:00',
+        'completed': false,
+        'createdAt': DateTime.now()
+            .subtract(const Duration(minutes: 5))
+            .toIso8601String(),
+        'date': todayDate(),
+        'time': currentTime(),
+      });
+      await messageBox.addAll([
+        {
+          'text': 'Morning milk entry is ready',
+          'sender': 'Amma',
+          'date': todayDate(),
+          'time': '08:21',
+          'createdAt': DateTime.now()
+              .subtract(const Duration(minutes: 12))
+              .toIso8601String(),
+        },
+        {
+          'text': 'Thank you, I will check it',
+          'sender': 'Appa',
+          'date': todayDate(),
+          'time': '08:24',
+          'createdAt': DateTime.now()
+              .subtract(const Duration(minutes: 8))
+              .toIso8601String(),
+        },
+        {
+          'text': 'Upload milk data',
+          'sender': 'Appa',
+          'taskId': taskId,
+          'eventType': 'assigned',
+          'date': todayDate(),
+          'time': '08:27',
+          'createdAt': DateTime.now()
+              .subtract(const Duration(minutes: 5))
+              .toIso8601String(),
+          'previewTaskKey': taskKey,
+        },
+      ]);
+    }
+  }
 }
 
 String normalizeFamilyRole(String role) {
@@ -2428,6 +2499,72 @@ String makeRecordId(
   return cloudSafeId(seed);
 }
 
+/// Only the original assignment event should render as an interactive task
+/// card in chat. Completion history still carries the task id, but rendering
+/// every task-related event as a card makes one task appear multiple times.
+bool taskMessageShowsCard(
+  Map<String, dynamic> message,
+  Map<String, dynamic>? task,
+) {
+  if (task == null) return false;
+  final eventType = txt(message, 'eventType');
+  if (eventType.isNotEmpty) return eventType == 'assigned';
+  // Compatibility with assignment messages created before eventType existed.
+  return txt(message, 'text') == txt(task, 'title');
+}
+
+Color chatParticipantColor(String name) {
+  var hash = 2166136261;
+  for (final unit in name.trim().toLowerCase().codeUnits) {
+    hash ^= unit;
+    hash = (hash * 16777619) & 0xffffffff;
+  }
+  return HSLColor.fromAHSL(1, (hash % 360).toDouble(), .68, .40).toColor();
+}
+
+String voiceDurationLabel(int totalSeconds) {
+  final safe = math.max(0, totalSeconds);
+  return '${two(safe ~/ 60)}:${two(safe % 60)}';
+}
+
+String chatDateLabel(String value, {DateTime? now}) {
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return value;
+  final current = now ?? DateTime.now();
+  final date = DateTime(parsed.year, parsed.month, parsed.day);
+  final today = DateTime(current.year, current.month, current.day);
+  if (date == today) return 'Today';
+  if (date == today.subtract(const Duration(days: 1))) return 'Yesterday';
+  return value;
+}
+
+Uint8List pcm16ToWave(Uint8List pcm, {int sampleRate = 16000}) {
+  final output = Uint8List(44 + pcm.length);
+  final header = ByteData.sublistView(output);
+
+  void ascii(int offset, String value) {
+    for (var i = 0; i < value.length; i++) {
+      output[offset + i] = value.codeUnitAt(i);
+    }
+  }
+
+  ascii(0, 'RIFF');
+  header.setUint32(4, 36 + pcm.length, Endian.little);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  header.setUint32(16, 16, Endian.little);
+  header.setUint16(20, 1, Endian.little);
+  header.setUint16(22, 1, Endian.little);
+  header.setUint32(24, sampleRate, Endian.little);
+  header.setUint32(28, sampleRate * 2, Endian.little);
+  header.setUint16(32, 2, Endian.little);
+  header.setUint16(34, 16, Endian.little);
+  ascii(36, 'data');
+  header.setUint32(40, pcm.length, Endian.little);
+  output.setRange(44, output.length, pcm);
+  return output;
+}
+
 final BrowserRuntime _browserRuntime = BrowserRuntime();
 
 bool isOnlineNow() => _browserRuntime.online;
@@ -3183,6 +3320,7 @@ class RanchAccessService {
   }
 
   static Future<void> clearLocalRanchData() async {
+    await CollaborationRealtimeSyncService.stop();
     AutoSyncService.beginRemoteWrite();
     try {
       for (final boxName in backupBoxNames) {
@@ -3346,6 +3484,7 @@ class RanchAccessService {
       // record downloads. Enter immediately, then hydrate data in background.
       unawaited(_hydrateActivatedRanch());
     }
+    unawaited(CollaborationRealtimeSyncService.ensureStarted());
   }
 
   static Future<void> _hydrateActivatedRanch() async {
@@ -4114,6 +4253,127 @@ Future<void> flushPendingAnimalEntryUpdates() async {
   }
 }
 
+/// Keeps collaboration data live across every signed-in ranch device.
+///
+/// The general backup sync remains intentionally conservative, but chat and
+/// tasks need Firestore snapshot listeners so a message, task state change, or
+/// admin deletion appears without waiting for a manual refresh/app focus.
+class CollaborationRealtimeSyncService {
+  const CollaborationRealtimeSyncService._();
+
+  static String _listeningRanch = '';
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _messageSubscription;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _taskSubscription;
+  static Future<void> _applyQueue = Future<void>.value();
+
+  static Future<void> ensureStarted() async {
+    if (!CloudSyncService.ready) {
+      await stop();
+      return;
+    }
+    final desiredRanch = ranchId();
+    if (_listeningRanch == desiredRanch &&
+        _messageSubscription != null &&
+        _taskSubscription != null) {
+      return;
+    }
+
+    await stop();
+    if (!CloudSyncService.ready || desiredRanch.isEmpty) return;
+    _listeningRanch = desiredRanch;
+
+    _messageSubscription = CloudSyncService.ranch
+        .collection('ranch_messages')
+        .snapshots()
+        .listen(
+          (snapshot) => _enqueue('ranch_messages', snapshot),
+          onError: _handleError,
+        );
+    _taskSubscription = CloudSyncService.ranch
+        .collection('ranch_tasks')
+        .snapshots()
+        .listen(
+          (snapshot) => _enqueue('ranch_tasks', snapshot),
+          onError: _handleError,
+        );
+  }
+
+  static void _enqueue(
+    String boxName,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    _applyQueue = _applyQueue
+        .then((_) => _applySnapshot(boxName, snapshot))
+        .catchError(_handleError);
+  }
+
+  static void _handleError(Object error, [StackTrace? _]) {
+    if (!Hive.isBoxOpen('settings')) return;
+    Hive.box('settings').put('lastSyncError', '$error');
+    Hive.box('settings').put('syncStatus', 'Realtime sync reconnecting');
+  }
+
+  static Future<void> _applySnapshot(
+    String boxName,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (!Hive.isBoxOpen(boxName) || _listeningRanch != ranchId()) return;
+    final box = Hive.box(boxName);
+    final localKeyByCloudId = <String, dynamic>{};
+    for (final entry in box.toMap().entries) {
+      if (entry.value is! Map) continue;
+      final cloudId = txt(asMap(entry.value), 'cloudId');
+      if (cloudId.isNotEmpty) localKeyByCloudId[cloudId] = entry.key;
+    }
+
+    AutoSyncService.beginRemoteWrite();
+    try {
+      for (final change in snapshot.docChanges) {
+        final cloudId = change.doc.id;
+        final localKey = localKeyByCloudId[cloudId];
+        if (change.type == DocumentChangeType.removed) {
+          if (localKey != null) await box.delete(localKey);
+          continue;
+        }
+
+        final remote = Map<String, dynamic>.from(change.doc.data() ?? {});
+        remote['cloudId'] = cloudId;
+        remote['pendingUpload'] = false;
+        if (localKey == null) {
+          final addedKey = await box.add(remote);
+          localKeyByCloudId[cloudId] = addedKey;
+          continue;
+        }
+
+        final local = asMap(box.get(localKey));
+        if (local['pendingUpload'] == true &&
+            toInt(local['updatedAtMillis']) >
+                toInt(remote['updatedAtMillis'])) {
+          continue;
+        }
+        await box.put(localKey, remote);
+      }
+      if (Hive.isBoxOpen('settings')) {
+        await Hive.box('settings').put('syncStatus', 'Live');
+      }
+    } finally {
+      AutoSyncService.endRemoteWrite();
+    }
+  }
+
+  static Future<void> stop() async {
+    final messages = _messageSubscription;
+    final tasks = _taskSubscription;
+    _messageSubscription = null;
+    _taskSubscription = null;
+    _listeningRanch = '';
+    if (messages != null) await messages.cancel();
+    if (tasks != null) await tasks.cancel();
+  }
+}
+
 class AutoSyncService {
   const AutoSyncService._();
 
@@ -4176,7 +4436,12 @@ class AutoSyncService {
 
     if (firebaseReady) {
       FirebaseAuth.instance.authStateChanges().listen((user) {
-        if (user != null) scheduleSync(reason: 'login');
+        if (user != null) {
+          unawaited(CollaborationRealtimeSyncService.ensureStarted());
+          scheduleSync(reason: 'login');
+        } else {
+          unawaited(CollaborationRealtimeSyncService.stop());
+        }
       });
     }
 
@@ -4200,6 +4465,7 @@ class AutoSyncService {
     _periodic?.cancel();
     _debounce?.cancel();
     _browserRuntime.stop();
+    unawaited(CollaborationRealtimeSyncService.stop());
     _started = false;
   }
 
@@ -4220,13 +4486,24 @@ class AutoSyncService {
   }
 
   static void scheduleSync({String reason = 'auto'}) {
+    unawaited(CollaborationRealtimeSyncService.ensureStarted());
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 2), () => run(reason: reason));
   }
 
   static Future<void> run({String reason = 'auto'}) async {
     if (_syncing) return;
-    if (!autoSyncEnabled() && reason != 'manual') return;
+    const collaborationReasons = {
+      'chat message',
+      'voice message',
+      'new task',
+      'task status',
+    };
+    if (!autoSyncEnabled() &&
+        reason != 'manual' &&
+        !collaborationReasons.contains(reason)) {
+      return;
+    }
     if (!firebaseReady) return;
     if (!Hive.isBoxOpen('settings')) return;
 
@@ -4238,6 +4515,7 @@ class AutoSyncService {
       return;
     }
     if (FirebaseAuth.instance.currentUser == null) return;
+    await CollaborationRealtimeSyncService.ensureStarted();
 
     _syncing = true;
     try {
@@ -6770,6 +7048,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
       'time': currentTime(),
       'createdAt': DateTime.now().toIso8601String(),
     });
+    AutoSyncService.scheduleSync(reason: 'chat message');
     await addRanchNotification(
       title: '${currentUserName()} sent a message',
       message: value,
@@ -6777,6 +7056,54 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
       sourceId: messageId,
     );
     if (_message.text.trim() == value) _message.clear();
+  }
+
+  Future<void> _deleteMessage(dynamic key, Map<String, dynamic> message) async {
+    if (!canManageRanch) throw StateError('Admin permission required');
+    final cloudId = txt(message, 'cloudId');
+    if (CloudSyncService.ready && cloudId.isNotEmpty) {
+      await CloudSyncService.ranch
+          .collection('ranch_messages')
+          .doc(cloudId)
+          .delete();
+    }
+    AutoSyncService.beginRemoteWrite();
+    try {
+      await Hive.box('ranch_messages').delete(key);
+    } finally {
+      AutoSyncService.endRemoteWrite();
+    }
+  }
+
+  Future<void> _sendVoice(Uint8List waveBytes, int durationSeconds) async {
+    if (!CloudSyncService.ready) {
+      throw StateError('Voice messages need an internet connection');
+    }
+    // Firestore documents are limited to 1 MiB. Keeping the WAV below 700 KB
+    // leaves safe room for base64 expansion and the rest of the message data.
+    if (waveBytes.lengthInBytes > 700000) {
+      throw StateError('Voice message is too long');
+    }
+    final messageId = 'message_${DateTime.now().microsecondsSinceEpoch}';
+    await Hive.box('ranch_messages').add({
+      'messageId': messageId,
+      'messageType': 'voice',
+      'text': 'Voice message',
+      'audioData': base64Encode(waveBytes),
+      'audioByteLength': waveBytes.lengthInBytes,
+      'audioDuration': durationSeconds,
+      'sender': currentUserName(),
+      'date': todayDate(),
+      'time': currentTime(),
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    AutoSyncService.scheduleSync(reason: 'voice message');
+    await addRanchNotification(
+      title: '${currentUserName()} sent a voice message',
+      message: 'Voice message • ${voiceDurationLabel(durationSeconds)}',
+      type: 'chat',
+      sourceId: messageId,
+    );
   }
 
   Future<void> _toggleTask(dynamic key, Map<String, dynamic> task) async {
@@ -6787,11 +7114,14 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     task['completedAt'] = completed ? DateTime.now().toIso8601String() : '';
     task['completedBy'] = completed ? currentUserName() : '';
     await Hive.box('ranch_tasks').put(key, task);
+    AutoSyncService.scheduleSync(reason: 'task status');
     if (completed) {
       await Hive.box('ranch_messages').add({
+        'messageId': 'message_${DateTime.now().microsecondsSinceEpoch}',
         'text': '✅ Task completed: ${txt(task, 'title')}',
         'sender': currentUserName(),
         'taskId': txt(task, 'taskId'),
+        'eventType': 'completed',
         'date': todayDate(),
         'time': currentTime(),
         'createdAt': DateTime.now().toIso8601String(),
@@ -6811,6 +7141,8 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     message: _message,
     onSend: _send,
     onToggle: _toggleTask,
+    onDelete: _deleteMessage,
+    onSendVoice: _sendVoice,
   );
 }
 
