@@ -1,0 +1,23 @@
+{
+  "name": "vimo-ranch-mcp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.5.0",
+    "mcp-handler": "latest",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vercel": "latest"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
