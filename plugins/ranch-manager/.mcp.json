@@ -2,7 +2,8 @@
   "mcpServers": {
     "vimo-ranch": {
       "type": "http",
-      "url": "https://YOUR_VIMO_MCP_HOST/mcp"
+      "url": "https://YOUR_VIMO_MCP_HOST/mcp",
+      "bearer_token_env_var": "VIMO_PLUGIN_API_KEY"
     }
   }
 }
