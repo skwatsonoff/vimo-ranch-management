@@ -1,0 +1,37 @@
+{
+  "name": "ranch-manager",
+  "version": "0.1.0",
+  "description": "VIMO Ranch Management workflow plugin for ranch operations, Firebase-aware development, reporting, and safe data actions.",
+  "author": {
+    "name": "VIMO"
+  },
+  "homepage": "https://my-ranch-sync.web.app",
+  "repository": "https://github.com/skwatsonoff/vimo-ranch-management",
+  "keywords": [
+    "ranch",
+    "dairy",
+    "cows",
+    "milk",
+    "firebase",
+    "flutter",
+    "vimo",
+    "farm-management"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "VIMO Ranch Manager",
+    "shortDescription": "Work with VIMO ranch data and develop the Ranch app safely",
+    "longDescription": "Use VIMO Ranch Manager for ranch workflows, milk and expense analysis, animal records, stock and doctor history, reports, and Firebase-aware development of the VIMO Flutter app. Live ranch data actions require the VIMO MCP app when it is deployed and connected.",
+    "developerName": "VIMO",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://my-ranch-sync.web.app",
+    "defaultPrompt": [
+      "Show me today's ranch summary.",
+      "Check which cows have reduced milk production.",
+      "Review the VIMO Ranch app and fix a bug without changing the existing UI flow."
+    ],
+    "brandColor": "#7C3AED",
+    "screenshots": []
+  }
+}
