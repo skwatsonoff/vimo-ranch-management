@@ -1,24 +1,18 @@
 import crypto from 'node:crypto';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { createMcpHandler } from 'mcp-handler';
 import { z } from 'zod';
 
-const ranchId = requiredEnv('VIMO_RANCH_ID');
-const actorUid = requiredEnv('VIMO_ACTOR_UID');
-const pluginApiKey = requiredEnv('VIMO_PLUGIN_API_KEY');
+const liveEnvNames = [
+  'VIMO_RANCH_ID',
+  'VIMO_ACTOR_UID',
+  'VIMO_PLUGIN_API_KEY',
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_CLIENT_EMAIL',
+  'FIREBASE_PRIVATE_KEY',
+] as const;
 
-if (getApps().length === 0) {
-  initializeApp({
-    credential: cert({
-      projectId: requiredEnv('FIREBASE_PROJECT_ID'),
-      clientEmail: requiredEnv('FIREBASE_CLIENT_EMAIL'),
-      privateKey: requiredEnv('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n'),
-    }),
-  });
-}
-
-const db = getFirestore();
 const readableCollections = [
   'animals',
   'milk_records',
@@ -37,10 +31,50 @@ const readableCollections = [
 
 type ReadableCollection = (typeof readableCollections)[number];
 
-function requiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Missing environment variable: ${name}`);
-  return value;
+type LiveContext = {
+  ranchId: string;
+  actorUid: string;
+  pluginApiKey: string;
+  db: Firestore;
+};
+
+function env(name: (typeof liveEnvNames)[number]) {
+  return process.env[name]?.trim() ?? '';
+}
+
+function setupStatus() {
+  const missing = liveEnvNames.filter((name) => !env(name));
+  return {
+    service: 'vimo-ranch-mcp',
+    version: '0.2.0',
+    mode: 'read-only',
+    liveDataConfigured: missing.length === 0,
+    missingEnvironmentVariables: missing,
+  };
+}
+
+function getLiveContext(): LiveContext {
+  const status = setupStatus();
+  if (!status.liveDataConfigured) {
+    throw new Error(
+      `Live ranch data is locked until private deployment configuration is completed. Missing: ${status.missingEnvironmentVariables.join(', ')}`,
+    );
+  }
+
+  const projectId = env('FIREBASE_PROJECT_ID');
+  const clientEmail = env('FIREBASE_CLIENT_EMAIL');
+  const privateKey = env('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n');
+
+  if (getApps().length === 0) {
+    initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+  }
+
+  return {
+    ranchId: env('VIMO_RANCH_ID'),
+    actorUid: env('VIMO_ACTOR_UID'),
+    pluginApiKey: env('VIMO_PLUGIN_API_KEY'),
+    db: getFirestore(),
+  };
 }
 
 function secureEquals(a: string, b: string) {
@@ -49,8 +83,8 @@ function secureEquals(a: string, b: string) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-async function assertActiveMember() {
-  const member = await db.doc(`ranches/${ranchId}/members/${actorUid}`).get();
+async function assertActiveMember(context: LiveContext) {
+  const member = await context.db.doc(`ranches/${context.ranchId}/members/${context.actorUid}`).get();
   if (!member.exists) throw new Error('Configured VIMO actor is not a ranch member.');
   const data = member.data() ?? {};
   if (data.active === false || data.status !== 'active') {
@@ -79,9 +113,10 @@ function text(payload: unknown) {
 }
 
 async function readCollection(collection: ReadableCollection, limit: number) {
-  await assertActiveMember();
-  const snapshot = await db
-    .collection(`ranches/${ranchId}/${collection}`)
+  const context = getLiveContext();
+  await assertActiveMember(context);
+  const snapshot = await context.db
+    .collection(`ranches/${context.ranchId}/${collection}`)
     .limit(Math.min(Math.max(limit, 1), 200))
     .get();
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -89,8 +124,13 @@ async function readCollection(collection: ReadableCollection, limit: number) {
 
 const mcpHandler = createMcpHandler(
   (server) => {
+    server.tool('get_setup_status', 'Check whether the private VIMO live-data connection is configured.', {}, async () => {
+      return text(setupStatus());
+    });
+
     server.tool('get_ranch_summary', 'Get VIMO ranch collection counts and member role.', {}, async () => {
-      const role = await assertActiveMember();
+      const context = getLiveContext();
+      const role = await assertActiveMember(context);
       const names: ReadableCollection[] = [
         'animals',
         'milk_records',
@@ -102,10 +142,10 @@ const mcpHandler = createMcpHandler(
       const counts = await Promise.all(
         names.map(async (name) => [
           name,
-          (await db.collection(`ranches/${ranchId}/${name}`).count().get()).data().count,
+          (await context.db.collection(`ranches/${context.ranchId}/${name}`).count().get()).data().count,
         ] as const),
       );
-      return text({ ranchId, role, counts: Object.fromEntries(counts) });
+      return text({ ranchId: context.ranchId, role, counts: Object.fromEntries(counts) });
     });
 
     server.tool(
@@ -130,9 +170,13 @@ const mcpHandler = createMcpHandler(
 );
 
 async function authorize(request: Request) {
+  const status = setupStatus();
+  if (!status.liveDataConfigured) return null;
+
+  const expected = env('VIMO_PLUGIN_API_KEY');
   const auth = request.headers.get('authorization') ?? '';
   const supplied = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!supplied || !secureEquals(supplied, pluginApiKey)) {
+  if (!supplied || !secureEquals(supplied, expected)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'content-type': 'application/json' },
