@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vimo-ranch": {
+      "type": "http",
+      "url": "https://YOUR_VIMO_MCP_HOST/mcp"
+    }
+  }
+}
