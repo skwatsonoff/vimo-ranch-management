@@ -22,7 +22,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audioplayers/audioplayers.dart' hide Source;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +39,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:record/record.dart';
 import 'firebase_options.dart';
 import 'web_runtime.dart';
+import 'sync_support.dart';
 
 part 'interface.dart';
 
@@ -94,7 +95,9 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+    // Native Firebase Auth persists sessions automatically; setPersistence is
+    // a web API and can make otherwise valid native initialization fail.
+    if (kIsWeb) await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
     firebaseReady = true;
     if (!kIsWeb) {
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -387,9 +390,14 @@ Future<void> normalizeFamilyUsers() async {
         };
       })
       .toList();
-  await users.clear();
+  AutoSyncService.beginRemoteWrite();
+  try {
+    await users.clear();
+  } finally {
+    AutoSyncService.endRemoteWrite();
+  }
   for (final user in cleaned) {
-    await users.put(txt(user, 'userId'), user);
+    await AutoSyncService.putRemote(users, txt(user, 'userId'), user);
   }
 }
 
@@ -513,6 +521,35 @@ String _excelCell(dynamic value, {String? style}) {
   return '<Cell$safeStyle><Data ss:Type="String">${_xml(_excelValue(value))}</Data></Cell>';
 }
 
+String excelWorksheetName(String name) {
+  final cleaned = name
+      .replaceAll(RegExp(r'[:\\/?*\[\]\x00-\x1f]'), ' ')
+      .trim()
+      .replaceAll(RegExp(r"^'+|'+$"), '')
+      .trim();
+  if (cleaned.isEmpty) return 'Sheet';
+  var end = math.min(31, cleaned.length);
+  // Keep a valid UTF-16 string when a long name ends inside an emoji pair.
+  if (end < cleaned.length &&
+      cleaned.codeUnitAt(end - 1) >= 0xD800 &&
+      cleaned.codeUnitAt(end - 1) <= 0xDBFF) {
+    end--;
+  }
+  return cleaned.substring(0, end);
+}
+
+Map<String, dynamic>? latestActivityFrom(
+  Iterable<Map<String, dynamic>> records,
+) {
+  Map<String, dynamic>? latest;
+  for (final record in records) {
+    if (latest == null || activityDate(record).isAfter(activityDate(latest))) {
+      latest = record;
+    }
+  }
+  return latest;
+}
+
 String _excelWorksheet(
   String name,
   List<Map<String, dynamic>> data, {
@@ -530,10 +567,7 @@ String _excelWorksheet(
   }
   if (keys.isEmpty) keys.add('status');
 
-  final safeName = name
-      .replaceAll(RegExp(r'[:\\/?*\[\]]'), ' ')
-      .trim()
-      .substring(0, math.min(31, name.trim().length));
+  final safeName = excelWorksheetName(name);
   final b = StringBuffer(
     '<Worksheet ss:Name="${_xml(safeName)}"><Table>'
     '<Row ss:StyleID="header">',
@@ -2327,10 +2361,14 @@ String thisMonth() {
 
 String thisYear() => DateTime.now().year.toString();
 
-double toDouble(String s) => double.tryParse(s.trim()) ?? 0.0;
+double toDouble(String s) {
+  final value = double.tryParse(s.trim());
+  return value != null && value.isFinite ? value : 0.0;
+}
 
-int toInt(dynamic v) =>
-    v is int ? v : (v is num ? v.toInt() : int.tryParse('$v') ?? 0);
+int toInt(dynamic v) => v is int
+    ? v
+    : (v is num && v.isFinite ? v.toInt() : int.tryParse('$v') ?? 0);
 
 Map<String, dynamic> asMap(dynamic value) =>
     Map<String, dynamic>.from(value as Map);
@@ -2349,8 +2387,8 @@ String txt(Map<String, dynamic> m, String k, [String d = '']) {
 
 double numv(Map<String, dynamic> m, String k) {
   final v = m[k];
-  if (v is num) return v.toDouble();
-  return double.tryParse('$v') ?? 0.0;
+  if (v is num) return v.isFinite ? v.toDouble() : 0.0;
+  return toDouble('$v');
 }
 
 String csv(dynamic v) => '"${'$v'.replaceAll('"', '""')}"';
@@ -2875,12 +2913,36 @@ double? lastMilkQuantityForCustomerFrom(
 double? lastMilkQuantityForCustomer(String customer) =>
     lastMilkQuantityForCustomerFrom(saleRows(), customer);
 
+const ownUseCustomerName = 'சொந்த பயன்பாடு';
+
+bool isOwnUseCustomer(String name) => name.trim() == ownUseCustomerName;
+
+bool isOwnUseMilk(Map<String, dynamic> record) =>
+    txt(record, 'type') == 'Milk' &&
+    isOwnUseCustomer(txt(record, 'customerName'));
+
+/// Apply this when saving or correcting milk entries, so home use can never
+/// accidentally create revenue, even if an old unit price is still present.
+void applyMilkSaleUsage(Map<String, dynamic> record) {
+  if (txt(record, 'type') != 'Milk') return;
+  final ownUse = isOwnUseMilk(record);
+  record['ownUse'] = ownUse;
+  record['category'] = ownUse ? 'Milk Own Use' : 'Milk Sale';
+  if (ownUse) record['pricePerUnit'] = 0.0;
+  record['amount'] = numv(record, 'quantity') * numv(record, 'pricePerUnit');
+}
+
+double milkOwnUse(String period) => saleRows()
+    .where((r) => isOwnUseMilk(r) && matchPeriod(txt(r, 'date'), period))
+    .fold(0.0, (total, r) => total + numv(r, 'quantity'));
+
 double milkSold(String period) {
   double total = 0;
   for (final r in saleRows()) {
     final saleType = txt(r, 'type');
     final category = txt(r, 'category');
-    if (matchPeriod(txt(r, 'date'), period) &&
+    if (!isOwnUseMilk(r) &&
+        matchPeriod(txt(r, 'date'), period) &&
         (saleType == 'Milk' || category == 'Milk Sale')) {
       total += numv(r, 'quantity');
     }
@@ -2889,7 +2951,7 @@ double milkSold(String period) {
 }
 
 double availableMilk(String period) {
-  final balance = milkTotal(period) - milkSold(period);
+  final balance = milkTotal(period) - milkSold(period) - milkOwnUse(period);
   return balance < 0 ? 0 : balance;
 }
 
@@ -2953,8 +3015,10 @@ double cowMilkForPeriod(String cowName, String period) {
 }
 
 String lastDoctor(String name) {
-  final list = doctorRows().where((r) => txt(r, 'cow') == name).toList();
-  return list.isEmpty ? 'No visit' : txt(list.first, 'date');
+  final latest = latestActivityFrom(
+    doctorRows().where((r) => txt(r, 'cow') == name),
+  );
+  return latest == null ? 'No visit' : txt(latest, 'date');
 }
 
 List<Map<String, dynamic>> calvesOf(String mother) =>
@@ -3131,7 +3195,7 @@ class _AnimalPortraitState extends State<_AnimalPortrait> {
     final size = widget.size;
     final fallback = Center(child: CowMark(size: size * 0.62));
 
-    return Container(
+    final portrait = Container(
       width: widget.rectangular ? double.infinity : size,
       height: size,
       decoration: BoxDecoration(
@@ -3144,16 +3208,69 @@ class _AnimalPortraitState extends State<_AnimalPortrait> {
           ? fallback
           : Image(
               image: provider!,
-              width: size,
+              width: widget.rectangular ? double.infinity : size,
               height: size,
-              fit: BoxFit.cover,
+              fit: widget.rectangular ? BoxFit.contain : BoxFit.cover,
               filterQuality: FilterQuality.high,
               frameBuilder: (_, child, frame, synchronous) =>
                   synchronous || frame != null ? child : fallback,
               errorBuilder: (_, _, _) => fallback,
             ),
     );
+    if (!widget.rectangular || provider == null) return portrait;
+    return Semantics(
+      button: true,
+      label: tamilUi ? 'முழுப் புகைப்படத்தைத் திறக்க' : 'Open full photo',
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AnimalPhotoViewer(
+              image: provider!,
+              name: txt(widget.animal, 'name'),
+            ),
+          ),
+        ),
+        child: portrait,
+      ),
+    );
   }
+}
+
+class AnimalPhotoViewer extends StatelessWidget {
+  final ImageProvider image;
+  final String name;
+
+  const AnimalPhotoViewer({super.key, required this.image, required this.name});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      title: AppText(name),
+    ),
+    body: SafeArea(
+      child: InteractiveViewer(
+        minScale: 1,
+        maxScale: 5,
+        child: SizedBox.expand(
+          child: Image(
+            image: image,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (_, _, _) => Center(
+              child: AppText(
+                tamilUi
+                    ? 'புகைப்படத்தைத் திறக்க முடியவில்லை'
+                    : 'Could not open the photo',
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 // --- recent activity ---------------------------------------------------------
@@ -3253,7 +3370,12 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
 }
 
 Future<String?> chooseDate(BuildContext context, String current) async {
-  final initial = DateTime.tryParse(current) ?? DateTime.now();
+  final parsed = DateTime.tryParse(current) ?? DateTime.now();
+  final first = DateTime(1990);
+  final last = DateTime(2100);
+  final initial = parsed.isBefore(first)
+      ? first
+      : (parsed.isAfter(last) ? last : parsed);
   final picked = await showDatePicker(
     context: context,
     initialDate: initial,
@@ -3491,7 +3613,12 @@ class RanchAccessService {
     try {
       await setSetting('syncStatus', 'Downloading ranch data...');
       await CloudSyncService.downloadAll().timeout(const Duration(seconds: 30));
-      await setSetting('syncStatus', 'Synced');
+      await AutoSyncService.refreshPendingCount();
+      await setSetting(
+        'syncStatus',
+        AutoSyncService.countPending() > 0 ? 'Waiting to sync' : 'Synced',
+      );
+      AutoSyncService.scheduleSync(reason: 'ranch opened');
     } catch (error) {
       await setSetting('syncStatus', 'Will retry automatically');
       await setSetting('lastSyncError', '$error');
@@ -3744,6 +3871,22 @@ class RanchAccessService {
   }
 }
 
+dynamic localCloudValue(dynamic value) {
+  if (value is Timestamp) return value.toDate().toIso8601String();
+  if (value is Map) {
+    return {
+      for (final e in value.entries) '${e.key}': localCloudValue(e.value),
+    };
+  }
+  if (value is List) return value.map(localCloudValue).toList();
+  return value;
+}
+
+Map<String, dynamic> localCloudData(Map<String, dynamic> value) =>
+    Map<String, dynamic>.from(localCloudValue(value) as Map)
+      ..remove('updatedAt')
+      ..remove('settingKey');
+
 class CloudSyncService {
   const CloudSyncService._();
 
@@ -3762,6 +3905,7 @@ class CloudSyncService {
     'lastAutoSyncReason',
     'pendingAnimalEntryUpdates',
     'languageMode',
+    'liveSyncError',
   };
 
   static FirebaseFirestore get db => FirebaseFirestore.instance;
@@ -3774,227 +3918,241 @@ class CloudSyncService {
       FirebaseAuth.instance.currentUser != null &&
       ranchId().isNotEmpty;
 
-  static Future<void> uploadAll() async {
-    if (!ready) return;
+  static const networkTimeout = Duration(seconds: 35);
 
-    if (canManageRanch) {
-      await ranch.set({
-        'appName': appName(),
-        'farmName': farmName(),
-        'ownerName': ownerName(),
-        'place': placeName(),
-        'autoSyncEnabled': autoSyncEnabled(),
-        'lastLocalSyncAttempt': DateTime.now().toIso8601String(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'updatedBy': currentUserName(),
-      }, SetOptions(merge: true));
+  static bool mayUpload(String boxName, Map<String, dynamic> data) {
+    if (boxName == 'settings' || boxName == 'family_users') {
+      return canManageRanch;
     }
-
-    for (final boxName in backupBoxNames) {
-      await uploadBox(boxName);
-    }
-  }
-
-  static Future<void> uploadBox(String boxName) async {
-    if (!ready || !Hive.isBoxOpen(boxName)) return;
-    if ((boxName == 'settings' || boxName == 'family_users') &&
-        !canManageRanch) {
-      return;
-    }
-    const animalEditBoxes = {
+    if (const {
       'animals',
       'purchase_records',
       'death_records',
       'calving_records',
-    };
-    if (animalEditBoxes.contains(boxName) && !canEditAnimals) return;
-    if (!{'settings', 'family_users', ...animalEditBoxes}.contains(boxName) &&
-        !canRecordEntries) {
+    }.contains(boxName)) {
+      return canEditAnimals;
+    }
+    if (boxName == 'sale_records' && !canEditAnimals) {
+      return canRecordEntries &&
+          const {'Milk', 'Manure'}.contains(txt(data, 'type'));
+    }
+    if (boxName == 'ranch_messages' &&
+        !canManageRanch &&
+        txt(data, 'cloudId').isNotEmpty &&
+        data['pendingUpload'] == true) {
+      final creator = txt(data, 'createdByUid');
+      final uid = firebaseReady
+          ? FirebaseAuth.instance.currentUser?.uid ?? ''
+          : '';
+      if (creator.isNotEmpty && creator != uid) return false;
+    }
+    return canRecordEntries;
+  }
+
+  static Future<void> uploadAll() async {
+    if (!ready) return;
+    // Upload everyday entries first. Settings or a large animal photo cannot
+    // block them; failures remain visible after all independent work is tried.
+    await runSyncSteps({
+      for (final name in [
+        'milk_records',
+        'food_records',
+        'stock_records',
+        'expense_records',
+        'doctor_records',
+        'sale_records',
+        'animals',
+        'purchase_records',
+        'death_records',
+        'calving_records',
+        'family_users',
+        'ranch_messages',
+        'ranch_tasks',
+        'notifications',
+        'settings',
+      ])
+        name: () => uploadBox(name),
+      if (canManageRanch)
+        'ranch settings': () => ranch
+            .set({
+              'appName': appName(),
+              'farmName': farmName(),
+              'ownerName': ownerName(),
+              'place': placeName(),
+              'autoSyncEnabled': autoSyncEnabled(),
+              'lastLocalSyncAttempt': DateTime.now().toIso8601String(),
+              'updatedAt': FieldValue.serverTimestamp(),
+              'updatedBy': currentUserName(),
+            }, SetOptions(merge: true))
+            .timeout(networkTimeout),
+    });
+  }
+
+  static Future<void> uploadBox(String boxName) async {
+    if (!ready || !Hive.isBoxOpen(boxName)) return;
+    final box = Hive.box(boxName);
+    final targetRanch = ranchId();
+    final col = ranch.collection(boxName);
+    if (boxName == 'settings') {
+      if (!canManageRanch) return;
+      await runSyncSteps({
+        for (final entry in box.toMap().entries)
+          if (!localOnlySettings.contains('${entry.key}'))
+            '${entry.key}': () => col
+                .doc('${entry.key}')
+                .set({
+                  'settingKey': '${entry.key}',
+                  'value': entry.value,
+                  'updatedBy': currentUserName(),
+                  'updatedAtText': DateTime.now().toIso8601String(),
+                }, SetOptions(merge: true))
+                .timeout(networkTimeout),
+      });
       return;
     }
 
-    final col = ranch.collection(boxName);
-    final box = Hive.box(boxName);
-    final remoteRows = await col.get();
-    final remoteById = {
-      for (final document in remoteRows.docs) document.id: document.data(),
-    };
-    WriteBatch batch = db.batch();
-    int count = 0;
-    final acknowledged = <dynamic, Map<String, dynamic>>{};
-
-    Future<void> commitBatch() async {
-      await batch.commit();
-      AutoSyncService.beginRemoteWrite();
-      try {
-        for (final saved in acknowledged.entries) {
-          final current = box.get(saved.key);
-          if (current is Map &&
-              current['updatedAtMillis'] == saved.value['updatedAtMillis']) {
-            await box.put(saved.key, saved.value);
+    await runSyncSteps({
+      for (final key in box.keys.toList())
+        '${key.runtimeType}:$key': () async {
+          if (!ready || ranchId() != targetRanch) return;
+          final raw = box.get(key);
+          if (raw is! Map) return;
+          var local = Map<String, dynamic>.from(raw);
+          if (!mayUpload(boxName, local)) return;
+          // Acknowledged rows do not need to be rewritten by every device.
+          // Legacy rows without an explicit acknowledgement still get retried.
+          if (local['pendingUpload'] == false &&
+              txt(local, 'cloudId').isNotEmpty) {
+            return;
           }
-        }
-      } finally {
-        AutoSyncService.endRemoteWrite();
-      }
-      acknowledged.clear();
-    }
 
-    Future<void> flushIfFull() async {
-      // Firestore caps a batch at 500 writes; stop well short of it.
-      if (count >= 400) {
-        await commitBatch();
-        batch = db.batch();
-        count = 0;
-      }
-    }
-
-    for (final entry in box.toMap().entries) {
-      if (boxName == 'settings') {
-        if (localOnlySettings.contains('${entry.key}')) continue;
-        batch.set(col.doc('${entry.key}'), {
-          'settingKey': '${entry.key}',
-          'value': entry.value,
-          'updatedBy': currentUserName(),
-          'updatedAtText': DateTime.now().toIso8601String(),
-        }, SetOptions(merge: true));
-        count++;
-      } else if (entry.value is Map) {
-        final data = Map<String, dynamic>.from(entry.value as Map);
-        if (boxName == 'sale_records' &&
-            !canEditAnimals &&
-            {'Cow', 'Calf'}.contains(txt(data, 'type'))) {
-          continue;
-        }
-        final docId = makeRecordId(boxName, '${entry.key}', data);
-        final now = DateTime.now();
-        data['cloudId'] = docId;
-        data['deviceKey'] = '${entry.key}';
-        data['updatedBy'] = currentUserName();
-        data['updatedAtText'] = txt(
-          data,
-          'updatedAtText',
-          now.toIso8601String(),
-        );
-        if (toInt(data['updatedAtMillis']) <= 0) {
-          data['updatedAtMillis'] = now.millisecondsSinceEpoch;
-        }
-        if (txt(data, 'createdAt').isEmpty) {
-          data['createdAt'] = now.toIso8601String();
-        }
-
-        // Last-write-wins guard. A device coming back online must not replace
-        // a newer edit that another family member has already synced.
-        final remote = remoteById[docId];
-        final remoteMillis = toInt(remote?['updatedAtMillis']);
-        final localMillis = toInt(data['updatedAtMillis']);
-        if (remote != null && remoteMillis >= localMillis) {
-          final newerRemote = Map<String, dynamic>.from(remote);
-          newerRemote['cloudId'] = docId;
-          newerRemote['pendingUpload'] = false;
-          AutoSyncService.beginRemoteWrite();
-          try {
-            await box.put(entry.key, newerRemote);
-          } finally {
-            AutoSyncService.endRemoteWrite();
+          final docId = makeRecordId(boxName, '$key', local);
+          final now = DateTime.now();
+          local = {
+            ...local,
+            'cloudId': docId,
+            'createdAt': txt(local, 'createdAt', now.toIso8601String()),
+            'updatedAtMillis': toInt(local['updatedAtMillis']) > 0
+                ? toInt(local['updatedAtMillis'])
+                : now.millisecondsSinceEpoch,
+            'updatedAtText': txt(local, 'updatedAtText', now.toIso8601String()),
+            'pendingUpload': true,
+          };
+          // Persist the identity BEFORE a network call, including legacy rows.
+          // Retries after an interrupted request must address the same document.
+          await AutoSyncService.putRemote(box, key, local);
+          final sent = Map<String, dynamic>.from(local)
+            ..remove('key')
+            ..remove('pendingUpload');
+          sent['updatedBy'] = currentUserName();
+          if (boxName == 'sale_records' && isOwnUseMilk(sent)) {
+            applyMilkSaleUsage(sent);
           }
-          continue;
-        }
-        data['pendingUpload'] = false;
+          if (boxName == 'animals' && txt(sent, 'imageData').length > 700000) {
+            final compressed = await compressAnimalPhotoDataUrl(
+              txt(sent, 'imageData'),
+            );
+            if (compressed == null) {
+              throw StateError('Photo could not be uploaded');
+            }
+            sent['imageData'] = compressed;
+          }
 
-        acknowledged[entry.key] = data;
-        batch.set(col.doc(docId), data, SetOptions(merge: true));
-        count++;
-      } else {
-        batch.set(col.doc('${entry.key}'), {
-          'value': entry.value,
-          'updatedBy': currentUserName(),
-          'updatedAtText': DateTime.now().toIso8601String(),
-        }, SetOptions(merge: true));
-        count++;
-      }
+          // Each record is an independent transaction: no multi-photo 10 MiB
+          // batch failure, no batch-wide permission failure, no stale overwrite.
+          final confirmed = await db.runTransaction<Map<String, dynamic>>(
+            (transaction) async {
+              final ref = col.doc(docId);
+              final remoteSnap = await transaction.get(ref);
+              final remote = remoteSnap.data();
+              if (remote != null &&
+                  toInt(remote['updatedAtMillis']) >=
+                      toInt(sent['updatedAtMillis'])) {
+                return localCloudData(remote)..['cloudId'] = docId;
+              }
+              transaction.set(ref, sent, SetOptions(merge: true));
+              return sent;
+            },
+            timeout: networkTimeout,
+            maxAttempts: 3,
+          );
+          if (ranchId() != targetRanch) return;
+          await acknowledge(box, key, local, confirmed);
+        },
+    });
+  }
 
-      await flushIfFull();
-    }
-
-    if (count > 0) await commitBatch();
+  /// Called only after the server confirms the exact transaction. Preserve an
+  /// edit made while the request was running, even with an identical timestamp.
+  static Future<void> acknowledge(
+    Box box,
+    dynamic key,
+    Map<String, dynamic> sent,
+    Map<String, dynamic> confirmed,
+  ) async {
+    if (!sameSyncValue(box.get(key), sent)) return;
+    await AutoSyncService.putRemote(box, key, {
+      ...confirmed,
+      'pendingUpload': false,
+    });
   }
 
   static Future<void> downloadAll() async {
     if (!ready) return;
-    for (final boxName in backupBoxNames) {
-      await downloadBox(boxName);
-    }
-    // Older cloud builds could store one family member under several keys.
-    // Compact those legacy rows after every download so the UI and the next
-    // upload both contain one person only.
-    AutoSyncService.beginRemoteWrite();
-    try {
-      await normalizeFamilyUsers();
-    } finally {
-      AutoSyncService.endRemoteWrite();
-    }
+    await runSyncSteps({
+      for (final name in backupBoxNames) name: () => downloadBox(name),
+    });
+    await normalizeFamilyUsers();
   }
 
-  /// Merges the cloud copy into the local box.
-  ///
-  /// Clearing the box and re-adding everything would reassign every Hive key,
-  /// which breaks any screen holding an old key and silently drops local rows
-  /// that have not been uploaded yet. Matching on cloudId instead keeps local
-  /// keys stable, and only deletes rows that were previously synced and have
-  /// since disappeared from the cloud. Anything still waiting to upload has no
-  /// cloudId, so it is always preserved.
+  /// Keep device keys and unsent local edits. Server-only reads are essential:
+  /// a cached Firestore write is not proof that another phone can see it.
   static Future<void> downloadBox(String boxName) async {
     if (!ready || !Hive.isBoxOpen(boxName)) return;
-
-    final snap = await ranch.collection(boxName).get();
+    final targetRanch = ranchId();
+    final snap = await ranch
+        .collection(boxName)
+        .get(const GetOptions(source: Source.server))
+        .timeout(networkTimeout);
+    if (targetRanch != ranchId()) return;
     final box = Hive.box(boxName);
-
-    AutoSyncService.beginRemoteWrite();
-    try {
-      if (boxName == 'settings') {
-        for (final doc in snap.docs) {
-          if (localOnlySettings.contains(doc.id)) continue;
-          final data = Map<String, dynamic>.from(doc.data());
-          if (data.containsKey('value')) {
-            await box.put(doc.id, data['value']);
-          }
-        }
-        return;
-      }
-
-      final keyByCloudId = <String, dynamic>{};
-      for (final entry in box.toMap().entries) {
-        if (entry.value is Map) {
-          final cid = txt(
-            Map<String, dynamic>.from(entry.value as Map),
-            'cloudId',
-          );
-          if (cid.isNotEmpty) keyByCloudId[cid] = entry.key;
-        }
-      }
-
+    if (boxName == 'settings') {
       for (final doc in snap.docs) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data.remove('updatedAt');
-        data.remove('settingKey');
-        final cid = txt(data, 'cloudId', doc.id);
-        data['cloudId'] = cid;
-        final localKey = keyByCloudId[cid];
-        if (localKey != null) {
-          final local = asMap(box.get(localKey));
-          final localMillis = toInt(local['updatedAtMillis']);
-          final remoteMillis = toInt(data['updatedAtMillis']);
-          if (localMillis > remoteMillis) {
-            continue;
-          }
-          await box.put(localKey, data);
-        } else {
-          await box.add(data);
+        if (localOnlySettings.contains(doc.id)) continue;
+        final data = localCloudData(doc.data());
+        if (data.containsKey('value')) await box.put(doc.id, data['value']);
+      }
+      return;
+    }
+    final keyByCloudId = <String, dynamic>{
+      for (final entry in box.toMap().entries)
+        if (entry.value is Map && txt(asMap(entry.value), 'cloudId').isNotEmpty)
+          txt(asMap(entry.value), 'cloudId'): entry.key,
+    };
+    for (final doc in snap.docs) {
+      if (doc.metadata.hasPendingWrites) continue;
+      final data = localCloudData(doc.data())
+        ..['cloudId'] = doc.id
+        ..['pendingUpload'] = false;
+      final key = keyByCloudId[doc.id] ?? doc.id;
+      final raw = box.get(key);
+      if (raw is Map) {
+        final localMillis = toInt(raw['updatedAtMillis']);
+        final remoteMillis = toInt(data['updatedAtMillis']);
+        final sameContent = sameSyncValue(
+          syncBusinessFields(asMap(raw)),
+          syncBusinessFields(data),
+        );
+        // Old clients sometimes marked a downloaded, unchanged row dirty.
+        // Equality with a server-confirmed copy safely repairs that queue.
+        if (!sameContent &&
+            (localMillis > remoteMillis ||
+                (raw['pendingUpload'] == true &&
+                    localMillis == remoteMillis))) {
+          continue;
         }
       }
-    } finally {
-      AutoSyncService.endRemoteWrite();
+      await AutoSyncService.putRemote(box, key, data);
     }
   }
 
@@ -4191,7 +4349,7 @@ Future<void> updateAnimalEntryFields(
   data['updatedBy'] = currentUserName();
   AutoSyncService.beginRemoteWrite();
   try {
-    await box.put(animalKey, data);
+    await AutoSyncService.putRemote(box, animalKey, data);
   } finally {
     AutoSyncService.endRemoteWrite();
   }
@@ -4231,26 +4389,104 @@ Future<void> updateAnimalEntryFields(
 Future<void> flushPendingAnimalEntryUpdates() async {
   if (!CloudSyncService.ready || !Hive.isBoxOpen('settings')) return;
   final settings = Hive.box('settings');
-  final pending = Map<String, dynamic>.from(
-    asMap(settings.get('pendingAnimalEntryUpdates') ?? <String, dynamic>{}),
+  final targetRanch = ranchId();
+  final pending = asMap(
+    settings.get('pendingAnimalEntryUpdates') ?? <String, dynamic>{},
   );
-  if (pending.isEmpty) return;
+  await runSyncSteps({
+    for (final entry in pending.entries)
+      entry.key: () async {
+        if (targetRanch != ranchId()) return;
+        final payload = asMap(entry.value);
+        final ref = CloudSyncService.ranch.collection('animals').doc(entry.key);
+        final confirmed = await CloudSyncService.db
+            .runTransaction<Map<String, dynamic>>(
+              (transaction) async {
+                final snapshot = await transaction.get(ref);
+                final remote = snapshot.data();
+                if (remote == null) {
+                  throw StateError(
+                    'The animal must be synced by an admin first',
+                  );
+                }
+                if (toInt(remote['updatedAtMillis']) >
+                    toInt(payload['updatedAtMillis'])) {
+                  return localCloudData(remote);
+                }
+                transaction.update(ref, payload);
+                return localCloudData({...remote, ...payload});
+              },
+              timeout: CloudSyncService.networkTimeout,
+              maxAttempts: 3,
+            );
+        if (targetRanch != ranchId()) return;
+        final latest = asMap(
+          settings.get('pendingAnimalEntryUpdates') ?? <String, dynamic>{},
+        );
+        if (sameSyncValue(latest[entry.key], payload)) {
+          latest.remove(entry.key);
+          await settings.put('pendingAnimalEntryUpdates', latest);
+        }
+        final box = Hive.box('animals');
+        for (final animal in box.toMap().entries) {
+          if (animal.value is! Map) continue;
+          final local = asMap(animal.value);
+          if (makeRecordId('animals', '${animal.key}', local) != entry.key) {
+            continue;
+          }
+          if (toInt(local['updatedAtMillis']) >
+              toInt(confirmed['updatedAtMillis'])) {
+            break;
+          }
+          // Clear legacy health-only pending flags only when every business
+          // field is confirmed. Unrelated unsent profile edits stay on device.
+          final comparableLocal = syncBusinessFields(local);
+          final comparableRemote = syncBusinessFields(confirmed);
+          if (sameSyncValue(comparableLocal, comparableRemote)) {
+            await CloudSyncService.acknowledge(box, animal.key, local, {
+              ...confirmed,
+              'cloudId': entry.key,
+            });
+          }
+          break;
+        }
+      },
+  });
+}
 
-  for (final entry in pending.entries.toList()) {
-    await CloudSyncService.ranch
-        .collection('animals')
-        .doc(entry.key)
-        .set(asMap(entry.value), SetOptions(merge: true));
-    final latest = asMap(
-      settings.get('pendingAnimalEntryUpdates') ?? <String, dynamic>{},
-    );
-    if (latest[entry.key] is Map &&
-        latest[entry.key]['updatedAtMillis'] ==
-            entry.value['updatedAtMillis']) {
-      latest.remove(entry.key);
-      await settings.put('pendingAnimalEntryUpdates', latest);
-    }
+Map<String, dynamic> syncBusinessFields(Map<String, dynamic> data) => {
+  for (final entry in data.entries)
+    if (!const {
+      'key',
+      'cloudId',
+      'deviceKey',
+      'pendingUpload',
+      'updatedBy',
+      'updatedAt',
+      'updatedAtMillis',
+      'updatedAtText',
+      'entryDeviceId',
+      'createdByUid',
+    }.contains(entry.key))
+      entry.key: entry.value,
+};
+
+String syncFailureHint(String error) {
+  if (error.contains('permission') ||
+      error.contains('approval') ||
+      error.contains('PERMISSION_DENIED')) {
+    return tamilUi
+        ? 'சில பதிவுகளுக்கு நிர்வாகியின் அனுமதி தேவை. பதிவுகள் இந்தக் கருவியில் பாதுகாப்பாக உள்ளன.'
+        : 'Some entries need admin permission. They are still saved on this device.';
   }
+  if (error.contains('Photo')) {
+    return tamilUi
+        ? 'ஒரு புகைப்படத்தை அனுப்ப முடியவில்லை. மற்ற பதிவுகள் தொடர்ந்து ஒத்திசையும்.'
+        : 'One photo could not upload. Other entries can still sync.';
+  }
+  return tamilUi
+      ? 'சில பதிவுகள் இன்னும் அனுப்பப்படவில்லை. இணையம் கிடைத்ததும் மீண்டும் முயற்சிக்கப்படும்.'
+      : 'Some entries have not reached the cloud. They will retry when connected.';
 }
 
 /// Keeps collaboration data live across every signed-in ranch device.
@@ -4286,14 +4522,14 @@ class CollaborationRealtimeSyncService {
 
     _messageSubscription = CloudSyncService.ranch
         .collection('ranch_messages')
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .listen(
           (snapshot) => _enqueue('ranch_messages', snapshot),
           onError: _handleError,
         );
     _taskSubscription = CloudSyncService.ranch
         .collection('ranch_tasks')
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .listen(
           (snapshot) => _enqueue('ranch_tasks', snapshot),
           onError: _handleError,
@@ -4311,15 +4547,19 @@ class CollaborationRealtimeSyncService {
 
   static void _handleError(Object error, [StackTrace? _]) {
     if (!Hive.isBoxOpen('settings')) return;
-    Hive.box('settings').put('lastSyncError', '$error');
-    Hive.box('settings').put('syncStatus', 'Realtime sync reconnecting');
+    Hive.box('settings').put('liveSyncError', '$error');
   }
 
   static Future<void> _applySnapshot(
     String boxName,
     QuerySnapshot<Map<String, dynamic>> snapshot,
   ) async {
-    if (!Hive.isBoxOpen(boxName) || _listeningRanch != ranchId()) return;
+    if (!Hive.isBoxOpen(boxName) ||
+        _listeningRanch != ranchId() ||
+        snapshot.metadata.isFromCache ||
+        snapshot.metadata.hasPendingWrites) {
+      return;
+    }
     final box = Hive.box(boxName);
     final localKeyByCloudId = <String, dynamic>{};
     for (final entry in box.toMap().entries) {
@@ -4334,16 +4574,19 @@ class CollaborationRealtimeSyncService {
         final cloudId = change.doc.id;
         final localKey = localKeyByCloudId[cloudId];
         if (change.type == DocumentChangeType.removed) {
-          if (localKey != null) await box.delete(localKey);
+          if (localKey != null &&
+              asMap(box.get(localKey))['pendingUpload'] != true) {
+            await box.delete(localKey);
+          }
           continue;
         }
 
-        final remote = Map<String, dynamic>.from(change.doc.data() ?? {});
+        final remote = localCloudData(change.doc.data() ?? {});
         remote['cloudId'] = cloudId;
         remote['pendingUpload'] = false;
         if (localKey == null) {
-          final addedKey = await box.add(remote);
-          localKeyByCloudId[cloudId] = addedKey;
+          await AutoSyncService.putRemote(box, cloudId, remote);
+          localKeyByCloudId[cloudId] = cloudId;
           continue;
         }
 
@@ -4353,10 +4596,10 @@ class CollaborationRealtimeSyncService {
                 toInt(remote['updatedAtMillis'])) {
           continue;
         }
-        await box.put(localKey, remote);
+        await AutoSyncService.putRemote(box, localKey, remote);
       }
       if (Hive.isBoxOpen('settings')) {
-        await Hive.box('settings').put('syncStatus', 'Live');
+        await AutoSyncService.refreshPendingCount();
       }
     } finally {
       AutoSyncService.endRemoteWrite();
@@ -4380,12 +4623,62 @@ class AutoSyncService {
   static Timer? _periodic;
   static Timer? _debounce;
   static bool _started = false;
-  static bool _syncing = false;
+  static final _coordinator = SyncCoordinator();
+  static int _changes = 0;
+  static int _retryAttempts = 0;
+  static final Map<(String, dynamic), List<dynamic>> _remoteEchoes = {};
 
-  /// Depth counter, not a plain flag, because remote writes nest: uploadBox may
-  /// stamp a record while downloadBox is already applying a batch. A boolean
-  /// would be cleared by the inner call and let the outer one leak change
-  /// events back into the dirty tracker.
+  static Future<void> putRemote(Box box, dynamic key, dynamic value) async {
+    final identity = (box.name, key);
+    final echoes = _remoteEchoes.putIfAbsent(identity, () => []);
+    echoes.add(value);
+    try {
+      await box.put(key, value);
+    } finally {
+      echoes.remove(value);
+      if (echoes.isEmpty) _remoteEchoes.remove(identity);
+    }
+  }
+
+  static bool _consumeRemoteEcho(String boxName, dynamic key, dynamic value) {
+    final identity = (boxName, key);
+    final echoes = _remoteEchoes[identity];
+    if (echoes == null) return false;
+    final index = echoes.indexWhere((entry) => sameSyncValue(entry, value));
+    if (index < 0) return false;
+    echoes.removeAt(index);
+    if (echoes.isEmpty) _remoteEchoes.remove(identity);
+    return true;
+  }
+
+  static int countPending() {
+    var total = 0;
+    final pendingAnimals = <String>{};
+    for (final name in backupBoxNames) {
+      if (name == 'settings' || !Hive.isBoxOpen(name)) continue;
+      for (final value in Hive.box(name).values) {
+        if (value is! Map || value['pendingUpload'] != true) continue;
+        total++;
+        if (name == 'animals') pendingAnimals.add(txt(asMap(value), 'cloudId'));
+      }
+    }
+    final health = asMap(
+      settingValue('pendingAnimalEntryUpdates', <String, dynamic>{}),
+    );
+    return total +
+        health.keys.where((id) => !pendingAnimals.contains(id)).length;
+  }
+
+  static Future<void> refreshPendingCount() async {
+    if (!Hive.isBoxOpen('settings')) return;
+    final total = countPending();
+    await Hive.box(
+      'settings',
+    ).putAll({'pendingSync': total > 0, 'pendingSyncCount': total});
+  }
+
+  /// Suppress explicit remote deletions and local ranch resets. Record writes
+  /// use per-key echoes so they cannot hide unrelated local edits.
   static int _remoteDepth = 0;
 
   static final List<StreamSubscription<dynamic>> _subscriptions = [];
@@ -4409,7 +4702,8 @@ class AutoSyncService {
           // Only writes we are ourselves making from the cloud are ignored.
           // Edits made at any other moment, including while an upload is in
           // flight, still mark the store dirty so they cannot be lost.
-          if (_applyingRemote) return;
+          if (_consumeRemoteEcho(boxName, event.key, event.value)) return;
+          if (event.deleted && _applyingRemote) return;
 
           if (event.value is Map) {
             final data = Map<String, dynamic>.from(event.value as Map);
@@ -4422,11 +4716,13 @@ class AutoSyncService {
                   ? FirebaseAuth.instance.currentUser?.uid ?? ''
                   : '';
             }
-            data['updatedAtMillis'] = now.millisecondsSinceEpoch;
+            data['updatedAtMillis'] = math.max(
+              now.millisecondsSinceEpoch,
+              toInt(data['updatedAtMillis']) + 1,
+            );
             data['updatedAtText'] = now.toIso8601String();
             data['pendingUpload'] = true;
-            beginRemoteWrite();
-            Hive.box(boxName).put(event.key, data).whenComplete(endRemoteWrite);
+            unawaited(putRemote(Hive.box(boxName), event.key, data));
           }
 
           markDirty(reason: 'local change', quiet: true);
@@ -4435,14 +4731,16 @@ class AutoSyncService {
     }
 
     if (firebaseReady) {
-      FirebaseAuth.instance.authStateChanges().listen((user) {
-        if (user != null) {
-          unawaited(CollaborationRealtimeSyncService.ensureStarted());
-          scheduleSync(reason: 'login');
-        } else {
-          unawaited(CollaborationRealtimeSyncService.stop());
-        }
-      });
+      _subscriptions.add(
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+          if (user != null) {
+            unawaited(CollaborationRealtimeSyncService.ensureStarted());
+            scheduleSync(reason: 'login');
+          } else {
+            unawaited(CollaborationRealtimeSyncService.stop());
+          }
+        }),
+      );
     }
 
     _browserRuntime.start(
@@ -4454,7 +4752,11 @@ class AutoSyncService {
       const Duration(hours: 4),
       (_) => scheduleSync(reason: '4 hour auto sync'),
     );
-    Timer(const Duration(seconds: 4), () => scheduleSync(reason: 'app open'));
+    unawaited(refreshPendingCount());
+    _debounce = Timer(
+      const Duration(seconds: 4),
+      () => scheduleSync(reason: 'app open'),
+    );
   }
 
   static void stop() {
@@ -4473,7 +4775,8 @@ class AutoSyncService {
     if (!Hive.isBoxOpen('settings')) return;
     final box = Hive.box('settings');
     box.put('pendingSync', true);
-    box.put('pendingSyncCount', pendingSyncCount() + 1);
+    _changes++;
+    box.put('pendingSyncCount', countPending());
     box.put('syncStatus', 'Waiting to sync');
     box.put('lastAutoSyncReason', reason);
 
@@ -4492,7 +4795,6 @@ class AutoSyncService {
   }
 
   static Future<void> run({String reason = 'auto'}) async {
-    if (_syncing) return;
     const collaborationReasons = {
       'chat message',
       'voice message',
@@ -4504,64 +4806,102 @@ class AutoSyncService {
         !collaborationReasons.contains(reason)) {
       return;
     }
-    if (!firebaseReady) return;
     if (!Hive.isBoxOpen('settings')) return;
-
     final settings = Hive.box('settings');
-
     if (!isOnlineNow()) {
       await settings.put('syncStatus', 'Offline - waiting for network');
-      await settings.put('lastAutoSyncReason', reason);
+      if (reason == 'manual') {
+        throw StateError('இணையம் வந்ததும் பதிவுகள் அனுப்பப்படும்');
+      }
       return;
     }
-    if (FirebaseAuth.instance.currentUser == null) return;
-    await CollaborationRealtimeSyncService.ensureStarted();
+    if (!CloudSyncService.ready) {
+      if (reason == 'manual') {
+        throw StateError('Sign in and open your ranch to sync');
+      }
+      return;
+    }
+    await settings.put('lastAutoSyncReason', reason);
+    try {
+      await _coordinator.run(_performSync, rerun: reason == 'manual');
+    } catch (_) {
+      if (reason == 'manual') rethrow;
+    }
+  }
 
-    _syncing = true;
+  static Future<void> _performSync() async {
+    final settings = Hive.box('settings');
+    final startedAtRevision = _changes;
+    Object? failure;
     try {
       await settings.put('syncStatus', 'Syncing...');
-      await settings.put('lastAutoSyncReason', reason);
-
-      Object? uploadError;
-      try {
-        await flushPendingAnimalEntryUpdates().timeout(
-          const Duration(seconds: 45),
+      await CloudSyncService.db.enableNetwork().timeout(
+        CloudSyncService.networkTimeout,
+      );
+      final member =
+          await RanchAccessService.memberRef(ranchId(), RanchAccessService.uid)
+              .get(const GetOptions(source: Source.server))
+              .timeout(CloudSyncService.networkTimeout);
+      final access = member.data();
+      if (access == null ||
+          access['active'] == false ||
+          txt(access, 'status') != 'active') {
+        throw StateError(
+          'Ranch access needs admin approval. Local entries are still saved.',
         );
-        await CloudSyncService.uploadAll().timeout(const Duration(minutes: 3));
-      } catch (error) {
-        uploadError = error;
       }
-      await CloudSyncService.downloadAll().timeout(const Duration(minutes: 3));
-      if (uploadError != null) throw uploadError;
-
-      final remaining = backupBoxNames
-          .where((name) => name != 'settings')
-          .fold<int>(
-            0,
-            (total, name) =>
-                total +
-                Hive.box(name).values
-                    .where(
-                      (value) => value is Map && value['pendingUpload'] == true,
-                    )
-                    .length,
-          );
-      await settings.put('pendingSync', remaining > 0);
-      await settings.put('pendingSyncCount', remaining);
+      await settings.put(
+        'currentRole',
+        normalizeFamilyRole(txt(access, 'role')),
+      );
+      await runSyncSteps({
+        'records': CloudSyncService.uploadAll,
+        'animal health': flushPendingAnimalEntryUpdates,
+        'download': CloudSyncService.downloadAll,
+      });
+      final blocked = <String>{};
+      for (final name in backupBoxNames) {
+        if (name == 'settings' || !Hive.isBoxOpen(name)) continue;
+        for (final raw in Hive.box(name).values.whereType<Map>()) {
+          if (raw['pendingUpload'] == true &&
+              !CloudSyncService.mayUpload(name, asMap(raw))) {
+            blocked.add(name.replaceAll('_', ' '));
+          }
+        }
+      }
+      if (blocked.isNotEmpty) {
+        throw StateError(
+          'Admin permission needed for ${blocked.join(', ')}. Local entries are still saved.',
+        );
+      }
       await settings.put('lastSyncedAt', DateTime.now().toIso8601String());
+      await settings.put('lastSyncError', '');
+      _retryAttempts = 0;
+    } catch (error) {
+      failure = error;
+      await settings.put('lastSyncError', '$error');
+    } finally {
+      // Recount even after a partial failure: successfully delivered entries
+      // must not remain in the phone's pending badge.
+      await refreshPendingCount();
+      final remaining = countPending();
       await settings.put(
         'syncStatus',
-        remaining > 0 ? 'Waiting to sync' : 'Synced',
+        failure != null
+            ? 'Sync needs attention'
+            : (remaining > 0 ? 'Waiting to sync' : 'Synced'),
       );
-      await settings.put('lastSyncError', '');
-      if (remaining > 0) scheduleSync(reason: 'remaining entries');
-    } catch (e) {
-      await settings.put('syncStatus', 'Sync failed');
-      await settings.put('lastSyncError', '$e');
-      if (reason == 'manual') rethrow;
-    } finally {
-      _syncing = false;
+      if ((failure != null || remaining > 0 || _changes != startedAtRevision) &&
+          autoSyncEnabled()) {
+        _retryAttempts = math.min(_retryAttempts + 1, 5);
+        _debounce?.cancel();
+        _debounce = Timer(
+          Duration(seconds: 10 * (1 << _retryAttempts)),
+          () => run(reason: 'retry pending entries'),
+        );
+      }
     }
+    if (failure != null) throw failure;
   }
 }
 
@@ -7402,6 +7742,12 @@ Future<void> editRecentEntry(
                 return;
               }
               for (final field in labels.keys.where(numeric.contains)) {
+                if (field == 'pricePerUnit' &&
+                    boxName == 'sale_records' &&
+                    txt(current, 'type') == 'Milk' &&
+                    isOwnUseCustomer(controllers['customerName']?.text ?? '')) {
+                  continue;
+                }
                 final value = double.tryParse(controllers[field]!.text.trim());
                 if (value == null ||
                     !value.isFinite ||
@@ -7463,6 +7809,7 @@ Future<void> editRecentEntry(
       if (boxName == 'sale_records') {
         current['amount'] =
             numv(current, 'quantity') * numv(current, 'pricePerUnit');
+        applyMilkSaleUsage(current);
       }
       current['updatedAtMillis'] = DateTime.now().millisecondsSinceEpoch;
       current['pendingUpload'] = true;
@@ -7631,6 +7978,14 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                   return;
                 }
                 for (final field in labels.keys.where(numeric.contains)) {
+                  if (field == 'pricePerUnit' &&
+                      boxName == 'sale_records' &&
+                      txt(current, 'type') == 'Milk' &&
+                      isOwnUseCustomer(
+                        controllers['customerName']?.text ?? '',
+                      )) {
+                    continue;
+                  }
                   final value = double.tryParse(
                     controllers[field]!.text.trim(),
                   );
@@ -7692,6 +8047,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
         if (boxName == 'sale_records') {
           current['amount'] =
               numv(current, 'quantity') * numv(current, 'pricePerUnit');
+          applyMilkSaleUsage(current);
         }
         current['updatedAtMillis'] = DateTime.now().millisecondsSinceEpoch;
         current['pendingUpload'] = true;
@@ -10067,9 +10423,8 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
     String stopDate,
   ) {
     final milkForCow = milkRows().where((r) => txt(r, 'cow') == name).toList();
-    final lastMilk = milkForCow.isEmpty
-        ? 0.0
-        : numv(milkForCow.first, 'quantity');
+    final latestMilk = latestActivityFrom(milkForCow);
+    final lastMilk = latestMilk == null ? 0.0 : numv(latestMilk, 'quantity');
 
     return Column(
       children: [
@@ -11304,94 +11659,108 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   }
 
   Future<void> _save() async {
-    if (!canRecordEntries) {
-      snack(context, 'Your ranch role does not allow adding entries');
-      return;
-    }
-    if (_mode == 0) {
-      final quantity = toDouble(_milk.text);
-      if (_cow.isEmpty) {
-        snack(
-          context,
-          tamilUi ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
-        );
+    if (_saving) return;
+    try {
+      if (!canRecordEntries) {
+        snack(context, 'Your ranch role does not allow adding entries');
         return;
       }
-      if (quantity <= 0) {
-        snack(
-          context,
-          tamilUi ? 'பால் அளவை உள்ளிடவும்' : 'Please enter the milk quantity',
-        );
-        return;
+      if (_mode == 0) {
+        final quantity = toDouble(_milk.text);
+        if (_cow.isEmpty) {
+          snack(
+            context,
+            tamilUi ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
+          );
+          return;
+        }
+        if (quantity <= 0) {
+          snack(
+            context,
+            tamilUi ? 'பால் அளவை உள்ளிடவும்' : 'Please enter the milk quantity',
+          );
+          return;
+        }
+        setState(() => _saving = true);
+        await Hive.box('milk_records').add({
+          'cow': _cow,
+          'date': todayDate(),
+          'time': currentTime(),
+          'session': _session,
+          'quantity': quantity,
+          'notes': _notes.text.trim(),
+          'addedBy': currentUserName(),
+          'createdAt': DateTime.now().toIso8601String(),
+        });
+      } else if (_mode == 1) {
+        final quantity = toDouble(_qty.text);
+        if (quantity <= 0) {
+          snack(
+            context,
+            tamilUi ? 'அளவை உள்ளிடவும்' : 'Please enter the quantity',
+          );
+          return;
+        }
+        final item = _stockItems[_stockItem];
+        final available = stockBalance(item);
+        if (quantity > available) {
+          snack(
+            context,
+            'Only ${available.toStringAsFixed(1)} ${stockUnit(item)} of $item is available',
+          );
+          return;
+        }
+        setState(() => _saving = true);
+        await Hive.box('stock_records').add({
+          'movement': 'Usage',
+          'item': item,
+          'target': 'Ranch',
+          'quantityKg': quantity,
+          'unit': stockUnit(item),
+          'amount': 0.0,
+          'date': todayDate(),
+          'time': currentTime(),
+          'notes': _notes.text.trim(),
+          'addedBy': currentUserName(),
+          'createdAt': DateTime.now().toIso8601String(),
+        });
+      } else {
+        final name = _expenseName.text.trim();
+        final amount = toDouble(_amount.text);
+        if (name.isEmpty) {
+          snack(context, 'Please enter the expense name');
+          return;
+        }
+        if (amount <= 0) {
+          snack(context, 'Please enter the expense amount');
+          return;
+        }
+        setState(() => _saving = true);
+        await Hive.box('expense_records').add({
+          'category': 'Others',
+          'name': name,
+          'amount': amount,
+          'date': todayDate(),
+          'time': currentTime(),
+          'notes': _notes.text.trim(),
+          'addedBy': currentUserName(),
+          'createdAt': DateTime.now().toIso8601String(),
+        });
       }
-      setState(() => _saving = true);
-      await Hive.box('milk_records').add({
-        'cow': _cow,
-        'date': todayDate(),
-        'time': currentTime(),
-        'session': _session,
-        'quantity': quantity,
-        'notes': _notes.text.trim(),
-        'addedBy': currentUserName(),
-        'createdAt': DateTime.now().toIso8601String(),
-      });
-    } else if (_mode == 1) {
-      final quantity = toDouble(_qty.text);
-      if (quantity <= 0) {
-        snack(
-          context,
-          tamilUi ? 'அளவை உள்ளிடவும்' : 'Please enter the quantity',
-        );
-        return;
-      }
-      final item = _stockItems[_stockItem];
-      final available = stockBalance(item);
-      if (quantity > available) {
-        snack(
-          context,
-          'Only ${available.toStringAsFixed(1)} ${stockUnit(item)} of $item is available',
-        );
-        return;
-      }
-      setState(() => _saving = true);
-      await Hive.box('stock_records').add({
-        'movement': 'Usage',
-        'item': item,
-        'target': 'Ranch',
-        'quantityKg': quantity,
-        'unit': stockUnit(item),
-        'amount': 0.0,
-        'date': todayDate(),
-        'time': currentTime(),
-        'notes': _notes.text.trim(),
-        'addedBy': currentUserName(),
-        'createdAt': DateTime.now().toIso8601String(),
-      });
-    } else {
-      final name = _expenseName.text.trim();
-      final amount = toDouble(_amount.text);
-      if (name.isEmpty) {
-        snack(context, 'Please enter the expense name');
-        return;
-      }
-      if (amount <= 0) {
-        snack(context, 'Please enter the expense amount');
-        return;
-      }
-      setState(() => _saving = true);
-      await Hive.box('expense_records').add({
-        'category': 'Others',
-        'name': name,
-        'amount': amount,
-        'date': todayDate(),
-        'time': currentTime(),
-        'notes': _notes.text.trim(),
-        'addedBy': currentUserName(),
-        'createdAt': DateTime.now().toIso8601String(),
-      });
-    }
 
-    if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) {
+        snack(
+          context,
+          tamilUi
+              ? 'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
+              : 'Could not save. Please try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Widget _milkForm() {
@@ -12482,6 +12851,8 @@ class _SellScreenState extends State<SellScreen> {
   int _stockItem = 0;
   String _animal = '';
   bool _saving = false;
+  bool _wasOwnUse = false;
+  String _lastSalePrice = '';
 
   final _customer = TextEditingController();
   final _qty = TextEditingController();
@@ -12496,7 +12867,24 @@ class _SellScreenState extends State<SellScreen> {
     super.initState();
     _qty.addListener(_refresh);
     _price.addListener(_refresh);
+    _customer.addListener(_customerChanged);
     _price.text = defaultMilkPrice().toStringAsFixed(0);
+  }
+
+  bool get _ownUse => _type == 0 && isOwnUseCustomer(_customer.text);
+
+  void _customerChanged() {
+    final ownUse = _ownUse;
+    if (ownUse && !_wasOwnUse) {
+      _lastSalePrice = _price.text;
+      _price.text = '0';
+    } else if (!ownUse && _wasOwnUse) {
+      _price.text = _lastSalePrice.isEmpty
+          ? defaultMilkPrice().toStringAsFixed(0)
+          : _lastSalePrice;
+    }
+    _wasOwnUse = ownUse;
+    _refresh();
   }
 
   void _refresh() {
@@ -12507,6 +12895,7 @@ class _SellScreenState extends State<SellScreen> {
   void dispose() {
     _qty.removeListener(_refresh);
     _price.removeListener(_refresh);
+    _customer.removeListener(_customerChanged);
     _customer.dispose();
     _qty.dispose();
     _price.dispose();
@@ -12527,98 +12916,125 @@ class _SellScreenState extends State<SellScreen> {
 
   bool get _isAnimalSale => _type == 1 || _type == 2;
 
-  double get _amount => _isAnimalSale
+  double get _amount => _ownUse
+      ? 0.0
+      : _isAnimalSale
       ? toDouble(_price.text)
       : toDouble(_qty.text) * toDouble(_price.text);
 
   Future<void> _save() async {
-    if (_isAnimalSale && !canEditAnimals) {
-      snack(context, 'Only admins and editors can sell cows or calves');
-      return;
-    }
-    if (!_isAnimalSale && !canRecordEntries) {
-      snack(context, 'Your ranch role does not allow recording sales');
-      return;
-    }
-    final amount = _amount;
-    if (amount <= 0) {
-      snack(context, 'Please enter an amount');
-      return;
-    }
-
-    String item = _types[_type];
-    double quantity = toDouble(_qty.text);
-    double perUnit = toDouble(_price.text);
-
-    if (_type == 0) {
-      if (_customer.text.trim().isEmpty) {
-        snack(context, 'Please enter the customer name');
+    if (_saving) return;
+    try {
+      if (_isAnimalSale && !canEditAnimals) {
+        snack(context, 'Only admins and editors can sell cows or calves');
         return;
       }
-      if (quantity <= 0) {
-        snack(context, 'Please enter the milk quantity');
+      if (!_isAnimalSale && !canRecordEntries) {
+        snack(context, 'Your ranch role does not allow recording sales');
         return;
       }
-      if (quantity > availableMilk('Today')) {
-        snack(context, 'Cannot sell more than the milk available today');
+      final amount = _amount;
+      if (!amount.isFinite || (!_ownUse && amount <= 0)) {
+        snack(context, 'Please enter an amount');
         return;
       }
+
+      String item = _types[_type];
+      double quantity = toDouble(_qty.text);
+      double perUnit = _ownUse ? 0.0 : toDouble(_price.text);
+      if (!_isAnimalSale && (quantity <= 0 || (!_ownUse && perUnit <= 0))) {
+        snack(context, 'Please enter a valid quantity and price');
+        return;
+      }
+
+      if (_type == 0) {
+        if (_customer.text.trim().isEmpty) {
+          snack(context, 'Please enter the customer name');
+          return;
+        }
+        if (!quantity.isFinite || quantity <= 0) {
+          snack(context, 'Please enter the milk quantity');
+          return;
+        }
+        if (quantity > availableMilk('Today')) {
+          snack(context, 'Cannot sell more than the milk available today');
+          return;
+        }
+      }
+
+      Map<String, dynamic>? animal;
+      if (_isAnimalSale) {
+        final list = _sellable;
+        if (list.isEmpty) {
+          snack(context, 'No animals available to sell');
+          return;
+        }
+        final selected = _animal.isEmpty ? '${list.first['key']}' : _animal;
+        final matches = list.where((a) => '${a['key']}' == selected).toList();
+        if (matches.isEmpty) {
+          snack(context, 'Please choose an animal');
+          return;
+        }
+        animal = matches.first;
+        item = txt(animal, 'name');
+        quantity = 1;
+        perUnit = amount;
+      }
+
+      setState(() => _saving = true);
+
+      await Hive.box('sale_records').add({
+        'category': _ownUse ? 'Milk Own Use' : '${_types[_type]} Sale',
+        'ownUse': _ownUse,
+        'animal': item,
+        'customerName': _type == 0 ? _customer.text.trim() : '',
+        'type': _types[_type],
+        'quantity': quantity,
+        'unit': _unit,
+        'pricePerUnit': perUnit,
+        'amount': amount,
+        'date': todayDate(),
+        'time': currentTime(),
+        'notes': _notes.text.trim(),
+        'addedBy': currentUserName(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+
+      if (animal != null) updateAnimal(animal, {'status': 'Sold'});
+
+      if (!mounted) return;
+      snack(
+        context,
+        _ownUse
+            ? 'சொந்த பயன்பாட்டுப் பால் சேமிக்கப்பட்டது'
+            : '${_types[_type]} sale saved',
+      );
+      setState(() {
+        _saving = false;
+        _qty.clear();
+        _customer.clear();
+        _notes.clear();
+        _animal = '';
+        _price.text = _type == 0 ? defaultMilkPrice().toStringAsFixed(0) : '';
+      });
+    } catch (_) {
+      if (mounted) {
+        snack(
+          context,
+          tamilUi
+              ? 'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
+              : 'Could not save. Please try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-
-    Map<String, dynamic>? animal;
-    if (_isAnimalSale) {
-      final list = _sellable;
-      if (list.isEmpty) {
-        snack(context, 'No animals available to sell');
-        return;
-      }
-      final selected = _animal.isEmpty ? '${list.first['key']}' : _animal;
-      final matches = list.where((a) => '${a['key']}' == selected).toList();
-      if (matches.isEmpty) {
-        snack(context, 'Please choose an animal');
-        return;
-      }
-      animal = matches.first;
-      item = txt(animal, 'name');
-      quantity = 1;
-      perUnit = amount;
-    }
-
-    setState(() => _saving = true);
-
-    await Hive.box('sale_records').add({
-      'category': '${_types[_type]} Sale',
-      'animal': item,
-      'customerName': _type == 0 ? _customer.text.trim() : '',
-      'type': _types[_type],
-      'quantity': quantity,
-      'unit': _unit,
-      'pricePerUnit': perUnit,
-      'amount': amount,
-      'date': todayDate(),
-      'time': currentTime(),
-      'notes': _notes.text.trim(),
-      'addedBy': currentUserName(),
-      'createdAt': DateTime.now().toIso8601String(),
-    });
-
-    if (animal != null) updateAnimal(animal, {'status': 'Sold'});
-
-    if (!mounted) return;
-    snack(context, '${_types[_type]} sale saved');
-    setState(() {
-      _saving = false;
-      _qty.clear();
-      _customer.clear();
-      _notes.clear();
-      _animal = '';
-      _price.text = _type == 0 ? defaultMilkPrice().toStringAsFixed(0) : '';
-    });
   }
 
   Widget _milkBalance() {
     final collected = milkTotal('Today');
     final sold = milkSold('Today');
+    final ownUse = milkOwnUse('Today');
     final available = availableMilk('Today');
     final selling = toDouble(_qty.text);
     final after = (available - selling).clamp(0.0, double.infinity);
@@ -12647,6 +13063,11 @@ class _SellScreenState extends State<SellScreen> {
             label: tamilUi ? 'ஏற்கனவே விற்றது' : 'Already sold',
             value: '${sold.toStringAsFixed(1)} L',
             color: Ink.amber,
+          ),
+          _BalanceRow(
+            label: ownUseCustomerName,
+            value: '${ownUse.toStringAsFixed(1)} L',
+            color: Ink.blue,
           ),
           _BalanceRow(
             label: tamilUi ? 'மீதம் உள்ளது' : 'Available',
@@ -13062,11 +13483,16 @@ class _SellScreenState extends State<SellScreen> {
                       index: 4,
                       child: SuggestionField(
                         controller: _customer,
-                        suggestions: frequentNameSuggestions(
-                          saleRows(),
-                          'customerName',
-                          where: (record) => txt(record, 'type') == 'Milk',
-                        ),
+                        suggestions: [
+                          ownUseCustomerName,
+                          ...frequentNameSuggestions(
+                            saleRows(),
+                            'customerName',
+                            where: (record) =>
+                                txt(record, 'type') == 'Milk' &&
+                                !isOwnUseMilk(record),
+                          ),
+                        ],
                         label: tamilUi ? 'வாங்குபவர் பெயர்' : 'Customer Name',
                         icon: Icons.person_outline_rounded,
                         onSelected: (name) {
@@ -13077,6 +13503,25 @@ class _SellScreenState extends State<SellScreen> {
                             context,
                             'Last quantity ${previous.toStringAsFixed(1)} L added',
                           );
+                        },
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ChoiceChip(
+                        key: const ValueKey('own-use-customer'),
+                        label: const AppText(ownUseCustomerName),
+                        selected: _ownUse,
+                        onSelected: (selected) {
+                          _customer.text = selected ? ownUseCustomerName : '';
+                          if (selected) {
+                            final previous = lastMilkQuantityForCustomer(
+                              ownUseCustomerName,
+                            );
+                            if (previous != null) {
+                              _qty.text = previous.toStringAsFixed(1);
+                            }
+                          }
                         },
                       ),
                     ),
@@ -13100,6 +13545,7 @@ class _SellScreenState extends State<SellScreen> {
                     index: 6,
                     child: TextField(
                       controller: _price,
+                      readOnly: _ownUse,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -13181,7 +13627,9 @@ class _SellScreenState extends State<SellScreen> {
                 Reveal(
                   index: 8,
                   child: LiquidButton(
-                    label: tamilUi
+                    label: _ownUse
+                        ? 'சொந்த பயன்பாட்டை சேமி'
+                        : tamilUi
                         ? 'பால் விற்பனையை சேமி'
                         : 'Save ${_types[_type]} Sale',
                     icon: Icons.check_circle_rounded,
@@ -15753,7 +16201,14 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
     setState(() => _busy = true);
     try {
       await action();
-      if (mounted) snack(context, done);
+      if (mounted) {
+        snack(
+          context,
+          done == 'Sync complete' && pendingSyncCount() > 0
+              ? '${pendingSyncCount()} பதிவுகள் இன்னும் நிலுவையில் உள்ளன'
+              : done,
+        );
+      }
     } catch (e) {
       if (mounted) snack(context, 'Failed: $e');
     } finally {
@@ -15849,6 +16304,18 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     color: pendingSyncCount() > 0 ? Ink.amber : Ink.green,
                   ),
                 ),
+                if (settingText('lastSyncError', '').isNotEmpty) ...[
+                  const SizedBox(height: Gold.s13),
+                  Glass(
+                    child: AppText(
+                      syncFailureHint(settingText('lastSyncError', '')),
+                      style: const TextStyle(
+                        color: Ink.amber,
+                        fontSize: Gold.t13,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: Gold.s13),
                 Reveal(
                   index: 4,
@@ -15927,8 +16394,8 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                       onPressed: _busy
                           ? null
                           : () => _run(
-                              CloudSyncService.uploadAll,
-                              'Upload complete',
+                              () => AutoSyncService.run(reason: 'manual'),
+                              'Sync complete',
                             ),
                     ),
                   ),
