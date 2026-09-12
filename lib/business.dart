@@ -291,6 +291,7 @@ class VendorLedger {
           ? payment
           : double.parse((quantity * price).toStringAsFixed(2));
       final entry = <String, dynamic>{
+        'pendingUpload': false,
         'cloudId': id,
         'kind': kind,
         'personId': personId,

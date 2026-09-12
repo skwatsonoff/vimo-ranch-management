@@ -6,9 +6,17 @@ import 'package:web/web.dart' as web;
 class BrowserRuntime {
   JSFunction? _onlineListener;
   JSFunction? _focusListener;
+  JSFunction? _visibilityListener;
 
   bool get online => web.window.navigator.onLine;
-  bool get notificationsGranted => web.Notification.permission == 'granted';
+  bool get notificationsGranted {
+    try {
+      return web.Notification.permission == 'granted';
+    } catch (_) {
+      // Some mobile browsers do not expose the Notification API.
+      return false;
+    }
+  }
 
   Future<bool> requestNotificationPermission() async {
     try {
@@ -127,6 +135,10 @@ class BrowserRuntime {
     _focusListener = ((web.Event _) => onFocus()).toJS;
     web.window.addEventListener('online', _onlineListener);
     web.window.addEventListener('focus', _focusListener);
+    _visibilityListener = ((web.Event _) {
+      if (web.document.visibilityState == 'visible') onFocus();
+    }).toJS;
+    web.document.addEventListener('visibilitychange', _visibilityListener);
   }
 
   void stop() {
@@ -138,6 +150,11 @@ class BrowserRuntime {
     if (focusListener != null) {
       web.window.removeEventListener('focus', focusListener);
     }
+    final visibilityListener = _visibilityListener;
+    if (visibilityListener != null) {
+      web.document.removeEventListener('visibilitychange', visibilityListener);
+    }
+    _visibilityListener = null;
     _onlineListener = null;
     _focusListener = null;
   }
