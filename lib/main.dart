@@ -29,7 +29,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image/image.dart' as image_lib;
 import 'package:firebase_core/firebase_core.dart';
@@ -41,6 +40,9 @@ import 'firebase_options.dart';
 import 'web_runtime.dart';
 
 part 'interface.dart';
+part 'business.dart';
+part 'social.dart';
+part 'liquid_design.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -74,6 +76,8 @@ const List<String> backupBoxNames = [
   'ranch_messages',
   'ranch_tasks',
   'notifications',
+  'vendor_people',
+  'vendor_entries',
 ];
 
 Future<void> main() async {
@@ -645,6 +649,8 @@ String buildCompleteExcelWorkbook() {
     ..write(_excelWorksheet('Doctor Visits', boxData('doctor_records')))
     ..write(_excelWorksheet('Purchases', boxData('purchase_records')))
     ..write(_excelWorksheet('Sales', boxData('sale_records')))
+    ..write(_excelWorksheet('Vendor People', boxData('vendor_people')))
+    ..write(_excelWorksheet('Vendor Ledger', boxData('vendor_entries')))
     ..write(_excelWorksheet('Deaths and Loss', boxData('death_records')))
     ..write(_excelWorksheet('Calving Records', boxData('calving_records')))
     ..write(_excelWorksheet('Family Users', boxData('family_users')))
@@ -878,15 +884,15 @@ class Ink {
   static const Color violetDark = Color(0xFF4526B8);
 
   // Text
-  static const Color navy = Color(0xFF231A5E);
-  static const Color body = Color(0xFF2C2748);
-  static const Color muted = Color(0xFF6E6A86);
-  static const Color faint = Color(0xFF9A96B0);
+  static const Color navy = Color(0xFF202635);
+  static const Color body = Color(0xFF343C4E);
+  static const Color muted = Color(0xFF646F82);
+  static const Color faint = Color(0xFF798498);
 
   // Surfaces
-  static const Color canvasTop = Color(0xFFF8F5FF);
-  static const Color canvasMid = Color(0xFFF0E9FE);
-  static const Color canvasLow = Color(0xFFFBF9FF);
+  static const Color canvasTop = Color(0xFFF7F8FC);
+  static const Color canvasMid = Color(0xFFEDF0F8);
+  static const Color canvasLow = Color(0xFFF6F8FC);
   static const Color lavender = Color(0xFFEDE6FF);
 
   // Semantic
@@ -1101,6 +1107,28 @@ class _GlassSkinPainter extends CustomPainter {
           stops: const [0.0, 0.32, 0.66, 1.0],
         ).createShader(rect),
     );
+    // The inner reflected edge makes the surface read as a thin lens instead
+    // of a single flat white outline, without an extra offscreen blur pass.
+    final innerRect = rect.deflate(1.7);
+    if (innerRect.width > 0 && innerRect.height > 0) {
+      canvas.drawPath(
+        squirclePath(innerRect, math.max(0, radius - 1.7)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = .65
+          ..shader = LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: .55 * strength),
+              Colors.white.withValues(alpha: 0),
+              Ink.navy.withValues(alpha: .06),
+              Colors.white.withValues(alpha: .44 * strength),
+            ],
+            stops: const [0, .38, .65, 1],
+          ).createShader(rect),
+      );
+    }
   }
 
   @override
@@ -1130,7 +1158,7 @@ class Glass extends StatelessWidget {
     this.radius = Gold.r27,
     this.blur = 21,
     this.tint,
-    this.opacity = 0.62,
+    this.opacity = 0.48,
     this.padding = const EdgeInsets.all(Gold.s21),
     this.margin,
     this.elevation = 1,
@@ -1143,11 +1171,16 @@ class Glass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = tint ?? Colors.white;
+    final accessible = MediaQuery.highContrastOf(context);
+    final effectiveOpacity = accessible ? .96 : opacity;
 
     Widget surface = ClipPath(
       clipper: SquircleClipper(radius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        filter: ImageFilter.blur(
+          sigmaX: accessible ? 0 : blur,
+          sigmaY: accessible ? 0 : blur,
+        ),
         child: CustomPaint(
           foregroundPainter: _GlassSkinPainter(
             radius: radius,
@@ -1157,13 +1190,18 @@ class Glass extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient:
-                  gradient ??
+                  (accessible ? null : gradient) ??
                   LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      base.withValues(alpha: opacity),
-                      base.withValues(alpha: opacity * Gold.invPhi),
+                      base.withValues(alpha: effectiveOpacity),
+                      base.withValues(
+                        alpha: effectiveOpacity * (accessible ? 1 : .48),
+                      ),
+                      base.withValues(
+                        alpha: effectiveOpacity * (accessible ? 1 : .82),
+                      ),
                     ],
                   ),
             ),
@@ -1180,13 +1218,13 @@ class Glass extends StatelessWidget {
           shadows: [
             // Ambient occlusion — wide, soft, barely there.
             BoxShadow(
-              color: Ink.violetDark.withValues(alpha: 0.07 * elevation),
+              color: Ink.navy.withValues(alpha: 0.055 * elevation),
               blurRadius: Gold.s34 * elevation,
               offset: Offset(0, Gold.s13 * elevation),
             ),
             // Key shadow — tighter and slightly darker.
             BoxShadow(
-              color: Ink.violetDark.withValues(alpha: 0.05 * elevation),
+              color: Ink.navy.withValues(alpha: 0.035 * elevation),
               blurRadius: Gold.s13 * elevation,
               offset: Offset(0, Gold.s5 * elevation),
             ),
@@ -1246,8 +1284,12 @@ class _PressableState extends State<Pressable> {
         onTapUp: enabled ? (_) => _set(false) : null,
         onTapCancel: enabled ? () => _set(false) : null,
         child: AnimatedScale(
-          scale: _down ? 1 - (0.038 * widget.depth) : 1,
-          duration: Gold.fast,
+          scale: _down && !MediaQuery.disableAnimationsOf(context)
+              ? 1 - (0.025 * widget.depth)
+              : 1,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : Gold.fast,
           curve: Gold.ease,
           child: AnimatedContainer(
             duration: Gold.base,
@@ -1293,8 +1335,21 @@ class _LiquidCanvasState extends State<LiquidCanvas>
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 34))
-      ..repeat();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 48),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context)) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
   }
 
   @override
@@ -1352,16 +1407,16 @@ class _AuroraPainter extends CustomPainter {
         Paint()
           ..shader = RadialGradient(
             colors: [
-              color.withValues(alpha: 0.42),
+              color.withValues(alpha: 0.30),
               color.withValues(alpha: 0.0),
             ],
           ).createShader(Rect.fromCircle(center: center, radius: radius)),
       );
     }
 
-    field(const Color(0xFFB388FF), 0.08, 0.05, 0.52, 0.0);
-    field(const Color(0xFFFFD9EC), 0.96, 0.24, 0.46, 0.33);
-    field(const Color(0xFFCFE3FF), 0.28, 0.92, 0.50, 0.66);
+    field(const Color(0xFFAABBEA), 0.04, 0.12, 0.65, 0.0);
+    field(const Color(0xFFCABDE8), 0.96, 0.34, 0.55, 0.33);
+    field(const Color(0xFFA8D5DB), 0.26, 0.96, 0.60, 0.66);
   }
 
   @override
@@ -1407,6 +1462,9 @@ class LiquidRoute<T> extends PageRouteBuilder<T> {
         barrierColor: Colors.transparent,
         pageBuilder: (context, _, _) => builder(context),
         transitionsBuilder: (context, animation, secondary, child) {
+          if (MediaQuery.disableAnimationsOf(context)) {
+            return FadeTransition(opacity: animation, child: child);
+          }
           final curved = CurvedAnimation(
             parent: animation,
             curve: Gold.ease,
@@ -1497,6 +1555,9 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return widget.child;
+    }
     return FadeTransition(
       opacity: _t,
       child: SlideTransition(
@@ -1629,7 +1690,7 @@ class LiquidButton extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                               fontSize: Gold.t16,
                               letterSpacing: 0.2,
                             ),
@@ -1687,7 +1748,7 @@ class GhostButton extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: color,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 fontSize: Gold.t13,
               ),
             ),
@@ -1771,7 +1832,7 @@ class Segment extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: active ? Colors.white : Ink.body,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: Gold.t13,
                   ),
                 ),
@@ -1817,8 +1878,10 @@ class LiquidSegmentBar extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               AnimatedPositioned(
-                duration: const Duration(milliseconds: 460),
-                curve: Curves.easeOutBack,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
                 left: selected * cellWidth + Gold.s2,
                 width: math.max(0, cellWidth - Gold.s5),
                 top: Gold.s2,
@@ -1885,7 +1948,7 @@ class LiquidSegmentBar extends StatelessWidget {
                                           ? Ink.violetDeep
                                           : Ink.body,
                                       fontWeight: selected == i
-                                          ? FontWeight.w900
+                                          ? FontWeight.w700
                                           : FontWeight.w700,
                                       fontSize: Gold.t13,
                                     ),
@@ -1920,7 +1983,7 @@ InputDecoration fieldStyle(
   Widget? prefix,
   Widget? suffix,
 }) {
-  OutlineInputBorder border(Color c, double w) => OutlineInputBorder(
+  OutlineInputBorder border(Color c, double w) => GlassInputBorder(
     borderRadius: BorderRadius.circular(Gold.r21),
     borderSide: BorderSide(color: c, width: w),
   );
@@ -1944,10 +2007,10 @@ InputDecoration fieldStyle(
     ),
     floatingLabelStyle: const TextStyle(
       color: Ink.violetDeep,
-      fontWeight: FontWeight.w800,
+      fontWeight: FontWeight.w600,
     ),
     filled: true,
-    fillColor: Colors.white.withValues(alpha: 0.66),
+    fillColor: Colors.transparent,
     contentPadding: const EdgeInsets.symmetric(
       horizontal: Gold.s21,
       vertical: Gold.s21,
@@ -3762,6 +3825,7 @@ class CloudSyncService {
     'lastAutoSyncReason',
     'pendingAnimalEntryUpdates',
     'languageMode',
+    'purposeProfiles',
   };
 
   static FirebaseFirestore get db => FirebaseFirestore.instance;
@@ -3796,6 +3860,8 @@ class CloudSyncService {
   }
 
   static Future<void> uploadBox(String boxName) async {
+    // Vendor ledger writes use an atomic stock transaction, never bulk upload.
+    if (boxName == 'vendor_entries') return;
     if (!ready || !Hive.isBoxOpen(boxName)) return;
     if ((boxName == 'settings' || boxName == 'family_users') &&
         !canManageRanch) {
@@ -3977,10 +4043,15 @@ class CloudSyncService {
       for (final doc in snap.docs) {
         final data = Map<String, dynamic>.from(doc.data());
         data.remove('updatedAt');
+        data.remove('serverCreatedAt');
         data.remove('settingKey');
         final cid = txt(data, 'cloudId', doc.id);
         data['cloudId'] = cid;
         final localKey = keyByCloudId[cid];
+        if (boxName == 'vendor_entries') {
+          await box.put(cid, data);
+          continue;
+        }
         if (localKey != null) {
           final local = asMap(box.get(localKey));
           final localMillis = toInt(local['updatedAtMillis']);
@@ -4267,6 +4338,8 @@ class CollaborationRealtimeSyncService {
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _taskSubscription;
   static Future<void> _applyQueue = Future<void>.value();
+  static final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _vendorSubscriptions = [];
 
   static Future<void> ensureStarted() async {
     if (!CloudSyncService.ready) {
@@ -4283,6 +4356,17 @@ class CollaborationRealtimeSyncService {
     await stop();
     if (!CloudSyncService.ready || desiredRanch.isEmpty) return;
     _listeningRanch = desiredRanch;
+    for (final box in ['vendor_people', 'vendor_entries']) {
+      _vendorSubscriptions.add(
+        CloudSyncService.ranch
+            .collection(box)
+            .snapshots()
+            .listen(
+              (snapshot) => _enqueue(box, snapshot),
+              onError: _handleError,
+            ),
+      );
+    }
 
     _messageSubscription = CloudSyncService.ranch
         .collection('ranch_messages')
@@ -4339,8 +4423,13 @@ class CollaborationRealtimeSyncService {
         }
 
         final remote = Map<String, dynamic>.from(change.doc.data() ?? {});
+        remote.remove('serverCreatedAt');
         remote['cloudId'] = cloudId;
         remote['pendingUpload'] = false;
+        if (boxName == 'vendor_entries') {
+          await box.put(cloudId, remote);
+          continue;
+        }
         if (localKey == null) {
           final addedKey = await box.add(remote);
           localKeyByCloudId[cloudId] = addedKey;
@@ -4369,6 +4458,10 @@ class CollaborationRealtimeSyncService {
     _messageSubscription = null;
     _taskSubscription = null;
     _listeningRanch = '';
+    for (final subscription in _vendorSubscriptions) {
+      await subscription.cancel();
+    }
+    _vendorSubscriptions.clear();
     if (messages != null) await messages.cancel();
     if (tasks != null) await tasks.cancel();
   }
@@ -4643,7 +4736,7 @@ class Rosette extends StatelessWidget {
                 '$rank',
                 style: TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   fontSize: size * 0.46,
                   height: 1,
                   shadows: [
@@ -5233,7 +5326,7 @@ class SectionTitle extends StatelessWidget {
               title,
               style: const TextStyle(
                 fontSize: Gold.t21,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 color: Ink.navy,
                 letterSpacing: -0.3,
               ),
@@ -5246,7 +5339,7 @@ class SectionTitle extends StatelessWidget {
                 action!,
                 style: const TextStyle(
                   color: Ink.violetDeep,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   fontSize: Gold.t13,
                 ),
               ),
@@ -5267,7 +5360,7 @@ Widget panel(String title, String emptyMessage, List<Widget> children) {
           title,
           style: const TextStyle(
             fontSize: Gold.t16,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             color: Ink.navy,
           ),
         ),
@@ -5331,7 +5424,7 @@ class InfoRow extends StatelessWidget {
           Text(
             value,
             style: const TextStyle(
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
               fontSize: Gold.t16,
             ),
@@ -5387,7 +5480,7 @@ class DataCard extends StatelessWidget {
                 AppText(
                   title,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
                   ),
@@ -5485,7 +5578,7 @@ class SyncChip extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: fg,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: Gold.t11,
                   ),
                 ),
@@ -5535,7 +5628,7 @@ class EmptyNote extends StatelessWidget {
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
               fontSize: Gold.t16,
             ),
@@ -5567,7 +5660,7 @@ class VimoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = GoogleFonts.poppinsTextTheme().apply(
+    final text = Typography.material2021().black.apply(
       bodyColor: Ink.body,
       displayColor: Ink.navy,
     );
@@ -5609,6 +5702,72 @@ class VimoApp extends StatelessWidget {
           ),
           splashFactory: NoSplash.splashFactory,
           highlightColor: Colors.transparent,
+          iconTheme: const IconThemeData(size: 22, color: Ink.violetDeep),
+          filledButtonTheme: FilledButtonThemeData(
+            style: liquidActionStyle(primary: true),
+          ),
+          outlinedButtonTheme: OutlinedButtonThemeData(
+            style: liquidActionStyle(),
+          ),
+          iconButtonTheme: IconButtonThemeData(
+            style: liquidActionStyle().copyWith(
+              minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
+            ),
+          ),
+          inputDecorationTheme: const InputDecorationThemeData(
+            filled: true,
+            fillColor: Colors.transparent,
+            contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+            border: GlassInputBorder(),
+            enabledBorder: GlassInputBorder(),
+            focusedBorder: GlassInputBorder(
+              borderSide: BorderSide(color: Ink.violetDeep, width: 1.5),
+            ),
+            errorBorder: GlassInputBorder(
+              borderSide: BorderSide(color: Ink.red),
+            ),
+            labelStyle: TextStyle(color: Ink.muted, fontSize: 14),
+            hintStyle: TextStyle(color: Ink.muted, fontSize: 15),
+          ),
+          chipTheme: ChipThemeData(
+            backgroundColor: Colors.white.withValues(alpha: .44),
+            selectedColor: Ink.violet.withValues(alpha: .15),
+            side: const BorderSide(color: Color(0xCFFFFFFF)),
+            shape: const SquircleBorder(radius: 15),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
+            labelStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Ink.body,
+            ),
+          ),
+          segmentedButtonTheme: SegmentedButtonThemeData(
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.selected)
+                    ? Ink.violet.withValues(alpha: .13)
+                    : Colors.white.withValues(alpha: .40),
+              ),
+              side: const WidgetStatePropertyAll(
+                BorderSide(color: Color(0xCFFFFFFF)),
+              ),
+              shape: const WidgetStatePropertyAll(SquircleBorder(radius: 20)),
+              minimumSize: const WidgetStatePropertyAll(Size(44, 48)),
+            ),
+          ),
+          dialogTheme: const DialogThemeData(
+            backgroundColor: Color(0xF0F5F7FC),
+            surfaceTintColor: Colors.transparent,
+            shape: SquircleBorder(
+              radius: 30,
+              side: BorderSide(color: Colors.white),
+            ),
+          ),
+          bottomSheetTheme: const BottomSheetThemeData(
+            backgroundColor: Color(0xF0F5F7FC),
+            surfaceTintColor: Colors.transparent,
+            shape: SquircleBorder(radius: 30),
+          ),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
@@ -5617,7 +5776,7 @@ class VimoApp extends StatelessWidget {
             foregroundColor: Ink.navy,
             titleTextStyle: TextStyle(
               color: Ink.navy,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w600,
               fontSize: Gold.t16,
             ),
           ),
@@ -5893,6 +6052,7 @@ class RanchOnboardingScreen extends StatefulWidget {
 }
 
 class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
+  String _purpose = 'Ranch';
   final _farm = TextEditingController();
   final _owner = TextEditingController();
   final _place = TextEditingController();
@@ -5988,6 +6148,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
           owner: owner,
           place: _place.text.trim(),
         );
+        await savePurpose(_purpose, defaultNavigation(_purpose));
         widget.onComplete();
       } catch (error) {
         if (mounted) {
@@ -6036,12 +6197,12 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                   const Center(child: BrandMark(size: Gold.s89)),
                   const SizedBox(height: Gold.s13),
                   const AppText(
-                    'Set up your ranch',
+                    'Set up your VIMO workspace',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Ink.navy,
                       fontSize: Gold.t27,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: Gold.s5),
@@ -6062,11 +6223,59 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                   ),
                   const SizedBox(height: Gold.s21),
                   if (_mode == 0) ...[
+                    Text(
+                      bi(
+                        'What will you use VIMO for?',
+                        'VIMO செயலியை எதற்காகப் பயன்படுத்தப் போகிறீர்கள்?',
+                      ),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _purpose,
+                      decoration: fieldStyle(
+                        bi('Purpose', 'பயன்பாட்டு நோக்கம்'),
+                      ),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'Ranch',
+                          child: Text(
+                            bi(
+                              'Ranch · Animal care',
+                              'தொழுவம் · கால்நடை பராமரிப்பு',
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Vendor',
+                          child: Text(
+                            bi(
+                              'Vendor · Milk business',
+                              'வியாபாரி · பால் வணிகம்',
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Market',
+                          child: Text(
+                            bi(
+                              'Market · Sales and stock',
+                              'சந்தை · விற்பனை மற்றும் இருப்பு',
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) => setState(() => _purpose = value!),
+                    ),
+                    const SizedBox(height: Gold.s21),
                     TextField(
                       controller: _farm,
                       textCapitalization: TextCapitalization.words,
                       decoration: fieldStyle(
-                        'Ranch Name',
+                        bi('Ranch / business name', 'தொழுவம் / வணிகப் பெயர்'),
                         icon: Icons.home_work_outlined,
                       ),
                     ),
@@ -6106,7 +6315,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                         style: TextStyle(
                           color: _available == true ? Ink.green : Ink.red,
                           fontSize: Gold.t11,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -6231,7 +6440,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
         shape: const SquircleBorder(radius: Gold.r27),
         title: const AppText(
           'Cancel join request?',
-          style: TextStyle(fontWeight: FontWeight.w900),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
         content: const AppText(
           'You will return to the create or join ranch screen.',
@@ -6245,7 +6454,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
             onPressed: () => Navigator.pop(ctx, true),
             child: const AppText(
               'Cancel Request',
-              style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
+              style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -6310,7 +6519,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 style: TextStyle(
                                   color: Ink.navy,
                                   fontSize: Gold.t21,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: Gold.s8),
@@ -6319,7 +6528,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   color: Ink.violetDeep,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: Gold.s8),
@@ -6562,7 +6771,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: Gold.t34,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                               color: Ink.navy,
                               letterSpacing: 3,
                               height: 1.1,
@@ -6593,7 +6802,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               'Welcome Back!',
                               style: TextStyle(
                                 fontSize: Gold.t21,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                               ),
                             ),
@@ -6677,7 +6886,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: TextStyle(
                                       fontSize: Gold.t11,
                                       color: Ink.violetDeep,
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -6714,7 +6923,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               'Create Account',
                               style: TextStyle(
                                 color: Ink.violetDeep,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 fontSize: Gold.t13,
                               ),
                             ),
@@ -6810,7 +7019,7 @@ class _SignupScreenState extends State<SignupScreen> {
           style: TextStyle(
             color: Ink.navy,
             fontSize: Gold.t21,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: Gold.s5),
@@ -7236,7 +7445,7 @@ class NotificationHistoryScreen extends StatelessWidget {
                                       Text(
                                         txt(n, 'title'),
                                         style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
+                                          fontWeight: FontWeight.w700,
                                           color: Ink.navy,
                                         ),
                                       ),
@@ -7758,10 +7967,12 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    _languageChanges = Hive.box('settings').watch(key: 'languageMode').listen((
-      _,
-    ) {
-      if (mounted) setState(() {});
+    _languageChanges = Hive.box('settings').watch().listen((event) {
+      if (mounted) {
+        setState(() {
+          if (event.key == 'purposeProfiles') _tab = 0;
+        });
+      }
     });
   }
 
@@ -7813,37 +8024,38 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final dataEntry = isDataEntryUser;
-    final pages = dataEntry
-        ? <Widget>[
-            const AnimalsScreen(),
-            const SellScreen(),
-            const RanchChatScreen(),
-          ]
-        : <Widget>[
-            DashboardScreen(onOpenCard: _openCard),
-            const AnimalsScreen(),
-            const SellScreen(),
-            const ReportsScreen(),
-            const RanchChatScreen(),
-          ];
-    final navItems = dataEntry
-        ? const <_NavItem>[
-            _NavItem('Cows', null, null),
-            _NavItem('Sell', Icons.sell_rounded, Icons.sell_outlined),
-            _NavItem('Chat', Icons.forum_rounded, Icons.forum_outlined),
-          ]
-        : const <_NavItem>[
-            _NavItem('Home', Icons.home_rounded, Icons.home_outlined),
-            _NavItem('Cows', null, null),
-            _NavItem('Sell', Icons.sell_rounded, Icons.sell_outlined),
-            _NavItem(
-              'Reports',
-              Icons.bar_chart_rounded,
-              Icons.bar_chart_outlined,
-            ),
-            _NavItem('Chat', Icons.forum_rounded, Icons.forum_outlined),
-          ];
+    if (!purposeChosen) return const PreferencesScreen(onboarding: true);
+    final order = navigationOrder();
+    final pageMap = <String, Widget>{
+      'Ranch': isDataEntryUser
+          ? const AnimalsScreen()
+          : DashboardScreen(onOpenCard: _openCard),
+      'Vendor': const VendorScreen(),
+      'Sell': const SellScreen(),
+      'Social': const SocialScreen(),
+      'Chat': const RanchChatScreen(),
+    };
+    const items = <String, _NavItem>{
+      'Ranch': _NavItem(
+        'Ranch',
+        CupertinoIcons.house_fill,
+        CupertinoIcons.house,
+      ),
+      'Vendor': _NavItem(
+        'Vendor',
+        CupertinoIcons.drop_fill,
+        CupertinoIcons.drop,
+      ),
+      'Sell': _NavItem('Sell', CupertinoIcons.bag_fill, CupertinoIcons.bag),
+      'Social': _NavItem('Social', CupertinoIcons.globe, CupertinoIcons.globe),
+      'Chat': _NavItem(
+        'Chat',
+        CupertinoIcons.chat_bubble_2_fill,
+        CupertinoIcons.chat_bubble_2,
+      ),
+    };
+    final pages = order.map((id) => pageMap[id]!).toList();
+    final navItems = order.map((id) => items[id]!).toList();
     final tab = _tab.clamp(0, pages.length - 1);
 
     return Scaffold(
@@ -7856,9 +8068,13 @@ class _MainShellState extends State<MainShell> {
           icon: const Icon(Icons.settings_outlined, size: 26),
           onPressed: _openSettings,
         ),
-        title: Text(appName(), maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          '${appName()} ${ui(appPurpose)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
-          if (canRecordEntries && tab != pages.length - 1)
+          if (canRecordEntries && order[tab] == 'Ranch')
             IconButton(
               tooltip: ui('New entry'),
               icon: const Icon(CupertinoIcons.plus_circle, size: 27),
@@ -7880,7 +8096,7 @@ class _MainShellState extends State<MainShell> {
           if (start.dx < 28 && delta.dx > 80) _openSettings();
           if (start.dx > width - 28 && delta.dx < -80) {
             FocusScope.of(context).unfocus();
-            setState(() => _tab = pages.length - 1);
+            setState(() => _tab = order.indexOf('Chat'));
           }
         },
         child: pages[tab],
@@ -7939,8 +8155,10 @@ class _NavBar extends StatelessWidget {
             child: Stack(
               children: [
                 AnimatedPositioned(
-                  duration: const Duration(milliseconds: 520),
-                  curve: Curves.easeOutBack,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
                   left: index.clamp(0, items.length - 1) * cellWidth,
                   width: cellWidth,
                   top: 0,
@@ -8008,9 +8226,14 @@ class _NavCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = active ? Ink.violetDeep : Ink.faint;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
+    return TextButton(
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(44, 55),
+        foregroundColor: color,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: onTap,
       child: AnimatedContainer(
         duration: Gold.base,
         curve: Gold.ease,
@@ -8020,7 +8243,9 @@ class _NavCell extends StatelessWidget {
           children: [
             SizedBox(
               height: Gold.s27,
-              child: item.active == null
+              child: item.label == 'Vendor'
+                  ? MilkVendorIcon(size: 31, color: color)
+                  : item.active == null
                   ? CowHoofIcon(
                       size: 28,
                       color: active ? Ink.violetDeep : Ink.faint,
@@ -8038,7 +8263,7 @@ class _NavCell extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: Gold.t10,
-                fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
                 color: color,
               ),
             ),
@@ -8187,7 +8412,7 @@ class DashboardScreen extends StatelessWidget {
                         style: TextStyle(
                           fontSize: Gold.t34,
                           height: 1.05,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: Ink.navy,
                           letterSpacing: -1,
                         ),
@@ -8290,7 +8515,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
                     'Could not check join requests — tap to retry',
                     style: TextStyle(
                       color: Ink.navy,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -8323,7 +8548,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
                   '$count ${count == 1 ? 'person wants' : 'people want'} to join your ranch',
                   style: const TextStyle(
                     color: Ink.navy,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -8331,7 +8556,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
                 'Review',
                 style: TextStyle(
                   color: Ink.violetDeep,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -8390,7 +8615,7 @@ class _ActivityRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                           fontSize: Gold.t13,
                           color: Ink.navy,
                         ),
@@ -8400,7 +8625,7 @@ class _ActivityRow extends StatelessWidget {
                     AppText(
                       '${entry['value']}',
                       style: const TextStyle(
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         fontSize: Gold.t13,
                         color: Ink.navy,
                       ),
@@ -8534,7 +8759,7 @@ class _RanchHero extends StatelessWidget {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: Gold.t27,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           height: 1.1,
                           letterSpacing: -0.5,
                         ),
@@ -8688,7 +8913,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                               'Happy Birthday!',
                               style: TextStyle(
                                 color: Ink.violetDark,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 fontSize: Gold.t11,
                               ),
                             ),
@@ -8703,7 +8928,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: Gold.t27,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           height: 1.1,
                           letterSpacing: -0.5,
                         ),
@@ -8860,7 +9085,7 @@ class _StatTile extends StatelessWidget {
                   value,
                   style: const TextStyle(
                     fontSize: Gold.t27,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     height: 1,
                     letterSpacing: -0.8,
@@ -8979,7 +9204,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                         tamilUi ? 'மாடுகள் மற்றும் கன்றுகள்' : 'Cows & Calves',
                         style: const TextStyle(
                           fontSize: Gold.t27,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: Ink.navy,
                           height: 1.1,
                           letterSpacing: -0.6,
@@ -9269,7 +9494,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontSize: Gold.t21,
-                                          fontWeight: FontWeight.w900,
+                                          fontWeight: FontWeight.w700,
                                           color: Ink.navy,
                                           height: 1.15,
                                           letterSpacing: -0.4,
@@ -9279,7 +9504,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                         '#${txt(a, 'id')}',
                                         style: const TextStyle(
                                           fontSize: Gold.t13,
-                                          fontWeight: FontWeight.w800,
+                                          fontWeight: FontWeight.w600,
                                           color: Ink.navy,
                                         ),
                                       ),
@@ -9309,7 +9534,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                                 'Birthday today',
                                                 style: TextStyle(
                                                   fontSize: Gold.t10,
-                                                  fontWeight: FontWeight.w900,
+                                                  fontWeight: FontWeight.w700,
                                                   color: Ink.violetDeep,
                                                 ),
                                               ),
@@ -9401,7 +9626,7 @@ class _StatStrip extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: Gold.t13,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: Ink.navy,
                     ),
                   ),
@@ -9449,7 +9674,7 @@ class PlainAnimalCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: Gold.t16,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: Ink.navy,
                         ),
                       ),
@@ -9513,7 +9738,7 @@ class PlainAnimalCard extends StatelessWidget {
                   tamilUi && status == 'Active' ? 'பண்ணையில்' : status,
                   style: TextStyle(
                     fontSize: Gold.t10,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: statusColor(status),
                   ),
                 ),
@@ -9748,7 +9973,7 @@ class _TimelineEvent extends StatelessWidget {
                   Text(
                     txt(event, 'title'),
                     style: const TextStyle(
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: Ink.navy,
                     ),
                   ),
@@ -9762,7 +9987,7 @@ class _TimelineEvent extends StatelessWidget {
                     '${txt(event, 'date')}${txt(event, 'time').isEmpty ? '' : ' • ${txt(event, 'time')}'}',
                     style: TextStyle(
                       color: color,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       fontSize: Gold.t10,
                     ),
                   ),
@@ -9928,7 +10153,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: Gold.t21,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: Ink.navy,
                           letterSpacing: -0.4,
                         ),
@@ -9947,7 +10172,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         '#${txt(a, 'id')}',
                         style: const TextStyle(
                           color: Ink.violetDeep,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           fontSize: Gold.t10,
                         ),
                       ),
@@ -10049,7 +10274,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: Gold.t16,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
             ),
           ),
@@ -10148,7 +10373,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 const AppText(
                   'Notes',
                   style: TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
                   ),
@@ -10452,7 +10677,7 @@ class _Chip extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: Gold.t10,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
           color: color,
         ),
       ),
@@ -10497,7 +10722,7 @@ class _RecordLine extends StatelessWidget {
                 AppText(
                   title,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     fontSize: Gold.t13,
                     color: Ink.navy,
                   ),
@@ -11008,7 +11233,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                 AppText(
                   isCow ? 'Cow Photo' : 'Calf Photo',
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
                   ),
@@ -11063,7 +11288,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                       'Remove photo',
                       style: TextStyle(
                         color: Ink.red,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         fontSize: Gold.t11,
                       ),
                     ),
@@ -11110,7 +11335,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               AppText(
                 'ID  $currentId',
                 style: const TextStyle(
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   color: Ink.navy,
                   fontSize: Gold.t13,
                 ),
@@ -11519,7 +11744,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: _stockItem == i ? Colors.white : Ink.navy,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                           fontSize: Gold.t13,
                         ),
                       ),
@@ -11768,7 +11993,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
                   ),
@@ -12047,7 +12272,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
                   ),
@@ -12222,7 +12447,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
                   ),
@@ -12258,7 +12483,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
                     ? 'Sell 1 calf together'
                     : 'Sell $calfCount calves together',
                 style: const TextStyle(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   fontSize: Gold.t13,
                   color: Ink.navy,
                 ),
@@ -12331,7 +12556,7 @@ class _DeathScreenState extends State<DeathScreen> {
         backgroundColor: Colors.white,
         title: const AppText(
           'Record this death?',
-          style: TextStyle(fontWeight: FontWeight.w900, fontSize: Gold.t16),
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: Gold.t16),
         ),
         content: const AppText(
           'The animal will be marked as died and removed from active lists. '
@@ -12347,7 +12572,7 @@ class _DeathScreenState extends State<DeathScreen> {
             onPressed: () => Navigator.pop(ctx, true),
             child: const AppText(
               'Confirm',
-              style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
+              style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -12411,7 +12636,7 @@ class _DeathScreenState extends State<DeathScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
                   ),
@@ -12633,7 +12858,7 @@ class _SellScreenState extends State<SellScreen> {
             tamilUi ? 'இன்றைய பால் இருப்பு' : "Today's Milk Balance",
             style: const TextStyle(
               fontSize: Gold.t16,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
             ),
           ),
@@ -12684,8 +12909,14 @@ class _SellScreenState extends State<SellScreen> {
     padding: const EdgeInsets.all(Gold.s5),
     elevation: 0.72,
     child: LiquidSegmentBar(
-      labels: tamilUi ? const ['விற்பனை', 'தீவனம்'] : const ['Sell', 'Stock'],
-      icons: const [Icons.sell_rounded, Icons.inventory_2_rounded],
+      labels: tamilUi
+          ? const ['விற்பனை', 'இருப்பு', 'அறிக்கைகள்']
+          : const ['Sell', 'Stock', 'Reports'],
+      icons: const [
+        Icons.sell_rounded,
+        Icons.inventory_2_rounded,
+        Icons.bar_chart_rounded,
+      ],
       index: _section,
       onChanged: (value) => setState(() => _section = value),
     ),
@@ -12748,7 +12979,7 @@ class _SellScreenState extends State<SellScreen> {
               tamilUi ? 'தீவன இருப்பு' : 'Stock',
               style: const TextStyle(
                 fontSize: Gold.t34,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 color: Ink.navy,
                 height: 1.05,
                 letterSpacing: -1,
@@ -12794,7 +13025,7 @@ class _SellScreenState extends State<SellScreen> {
                             style: const TextStyle(
                               color: Ink.navy,
                               fontSize: Gold.t21,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
@@ -12892,7 +13123,7 @@ class _SellScreenState extends State<SellScreen> {
                                 '${txt(record, 'item')} · ${txt(record, 'movement')}',
                                 style: const TextStyle(
                                   color: Ink.navy,
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               AppText(
@@ -12908,7 +13139,7 @@ class _SellScreenState extends State<SellScreen> {
                             color: txt(record, 'movement') == 'Usage'
                                 ? Ink.red
                                 : Ink.green,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -12924,7 +13155,27 @@ class _SellScreenState extends State<SellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (appPurpose == 'Vendor' && _section < 2) {
+      return Column(
+        children: [
+          Padding(padding: const EdgeInsets.all(21), child: _sectionSwitcher()),
+          Expanded(
+            child: _section == 0
+                ? const VendorScreen(initialSection: 1)
+                : const VendorStockScreen(),
+          ),
+        ],
+      );
+    }
     if (_section == 1) return _stockScreen();
+    if (_section == 2) {
+      return Column(
+        children: [
+          Padding(padding: const EdgeInsets.all(21), child: _sectionSwitcher()),
+          const Expanded(child: ReportsScreen()),
+        ],
+      );
+    }
     return ValueListenableBuilder<Box<dynamic>>(
       valueListenable: Hive.box('sale_records').listenable(),
       builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
@@ -12957,7 +13208,7 @@ class _SellScreenState extends State<SellScreen> {
                         tamilUi ? 'பால் விற்பனை' : 'Sell',
                         style: const TextStyle(
                           fontSize: Gold.t34,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: Ink.navy,
                           height: 1.05,
                           letterSpacing: -1,
@@ -13147,7 +13398,7 @@ class _SellScreenState extends State<SellScreen> {
                           child: AppText(
                             tamilUi ? 'மொத்த தொகை' : 'Calculated Amount',
                             style: const TextStyle(
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                               color: Ink.navy,
                               fontSize: Gold.t13,
                             ),
@@ -13156,7 +13407,7 @@ class _SellScreenState extends State<SellScreen> {
                         FlowText(
                           money(_amount),
                           style: const TextStyle(
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             fontSize: Gold.t21,
                             color: Ink.navy,
                           ),
@@ -13229,7 +13480,7 @@ class _BalanceRow extends StatelessWidget {
             child: AppText(
               label,
               style: TextStyle(
-                fontWeight: emphasise ? FontWeight.w800 : FontWeight.w600,
+                fontWeight: emphasise ? FontWeight.w600 : FontWeight.w600,
                 fontSize: Gold.t13,
                 color: emphasise ? Ink.navy : Ink.body,
               ),
@@ -13238,7 +13489,7 @@ class _BalanceRow extends StatelessWidget {
           Text(
             value,
             style: TextStyle(
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               fontSize: emphasise ? Gold.t16 : Gold.t13,
               color: emphasise ? color : Ink.navy,
             ),
@@ -13416,7 +13667,7 @@ class _MiniStat extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: Gold.t16,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: color,
             ),
           ),
@@ -13487,7 +13738,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         'Reports',
                         style: TextStyle(
                           fontSize: Gold.t34,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: Ink.navy,
                           height: 1.05,
                           letterSpacing: -1,
@@ -13528,6 +13779,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
           ),
           const SizedBox(height: Gold.s21),
+          VendorReportSummary(period: _period),
           Reveal(
             index: 2,
             child: LayoutBuilder(
@@ -13583,7 +13835,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           'Net Result',
                           style: TextStyle(
                             fontSize: Gold.t16,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             color: Ink.navy,
                           ),
                         ),
@@ -13592,7 +13844,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         money(net),
                         style: TextStyle(
                           fontSize: Gold.t27,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: net >= 0 ? Ink.green : Ink.red,
                           letterSpacing: -0.8,
                         ),
@@ -13709,7 +13961,7 @@ class _SummaryTile extends StatelessWidget {
             value,
             style: const TextStyle(
               fontSize: Gold.t21,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
               height: 1,
               letterSpacing: -0.5,
@@ -13858,7 +14110,7 @@ class _ReportLink extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
                   ),
@@ -13974,7 +14226,7 @@ class ReportDetailScreen extends StatelessWidget {
                 farmName(),
                 style: const TextStyle(
                   fontSize: Gold.t21,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   color: Ink.navy,
                 ),
               ),
@@ -14129,7 +14381,7 @@ class ReportDetailScreen extends StatelessWidget {
                                 child: AppText(
                                   buckets[i].key,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
+                                    fontWeight: FontWeight.w700,
                                     color: Ink.navy,
                                     fontSize: Gold.t16,
                                   ),
@@ -14138,7 +14390,7 @@ class ReportDetailScreen extends StatelessWidget {
                               AppText(
                                 money(net),
                                 style: TextStyle(
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                   fontSize: Gold.t16,
                                   color: net >= 0 ? Ink.green : Ink.red,
                                 ),
@@ -14203,7 +14455,7 @@ class _Cell extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: Gold.t11,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
             ),
           ),
@@ -14518,7 +14770,7 @@ class _ExportTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
                   ),
@@ -14586,7 +14838,7 @@ class SettingsScreen extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: Gold.t27,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                                 letterSpacing: 1.8,
                                 height: 1,
@@ -14599,7 +14851,7 @@ class SettingsScreen extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: Gold.t16,
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w600,
                                 color: Ink.body,
                               ),
                             ),
@@ -14648,6 +14900,11 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   _ActionRow(
+                    icon: CupertinoIcons.slider_horizontal_3,
+                    label: 'Preferences',
+                    onTap: () => push(context, const PreferencesScreen()),
+                  ),
+                  _ActionRow(
                     icon: CupertinoIcons.info_circle,
                     label: 'Info',
                     onTap: () => push(context, const AppInfoScreen()),
@@ -14689,16 +14946,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               Reveal(
-                index: 6,
-                child: _SettingLink(
-                  title: 'Works Offline',
-                  subtitle: 'How your data is kept safe without a network',
-                  icon: Icons.wifi_off_rounded,
-                  color: Ink.amber,
-                  onTap: () => push(context, const WorksOfflineScreen()),
-                ),
-              ),
-              Reveal(
                 index: 7,
                 child: _SettingLink(
                   title: 'Export and Backup',
@@ -14724,7 +14971,7 @@ class SettingsScreen extends StatelessWidget {
                         title: const AppText(
                           'Restore from backup?',
                           style: TextStyle(
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             fontSize: Gold.t16,
                           ),
                         ),
@@ -14744,7 +14991,7 @@ class SettingsScreen extends StatelessWidget {
                               'Choose file',
                               style: TextStyle(
                                 color: Ink.violetDeep,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -14838,7 +15085,7 @@ class _SettingLink extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
                   ),
@@ -15030,7 +15277,7 @@ class FamilyUsersScreen extends StatelessWidget {
           shape: const SquircleBorder(radius: Gold.r27),
           title: AppText(
             '${txt(request, 'name', 'New member')} wants to join',
-            style: const TextStyle(fontWeight: FontWeight.w900),
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -15071,14 +15318,14 @@ class FamilyUsersScreen extends StatelessWidget {
               onPressed: () => Navigator.pop(ctx, false),
               child: const AppText(
                 'Reject',
-                style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
+                style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
               ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: const AppText(
                 'Accept',
-                style: TextStyle(color: Ink.green, fontWeight: FontWeight.w900),
+                style: TextStyle(color: Ink.green, fontWeight: FontWeight.w700),
               ),
             ),
           ],
@@ -15117,7 +15364,7 @@ class FamilyUsersScreen extends StatelessWidget {
           shape: const SquircleBorder(radius: Gold.r27),
           title: AppText(
             'Manage ${txt(member, 'name', 'member')}',
-            style: const TextStyle(fontWeight: FontWeight.w900),
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -15147,7 +15394,7 @@ class FamilyUsersScreen extends StatelessWidget {
               onPressed: () => Navigator.pop(ctx, 'remove'),
               child: const AppText(
                 'Remove',
-                style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
+                style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
               ),
             ),
             TextButton(
@@ -15160,7 +15407,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 'Save Role',
                 style: TextStyle(
                   color: Ink.violetDeep,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -15181,7 +15428,7 @@ class FamilyUsersScreen extends StatelessWidget {
             shape: const SquircleBorder(radius: Gold.r27),
             title: const AppText(
               'Remove from ranch?',
-              style: TextStyle(fontWeight: FontWeight.w900),
+              style: TextStyle(fontWeight: FontWeight.w700),
             ),
             content: AppText(
               '${txt(member, 'name', 'This member')} will immediately lose access to ranch data.',
@@ -15195,7 +15442,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const AppText(
                   'Remove',
-                  style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
+                  style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
                 ),
               ),
             ],
@@ -15245,7 +15492,7 @@ class FamilyUsersScreen extends StatelessWidget {
                   '${txt(member, 'name', 'Ranch Member')}${self ? ' (You)' : ''}',
                   style: const TextStyle(
                     color: Ink.navy,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     fontSize: Gold.t13,
                   ),
                 ),
@@ -15271,7 +15518,7 @@ class FamilyUsersScreen extends StatelessWidget {
               role,
               style: TextStyle(
                 color: color,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 fontSize: Gold.t10,
               ),
             ),
@@ -15328,7 +15575,7 @@ class FamilyUsersScreen extends StatelessWidget {
                           ranchId(),
                           style: const TextStyle(
                             color: Ink.navy,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             fontSize: Gold.t16,
                           ),
                         ),
@@ -15353,7 +15600,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 style: TextStyle(
                   color: Ink.navy,
                   fontSize: Gold.t21,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: Gold.s13),
@@ -15408,7 +15655,7 @@ class FamilyUsersScreen extends StatelessWidget {
                                     Text(
                                       txt(request, 'name', 'New member'),
                                       style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
+                                        fontWeight: FontWeight.w700,
                                         color: Ink.navy,
                                       ),
                                     ),
@@ -15426,7 +15673,7 @@ class FamilyUsersScreen extends StatelessWidget {
                                 'Review',
                                 style: TextStyle(
                                   color: Ink.violetDeep,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
@@ -15443,7 +15690,7 @@ class FamilyUsersScreen extends StatelessWidget {
               style: TextStyle(
                 color: Ink.navy,
                 fontSize: Gold.t21,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: Gold.s13),
@@ -15521,7 +15768,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
           backgroundColor: Colors.white,
           title: const AppText(
             'Add family user',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: Gold.t16),
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: Gold.t16),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -15559,7 +15806,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                 'Add',
                 style: TextStyle(
                   color: Ink.violetDeep,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -15675,7 +15922,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
+                                        fontWeight: FontWeight.w700,
                                         color: Ink.navy,
                                         fontSize: Gold.t16,
                                       ),
@@ -15707,7 +15954,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                   role,
                                   style: TextStyle(
                                     fontSize: Gold.t10,
-                                    fontWeight: FontWeight.w900,
+                                    fontWeight: FontWeight.w700,
                                     color: color,
                                   ),
                                 ),
@@ -15808,7 +16055,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                                 signedIn ? 'Connected' : 'Working offline',
                                 style: const TextStyle(
                                   fontSize: Gold.t21,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                   color: Ink.navy,
                                 ),
                               ),
@@ -15876,7 +16123,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                       title: const AppText(
                         'Auto Sync',
                         style: TextStyle(
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           fontSize: Gold.t13,
                           color: Ink.navy,
                         ),
@@ -15985,7 +16232,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                                 '${entry.value}',
                                 style: const TextStyle(
                                   fontSize: Gold.t11,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                   color: Ink.navy,
                                 ),
                               ),
@@ -16094,7 +16341,7 @@ class WorksOfflineScreen extends StatelessWidget {
                             AppText(
                               _points[i][0],
                               style: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                                 fontSize: Gold.t13,
                               ),

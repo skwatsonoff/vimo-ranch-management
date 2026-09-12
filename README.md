@@ -1,8 +1,57 @@
-# VIMO - My Ranch
+# VIMO - Ranch, Vendor & Market
 
 VIMO is an offline-first ranch management web app built with Flutter. It keeps
 daily work available in the browser through Hive and syncs signed-in family
 members through Firebase.
+
+## Ranch, vendor and market workspaces
+
+- New workspaces ask for their purpose. Existing users choose on their first
+  visit after this update. Settings → Preferences changes purpose and the order
+  of Ranch, Vendor, Sell, Social and Chat. Preferences are per account on this
+  device. The first destination opens at launch; changing purpose preserves data.
+- Cows and calves remain accessible inside Ranch. Sell contains Sell, Stock and
+  Reports. Vendor purpose routes Sell and Stock to the vendor milk ledger.
+- Vendor suppliers and customers have separate lists. Customers store address,
+  delivery weekdays, morning/evening sessions and daily, every-two-days, weekly,
+  monthly or flexible payment terms. Delivery reminders reflect scheduled sessions
+  without marking them delivered until an actual sale is recorded.
+- Purchases add vendor milk; deliveries deduct it. Paid amounts and later payments
+  update each person's outstanding balance. Vendor stock is separate from ranch
+  milk. The ledger and customer list appear in backups and the Excel workbook.
+- Vendor financial entries require a connection. Firestore transactions update
+  the ledger, milk balance and person's balance atomically, with retry IDs and
+  server rules preventing negative stock, overpayments and arbitrary edits.
+  The original author may update notes for five minutes, enforced by server time.
+  Vendor data streams live to approved workspace members. Financial records are
+  cloud-authoritative and are not re-uploaded by bulk backup sync.
+- Social posts use the member's VIMO Ranch ID and are visible to signed-in VIMO
+  users across workspaces. Posts support text, colored text tiles, one compressed
+  photo and a voice clip up to 20 seconds. Members can like and comment. Authors
+  can delete their own posts/comments. The feed shows the latest 60 posts, with
+  up to 100 comments per post. Private ranch records are never part of the feed.
+- Offline and sync explanations now live in Settings → Info. Existing ranch
+  workflows continue to store their records locally.
+
+## Validation
+
+Run `flutter analyze lib test` and `flutter test`. The active source is in `lib`;
+archived source ZIPs and directories are not part of the app.
+
+`test/firestore_rules_test.cjs` tests vendor stock, payment balances, concurrent
+sales, immutable financial fields, the five-minute edit window, cross-workspace
+isolation and social ownership rules. It runs only against the demo emulator:
+
+```powershell
+npm install --prefix tmp/rules-qa --no-save @firebase/rules-unit-testing firebase
+$env:NODE_PATH = (Resolve-Path 'tmp/rules-qa/node_modules').Path
+npx --yes firebase-tools emulators:exec --config firebase.test.json --project demo-vimo --only firestore 'node test/firestore_rules_test.cjs'
+```
+
+The emulator requires Java 21 or newer. Preview builds use
+`flutter build web --release --dart-define=VIMO_PREVIEW_MODE=true --output=tmp/business-preview`.
+Never deploy that preview directory. Production uses `flutter build web --release`
+and `firebase deploy --only hosting,firestore:rules --project my-ranch-sync`.
 
 ## Included
 

@@ -7,6 +7,21 @@ String ui(String value) => tamilUi ? (_tamilLabels[value] ?? value) : value;
 
 // Keep display labels separate from stored names, roles and record values.
 const _tamilLabels = <String, String>{
+  'Vendor': 'வியாபாரி',
+  'Market': 'சந்தை',
+  'Social': 'சமூகம்',
+  'Preferences': 'விருப்பங்கள்',
+  'Welcome to VIMO': 'VIMO-விற்கு வரவேற்கிறோம்',
+  'Set up your VIMO workspace': 'உங்கள் VIMO கணக்கை அமைக்கவும்',
+  'Get started': 'தொடங்கலாம்',
+  'Add person': 'நபரைச் சேர்',
+  'Edit person': 'நபரைத் திருத்து',
+  'Daily': 'தினமும்',
+  'Every 2 days': 'இரண்டு நாட்களுக்கு ஒருமுறை',
+  'Weekly': 'வாரந்தோறும்',
+  'Monthly': 'மாதந்தோறும்',
+  'Flexible': 'வசதிப்படி / ஒழுங்கற்ற இடைவெளி',
+  'Payment': 'பணம் செலுத்தியது',
   'Home': 'முகப்பு',
   'Cows': 'மாடுகள்',
   'Calves': 'கன்றுகள்',
@@ -67,7 +82,7 @@ const _tamilLabels = <String, String>{
   'Retry': 'மீண்டும் முயற்சி',
   'App Settings': 'ஆப் செட்டிங்ஸ்',
   'Family Users': 'வீட்டு ஆட்கள்',
-  'Ranch': 'பண்ணை',
+  'Ranch': 'தொழுவம்',
   'Data': 'பதிவுகள்',
   'Cloud Sync': 'கிளவுட் சிங்க்',
   'Works Offline': 'இன்டர்நெட் இல்லாமலும் வேலை செய்யும்',
@@ -250,10 +265,13 @@ class _InsetGroup extends StatelessWidget {
   final List<Widget> children;
   const _InsetGroup({required this.children});
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(18),
+  Widget build(BuildContext context) => Glass(
+    radius: 24,
+    opacity: .50,
+    elevation: .50,
+    padding: EdgeInsets.zero,
     child: Material(
-      color: Colors.white,
+      color: Colors.transparent,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -263,7 +281,7 @@ class _InsetGroup extends StatelessWidget {
                 height: 1,
                 thickness: .5,
                 indent: 54,
-                color: Color(0xFFE5E5EA),
+                color: Color(0x24788298),
               ),
             children[i],
           ],
@@ -746,7 +764,7 @@ class _ConversationViewState extends State<_ConversationView> {
         shape: const SquircleBorder(radius: Gold.r27),
         title: const AppText(
           'Delete this message?',
-          style: TextStyle(fontWeight: FontWeight.w900),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
         content: const AppText(
           'This removes the message for everyone in the ranch.',
@@ -760,7 +778,7 @@ class _ConversationViewState extends State<_ConversationView> {
             onPressed: () => Navigator.pop(ctx, true),
             child: const AppText(
               'Delete',
-              style: TextStyle(color: Ink.red, fontWeight: FontWeight.w900),
+              style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -814,10 +832,21 @@ class _ConversationViewState extends State<_ConversationView> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.fromLTRB(14, 10, 12, 7),
         decoration: BoxDecoration(
-          color: bubbleColor,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.lerp(
+                Colors.white,
+                bubbleColor,
+                .55,
+              )!.withValues(alpha: .84),
+              bubbleColor.withValues(alpha: .50),
+            ],
+          ),
           border: Border.all(
-            color: participantColor.withValues(alpha: .18),
-            width: .7,
+            color: Colors.white.withValues(alpha: .80),
+            width: 1,
           ),
           borderRadius: BorderRadius.only(
             topLeft: Radius.circular(mine ? 18 : 5),
@@ -843,7 +872,7 @@ class _ConversationViewState extends State<_ConversationView> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 color: participantColor,
               ),
             ),
@@ -888,14 +917,11 @@ class _ConversationViewState extends State<_ConversationView> {
         txt(task, 'assignee') == currentUserName() || canManageRanch;
     final assignee = txt(task, 'assignee');
     final assigneeColor = chatParticipantColor(assignee);
-    return Container(
+    return Glass(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA), width: .5),
-      ),
+      radius: 24,
+      elevation: .5,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -929,7 +955,7 @@ class _ConversationViewState extends State<_ConversationView> {
                     sender,
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       color: chatParticipantColor(sender),
                     ),
                   ),
@@ -986,7 +1012,7 @@ class _ConversationViewState extends State<_ConversationView> {
                             assignee,
                             style: TextStyle(
                               fontSize: 12,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                               color: assigneeColor,
                             ),
                           ),
@@ -1188,16 +1214,11 @@ class _ConversationViewState extends State<_ConversationView> {
                   top: false,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Container(
+                    child: Glass(
                       padding: const EdgeInsets.fromLTRB(16, 2, 4, 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(26),
-                        border: Border.all(
-                          color: const Color(0xFFD1D1D6),
-                          width: .7,
-                        ),
-                      ),
+                      radius: 26,
+                      opacity: .62,
+                      elevation: .65,
                       child: _recording || _sendingVoice
                           ? Row(
                               children: [
@@ -1328,6 +1349,7 @@ class _VoiceMessageBubble extends StatefulWidget {
   final int durationSeconds;
   final Color color;
   const _VoiceMessageBubble({
+    super.key,
     required this.url,
     required this.encodedAudio,
     required this.durationSeconds,
@@ -1454,6 +1476,26 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
 }
 
 const _helpEntries = <(String, String, String)>[
+  (
+    'Offline ranch records',
+    'Animals, ranch milk, feed, doctor visits and ranch sales save on this device without a network. Pending changes sync when connectivity returns. Keep a backup: clearing browser storage removes local records.',
+    'கால்நடை, தொழுவப் பால், தீவனம், மருத்துவர் மற்றும் தொழுவ விற்பனைப் பதிவுகளை இணையமின்றிச் சேமிக்கலாம். இணையம் திரும்பும்போது பதிவுகள் ஒத்திசையும். காப்புப்பிரதி வைத்திருங்கள்; உலாவியின் சேமிப்பை அழித்தால் உள்ளூர் பதிவுகள் நீங்கும்.',
+  ),
+  (
+    'Sync and shared records',
+    'Automatic sync runs after changes, when the app opens and every four hours while it is running. Approved members using the same Ranch ID receive the shared records. Cloud Sync shows status and offers manual sync.',
+    'மாற்றங்களுக்குப் பிறகும், செயலியைத் திறக்கும்போதும், செயலி இயங்கும்போது நான்கு மணி நேரத்துக்கு ஒருமுறையும் தானியங்கி ஒத்திசைவு நடக்கும். ஒரே Ranch ID-யில் அனுமதிக்கப்பட்ட உறுப்பினர்கள் பகிரப்பட்ட பதிவுகளைப் பெறுவார்கள். Cloud Sync-ல் நிலையைப் பார்க்கலாம்; கைமுறையாகவும் ஒத்திசைக்கலாம்.',
+  ),
+  (
+    'Vendor stock and payments',
+    'Vendor milk is separate from ranch milk. Purchases add litres, deliveries deduct litres, and payments reduce the person’s outstanding balance. Vendor financial entries require internet so two devices cannot sell the same stock. Notes may be changed by the author within five minutes. Payment frequency records the agreed arrangement; it does not automatically charge anyone.',
+    'வியாபாரியின் பால் இருப்பு தொழுவப் பாலிலிருந்து தனியானது. வாங்கும்போது இருப்பு கூடும்; விற்கும்போது குறையும்; பணம் செலுத்தும்போது நபரின் நிலுவை குறையும். இரண்டு சாதனங்கள் ஒரே பாலை விற்காமல் இருக்க வியாபாரப் பரிவர்த்தனைகளுக்கு இணையம் தேவை. பதிவு செய்தவர் ஐந்து நிமிடங்களுக்குள் குறிப்பை மாற்றலாம். பணம் செலுத்தும் இடைவெளி ஒப்பந்தத்தை மட்டும் குறிக்கும்; தானாகப் பணம் வசூலிக்கப்படாது.',
+  ),
+  (
+    'Purpose and preferences',
+    'Choose Ranch, Vendor or Market when you first enter VIMO. Settings → Preferences changes the purpose and tab order on this device for your account. The first tab is your starting page. All five areas remain accessible.',
+    'முதலில் தொழுவம், பால் வியாபாரம் அல்லது சந்தையைத் தேர்வு செய்யுங்கள். அமைப்புகள் → விருப்பங்களில் உங்கள் கணக்கிற்கான பயன்பாட்டு நோக்கத்தையும் பக்க வரிசையையும் இந்தச் சாதனத்தில் மாற்றலாம். முதல் பக்கம் தொடக்கப் பக்கமாக இருக்கும். ஐந்து பகுதிகளையும் பயன்படுத்தலாம்.',
+  ),
   (
     'Dashboard',
     'The dashboard shows today’s milk, animals, expenses, sales and the latest ranch activity.',

@@ -1,7 +1,7 @@
 {
-  "name": "VIMO - My Ranch",
+  "name": "VIMO - Ranch, Vendor & Market",
   "short_name": "VIMO",
-  "description": "VIMO family ranch management app with cows, milk, feed, sales, reports, and secure Firebase sync.",
+  "description": "VIMO ranch care, milk vendor deliveries, market sales and community with secure Firebase sync.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

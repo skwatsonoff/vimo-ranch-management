@@ -76,6 +76,44 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /social_posts/{postId} {
+      function validAuthor(data) {
+        return signedIn() && data.authorUid == request.auth.uid
+          && data.ranchId is string && isMember(data.ranchId)
+          && data.authorName is string && data.authorName.size() <= 120;
+      }
+      allow read: if signedIn();
+      allow create: if validAuthor(request.resource.data)
+        && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'text', 'photo', 'voice', 'voiceSeconds', 'tile', 'createdAt'])
+        && request.resource.data.text is string && request.resource.data.text.size() <= 2000
+        && request.resource.data.photo is string && request.resource.data.photo.size() <= 600000
+        && request.resource.data.voice is string && request.resource.data.voice.size() <= 450000
+        && request.resource.data.photo.size() + request.resource.data.voice.size() <= 850000
+        && request.resource.data.text.size() + request.resource.data.photo.size() + request.resource.data.voice.size() > 0
+        && request.resource.data.voiceSeconds is int && request.resource.data.voiceSeconds >= 0 && request.resource.data.voiceSeconds <= 20
+        && request.resource.data.tile is bool && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+      match /likes/{userId} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == userId
+          && exists(/databases/$(database)/documents/social_posts/$(postId))
+          && request.resource.data.keys().hasOnly(['createdAt']) && request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == userId;
+        allow update: if false;
+      }
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if validAuthor(request.resource.data)
+          && exists(/databases/$(database)/documents/social_posts/$(postId))
+          && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'text', 'createdAt'])
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000
+          && request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+        allow update: if false;
+      }
+    }
+
     match /ranches/{ranchId} {
       allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid;
@@ -129,6 +167,78 @@ service cloud.firestore {
         allow create, delete: if canEditAnimals(ranchId);
         allow update: if canEditAnimals(ranchId)
           || canUpdateAnimalEntry(ranchId);
+      }
+
+      match /vendor_people/{personId} {
+        allow read: if isMember(ranchId);
+        allow create, update: if canRecordEntries(ranchId)
+          && request.resource.data.id == personId
+          && request.resource.data.kind in ['supplier', 'customer']
+          && (resource == null || request.resource.data.kind == resource.data.kind)
+          && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
+          && request.resource.data.place is string && request.resource.data.place.size() <= 160
+          && request.resource.data.days is list && request.resource.data.days.hasOnly([0, 1, 2, 3, 4, 5, 6])
+          && request.resource.data.sessions is list && request.resource.data.sessions.hasOnly(['Morning', 'Evening'])
+          && request.resource.data.paymentCycle in ['Daily', 'Every 2 days', 'Weekly', 'Monthly', 'Flexible']
+          && (request.resource.data.kind == 'supplier' || (request.resource.data.days.size() > 0 && request.resource.data.sessions.size() > 0));
+        allow delete: if false;
+      }
+
+      function vendorEntry(entryId) {
+        return getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_entries/$(entryId)).data;
+      }
+      function newVendorEntry(entryId) {
+        return !exists(/databases/$(database)/documents/ranches/$(ranchId)/vendor_entries/$(entryId))
+          && vendorEntry(entryId).createdByUid == request.auth.uid;
+      }
+      function stockChange(entry) {
+        return entry.kind == 'purchase' ? entry.quantity : entry.kind == 'sale' ? -entry.quantity : 0;
+      }
+      function dueChange(entry) {
+        return entry.kind == 'payment' ? -entry.amount : entry.amount - entry.paid;
+      }
+      match /vendor_stock/{stockId} {
+        allow read: if isMember(ranchId);
+        allow create, update: if canRecordEntries(ranchId) && stockId == 'milk'
+          && request.resource.data.keys().hasOnly(['quantity', 'entryId'])
+          && newVendorEntry(request.resource.data.entryId)
+          && request.resource.data.quantity is number && request.resource.data.quantity >= 0
+          && math.abs(request.resource.data.quantity - ((resource == null ? 0 : resource.data.quantity) + stockChange(vendorEntry(request.resource.data.entryId)))) < 0.00001;
+        allow delete: if false;
+      }
+      match /vendor_accounts/{personId} {
+        allow read: if isMember(ranchId);
+        allow create, update: if canRecordEntries(ranchId)
+          && request.resource.data.keys().hasOnly(['due', 'entryId'])
+          && newVendorEntry(request.resource.data.entryId)
+          && vendorEntry(request.resource.data.entryId).personId == personId
+          && request.resource.data.due is number && request.resource.data.due >= 0
+          && math.abs(request.resource.data.due - ((resource == null ? 0 : resource.data.due) + dueChange(vendorEntry(request.resource.data.entryId)))) < 0.011;
+        allow delete: if false;
+      }
+      match /vendor_entries/{entryId} {
+        allow read: if isMember(ranchId);
+        allow create: if canRecordEntries(ranchId)
+          && request.resource.data.createdByUid == request.auth.uid
+          && request.resource.data.cloudId == entryId
+          && request.resource.data.serverCreatedAt == request.time
+          && request.resource.data.kind in ['purchase', 'sale', 'payment']
+          && get(/databases/$(database)/documents/ranches/$(ranchId)/vendor_people/$(request.resource.data.personId)).data.kind == request.resource.data.personKind
+          && (request.resource.data.kind == 'payment' || (request.resource.data.kind == 'purchase' && request.resource.data.personKind == 'supplier') || (request.resource.data.kind == 'sale' && request.resource.data.personKind == 'customer'))
+          && request.resource.data.quantity is number && request.resource.data.quantity >= 0
+          && request.resource.data.price is number && request.resource.data.price >= 0
+          && request.resource.data.amount is number && request.resource.data.amount > 0
+          && request.resource.data.paid is number && request.resource.data.paid >= 0 && request.resource.data.paid <= request.resource.data.amount
+          && request.resource.data.notes is string && request.resource.data.notes.size() <= 500
+          && (request.resource.data.kind == 'payment' || (request.resource.data.quantity > 0 && request.resource.data.price > 0 && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011))
+          && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_stock/milk).data.entryId == entryId
+          && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_accounts/$(request.resource.data.personId)).data.entryId == entryId;
+        allow update: if canRecordEntries(ranchId)
+          && resource.data.createdByUid == request.auth.uid
+          && request.time < resource.data.serverCreatedAt + duration.value(5, 'm')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notes', 'updatedAtMillis'])
+          && request.resource.data.notes is string && request.resource.data.notes.size() <= 500;
+        allow delete: if false;
       }
 
       match /settings/{documentId} {
