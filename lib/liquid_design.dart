@@ -1,7 +1,7 @@
 part of 'main.dart';
 
-/// A light overlay for fields, painted behind their text. The surrounding
-/// surface supplies the blur, avoiding a second expensive blur in every field.
+/// The standard outline painter keeps the field fill behind editable content.
+/// InputDecoration owns the fill, avoiding a second painted overlay.
 class GlassInputBorder extends OutlineInputBorder {
   const GlassInputBorder({
     super.borderSide = const BorderSide(color: Color(0xCFFFFFFF)),
@@ -29,18 +29,6 @@ class GlassInputBorder extends OutlineInputBorder {
     double gapPercentage = 0,
     TextDirection? textDirection,
   }) {
-    final path = getOuterPath(rect, textDirection: textDirection);
-    canvas.drawShadow(path, const Color(0x143D4C70), 3, false);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xADFFFFFF), Color(0x45FFFFFF), Color(0x70F5F8FF)],
-          stops: [0, .55, 1],
-        ).createShader(rect),
-    );
     super.paint(
       canvas,
       rect,

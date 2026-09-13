@@ -2044,7 +2044,7 @@ InputDecoration fieldStyle(
       fontWeight: FontWeight.w600,
     ),
     filled: true,
-    fillColor: Colors.transparent,
+    fillColor: Color(0x52FFFFFF),
     contentPadding: const EdgeInsets.symmetric(
       horizontal: Gold.s21,
       vertical: Gold.s21,
@@ -3645,31 +3645,57 @@ class RanchAccessService {
       ),
     );
     await setSetting('syncStatus', 'Waiting to sync');
-    final current = user;
-    if (current != null) {
-      await userRef.set({
-        'uid': current.uid,
-        'email': current.email ?? '',
-        'displayName': txt(member, 'name', displayNameFor(current)),
-        'currentRanchId': normalized,
-        'pendingRanchId': '',
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
-
-    final ranchSnap = await ranchRef(normalized).get();
-    final ranch = ranchSnap.data();
-    if (ranch != null) {
-      await setSetting('farmName', txt(ranch, 'farmName', 'My Ranch'));
-      await setSetting('ownerName', txt(ranch, 'ownerName'));
-      await setSetting('place', txt(ranch, 'place'));
-    }
+    // Membership has already been verified. Optional profile I/O must not
+    // keep an authorized user behind the access-loading screen.
+    unawaited(_refreshActivatedProfile(normalized, member));
     if (download && CloudSyncService.ready) {
-      // Ranch access must never hold the user on a loading page while every
-      // record downloads. Enter immediately, then hydrate data in background.
       unawaited(_hydrateActivatedRanch());
     }
     unawaited(CollaborationRealtimeSyncService.ensureStarted());
+  }
+
+  static Future<void> _refreshActivatedProfile(
+    String normalized,
+    Map<String, dynamic> member,
+  ) async {
+    final current = user;
+    if (current == null) return;
+    bool sameSession() => user?.uid == current.uid && ranchId() == normalized;
+    try {
+      final write = db
+          .collection('users')
+          .doc(current.uid)
+          .set({
+            'uid': current.uid,
+            'email': current.email ?? '',
+            'displayName': txt(member, 'name', displayNameFor(current)),
+            'currentRanchId': normalized,
+            'pendingRanchId': '',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 10));
+      // Start both operations together: an offline write waits for the server.
+      await Future.wait([
+        write,
+        () async {
+          final snap = await ranchRef(
+            normalized,
+          ).get().timeout(const Duration(seconds: 10));
+          final ranch = snap.data();
+          if (ranch == null || !sameSession()) return;
+          await setSetting('farmName', txt(ranch, 'farmName', 'My Ranch'));
+          if (!sameSession()) return;
+          await setSetting('ownerName', txt(ranch, 'ownerName'));
+          if (!sameSession()) return;
+          await setSetting('place', txt(ranch, 'place'));
+        }(),
+      ]);
+    } catch (error) {
+      if (sameSession()) {
+        await setSetting('lastSyncError', 'Ranch profile: $error');
+        await setSetting('syncStatus', 'Will retry automatically');
+      }
+    }
   }
 
   static Future<void> _hydrateActivatedRanch() async {
@@ -6056,7 +6082,7 @@ class VimoApp extends StatelessWidget {
           ),
           inputDecorationTheme: const InputDecorationThemeData(
             filled: true,
-            fillColor: Colors.transparent,
+            fillColor: Color(0x52FFFFFF),
             contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 18),
             border: GlassInputBorder(),
             enabledBorder: GlassInputBorder(),
@@ -7017,9 +7043,11 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _busy = true);
     try {
       // "Remember me" chooses whether the session survives a browser restart.
-      await FirebaseAuth.instance.setPersistence(
-        _remember ? Persistence.LOCAL : Persistence.SESSION,
-      );
+      if (kIsWeb) {
+        await FirebaseAuth.instance.setPersistence(
+          _remember ? Persistence.LOCAL : Persistence.SESSION,
+        );
+      }
 
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
