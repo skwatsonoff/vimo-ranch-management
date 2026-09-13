@@ -64,6 +64,58 @@ const assert = require('node:assert/strict');
     await assertFails(deleteDoc(doc(outsider, 'social_posts/post1/comments/c1'))); checks++;
     await assertFails(deleteDoc(doc(outsider, 'social_posts/post1'))); checks++;
     await assertSucceeds(deleteDoc(doc(db, 'social_posts/post1'))); checks++;
+
+    async function username(client, uid, name) {
+      return runTransaction(client, async tx => {
+        const profile = doc(client, 'users/' + uid), handle = doc(client, 'usernames/' + name);
+        const before = await tx.get(profile); await tx.get(handle);
+        tx.set(handle, {uid, claimedAt: serverTimestamp()});
+        tx.set(profile, {username: name, usernameChangedAt: serverTimestamp()}, {merge:true});
+        if (before.data()?.username) tx.delete(doc(client, 'usernames/' + before.data().username));
+      });
+    }
+    await assertSucceeds(getDoc(doc(anon, 'usernames/kumar'))); checks++;
+    await assertSucceeds(username(db, 'owner', 'kumar')); checks++;
+    await assertFails(username(helper, 'helper', 'kumar')); checks++;
+    await assertFails(username(db, 'owner', 'kumar_new')); checks++;
+    await assertFails(updateDoc(doc(db, 'users/owner'), {username: 'stolen'})); checks++;
+    await assertFails(setDoc(doc(db, 'social_posts/handle-spoof'), {...post, authorUsername:'stolen'})); checks++;
+    await assertSucceeds(setDoc(doc(db, 'social_posts/handle'), {...post, ranchId:'', authorUsername:'kumar'})); checks++;
+    await env.withSecurityRulesDisabled(async ctx => updateDoc(doc(ctx.firestore(), 'users/owner'), {usernameChangedAt: Timestamp.fromMillis(Date.now() - 31*86400000)}));
+    await assertSucceeds(username(db, 'owner', 'kumar_new')); checks++;
+    await assertSucceeds(username(helper, 'helper', 'kumar')); checks++;
+    await assertFails(deleteDoc(doc(db, 'usernames/kumar'))); checks++;
+    await assertFails(username(outsider, 'outsider', 'BAD NAME')); checks++;
+
+    async function bridge(client, uid, sourceId, forgedDelta) {
+      return runTransaction(client, async tx => {
+        const source = doc(client, 'ranches/test/milk_records/' + sourceId);
+        const linkId = 'milk_records_' + sourceId;
+        const link = doc(client, 'ranches/test/vendor_ranch_links/' + linkId);
+        const stock = doc(client, 'ranches/test/vendor_stock/milk');
+        const entry = doc(client, 'ranches/test/vendor_entries', 'bridge_' + Math.random().toString(36).slice(2));
+        const src = await tx.get(source), previous = await tx.get(link), balance = await tx.get(stock);
+        const quantity = src.data()?.quantity || 0;
+        const delta = forgedDelta ?? quantity - (previous.data()?.quantity || 0);
+        if (!delta) return;
+        tx.set(entry, {kind:'ranch', sourceBox:'milk_records', sourceId, linkId, quantity:delta, cloudId:entry.id, createdByUid:uid, serverCreatedAt:serverTimestamp()});
+        tx.set(link, {sourceBox:'milk_records', sourceId, quantity, entryId:entry.id});
+        tx.set(stock, {quantity:(balance.data()?.quantity || 0) + delta, entryId:entry.id});
+      });
+    }
+    await assertSucceeds(setDoc(doc(db, 'ranches/test/milk_records/m1'), {quantity:10})); checks++;
+    await assertFails(bridge(db, 'owner', 'm1', 100)); checks++;
+    const outcomes = await Promise.allSettled([bridge(db, 'owner', 'm1'), bridge(helper, 'helper', 'm1')]);
+    assert.equal(outcomes.filter(r=>r.status === 'fulfilled').length >= 1, true); checks++;
+    if (outcomes.every(r=>r.status === 'rejected')) throw outcomes[0].reason;
+    assert.equal((await getDoc(doc(db, 'ranches/test/vendor_stock/milk'))).data().quantity, 14); checks++;
+    await assertSucceeds(updateDoc(doc(db, 'ranches/test/milk_records/m1'), {quantity:7}));
+    await assertSucceeds(bridge(db, 'owner', 'm1')); checks++;
+    assert.equal((await getDoc(doc(db, 'ranches/test/vendor_stock/milk'))).data().quantity, 11); checks++;
+    await assertSucceeds(deleteDoc(doc(db, 'ranches/test/milk_records/m1')));
+    await assertSucceeds(bridge(db, 'owner', 'm1')); checks++;
+    assert.equal((await getDoc(doc(db, 'ranches/test/vendor_stock/milk'))).data().quantity, 4); checks++;
+    await assertFails(bridge(outsider, 'outsider', 'm1')); checks++;
     console.log(`PASS: ${checks} Firestore stock, credit, concurrency, edit-window and social permission checks.`);
-  } finally { await env.cleanup(); }
+  } catch(error) { const report = await fetch('http://127.0.0.1:8088/emulator/v1/projects/demo-vimo:ruleCoverage').then(r=>r.text()); fs.writeFileSync('tmp/rule-coverage.json', report); throw error; } finally { await env.cleanup(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -3,10 +3,139 @@ part of 'main.dart';
 bool get tamilUi =>
     Hive.isBoxOpen('settings') &&
     settingText('languageMode', 'English') == 'Tamil';
-String ui(String value) => tamilUi ? (_tamilLabels[value] ?? value) : value;
+String ui(String value) {
+  if (tamilUi) return _tamilLabels[value] ?? localizedAnimalLabel(value);
+  final reverse = {
+    for (final entry in _tamilLabels.entries) entry.value: entry.key,
+  };
+  return reverse[value] ?? localizedAnimalLabel(value);
+}
 
 // Keep display labels separate from stored names, roles and record values.
 const _tamilLabels = <String, String>{
+  "Username": "பயனர்பெயர்",
+  "Ranch milk": "தொழுவப் பால்",
+  "Tab order": "பக்க வரிசை",
+  "Feed": "தீவனம்",
+  "English": "ஆங்கிலம்",
+  "Tamil": "தமிழ்",
+  "Checking ranch access...": "தொழுவ அணுகலைச் சரிபார்க்கிறது…",
+  "Could not verify ranch access": "தொழுவ அணுகலைச் சரிபார்க்க முடியவில்லை",
+  "Try Again": "மீண்டும் முயற்சி",
+  "Create a private ranch or request access to an existing one.":
+      "புதிய தொழுவத்தை உருவாக்கவும் அல்லது இருக்கும் தொழுவத்தில் சேரக் கோரவும்.",
+  "Admin approval required": "நிர்வாகியின் ஒப்புதல் தேவை",
+  "Cancel join request?": "சேரும் கோரிக்கையை ரத்து செய்யவா?",
+  "You will return to the create or join ranch screen.":
+      "தொழுவத்தை உருவாக்கும் அல்லது சேரும் பக்கத்திற்குத் திரும்புவீர்கள்.",
+  "Keep Waiting": "காத்திருக்கவும்",
+  "Cancel Request": "கோரிக்கையை ரத்து செய்",
+  "Waiting for admin approval": "நிர்வாகியின் ஒப்புதலுக்காகக் காத்திருக்கிறது",
+  "You will automatically enter the ranch after an admin accepts your request.":
+      "நிர்வாகி ஏற்றதும் தொழுவம் தானாகத் திறக்கும்.",
+  "Welcome Back!": "மீண்டும் வரவேற்கிறோம்!",
+  "Sign in to continue": "தொடர உள்நுழையவும்",
+  "Remember me": "உள்நுழைவை நினைவில் வை",
+  "Forgot password?": "கடவுச்சொல் மறந்துவிட்டதா?",
+  "New here? ": "புதியவரா? ",
+  "Create your VIMO account": "உங்கள் VIMO கணக்கை உருவாக்கவும்",
+  "New ranch join request": "புதிய தொழுவச் சேர்க்கைக் கோரிக்கை",
+  "Daily data entry reminder": "தினசரி பதிவுக்கான நினைவூட்டல்",
+  "Task completed": "வேலை முடிந்தது",
+  "Today Sales": "இன்றைய விற்பனை",
+  "Dashboard": "முகப்பு விவரங்கள்",
+  "Recent Activity": "சமீபத்திய செயல்பாடுகள்",
+  "Could not check join requests — tap to retry":
+      "சேரும் கோரிக்கைகளைச் சரிபார்க்க முடியவில்லை; மீண்டும் முயற்சிக்கத் தொடவும்",
+  "Review": "பரிசீலி",
+  "Manage. Care. Grow.": "நிர்வகி. பராமரி. வளர்ச்சி பெறு.",
+  "Happy Birthday!": "பிறந்தநாள் வாழ்த்துகள்!",
+  "Birthday today": "இன்று பிறந்தநாள்",
+  "Animal not found": "கால்நடை கிடைக்கவில்லை",
+  "Milking Stop Duration": "பால் கறப்பதை நிறுத்திய காலம்",
+  "Timeline is empty": "நிகழ்வுகள் இல்லை",
+  "Edit details": "விவரங்களைத் திருத்து",
+  "Record sale": "விற்பனையைப் பதிவு செய்",
+  "Record death": "இறப்பைப் பதிவு செய்",
+  "Remove photo": "புகைப்படத்தை நீக்கு",
+  "Farm Arrival / Purchase Date": "தொழுவ வருகை / வாங்கிய தேதி",
+  "No cows yet": "மாடுகள் இன்னும் இல்லை",
+  "Pregnancy recorded": "சினைப் பதிவு சேமிக்கப்பட்டது",
+  "New calf born": "புதிய கன்று பிறந்தது",
+  "Save Newborn Calf": "பிறந்த கன்றைச் சேமி",
+  "Sell Animal": "கால்நடையை விற்பனை செய்",
+  "Record this death?": "இறப்பைப் பதிவு செய்யவா?",
+  "The animal will be marked as died and removed from active lists. ":
+      "இறந்ததாகக் குறிக்கப்பட்டு உயிருள்ள கால்நடைப் பட்டியலிலிருந்து நீக்கப்படும். ",
+  "Death Record": "இறப்புப் பதிவு",
+  "Save Death Record": "இறப்புப் பதிவைச் சேமி",
+  "Nothing to sell": "விற்பனை செய்ய எதுவும் இல்லை",
+  "No records": "பதிவுகள் இல்லை",
+  "Milk Collected": "கறந்த பால்",
+  "Milk Sold": "விற்ற பால்",
+  "Net Result": "நிகர முடிவு",
+  "Detailed Reports": "விரிவான அறிக்கைகள்",
+  "Daily Totals": "தினசரி மொத்தம்",
+  "Day by day milk, expense, feed and sales":
+      "தினசரி பால், செலவு, தீவனம் மற்றும் விற்பனை",
+  "Monthly Totals": "மாதாந்திர மொத்தம்",
+  "Full month milk, expense and profit": "முழு மாதப் பால், செலவு மற்றும் லாபம்",
+  "Business Summary": "வணிகச் சுருக்கம்",
+  "Overall performance across the whole ranch": "தொழுவத்தின் மொத்தச் செயல்பாடு",
+  "Active Cows": "உள்ள மாடுகள்",
+  "Active Calves": "உள்ள கன்றுகள்",
+  "Lost": "இழப்பு",
+  "Lifetime Milk": "இதுவரை கறந்த பால்",
+  "Lifetime Income": "இதுவரை வருமானம்",
+  "Lifetime Expense": "இதுவரை செலவு",
+  "Export Reports": "அறிக்கைகளை ஏற்றுமதி செய்",
+  "Nothing to report yet": "அறிக்கைக்கான பதிவுகள் இல்லை",
+  "Animals, milk, stock, sales, expenses, visits and settings in one file":
+      "கால்நடை, பால், இருப்பு, விற்பனை, செலவு, மருத்துவம் மற்றும் அமைப்புகள் ஒரே கோப்பில்",
+  "Stock, others, doctor, purchase and loss":
+      "இருப்பு, இதர செலவு, மருத்துவம், கொள்முதல் மற்றும் இழப்பு",
+  "Everything, as a JSON file you can restore later":
+      "பின்னர் மீட்டெடுக்கக்கூடிய JSON கோப்பில் அனைத்தும்",
+  "Farm name, owner, currency and milk price":
+      "தொழுவப் பெயர், உரிமையாளர், நாணயம் மற்றும் பால் விலை",
+  "Admin, Editor and Data Entry access":
+      "நிர்வாகி, திருத்துநர் மற்றும் பதிவாளருக்கான அணுகல்",
+  "Sync status, manual upload and download":
+      "ஒத்திசைவு நிலை, பதிவேற்றம் மற்றும் பதிவிறக்கம்",
+  "Excel workbook, CSV reports or a full backup":
+      "Excel கோப்பு, CSV அறிக்கை அல்லது முழுக் காப்புப்பிரதி",
+  "Load a previously downloaded backup file":
+      "முன்பு பதிவிறக்கிய காப்புப்பிரதியை ஏற்று",
+  "Restore from backup?": "காப்புப்பிரதியிலிருந்து மீட்டெடுக்கவா?",
+  "This replaces everything currently on this device ":
+      "இந்தக் கருவியில் உள்ள அனைத்துப் பதிவுகளும் மாற்றப்படும் ",
+  "Save Role": "பொறுப்பைச் சேமி",
+  "Remove from ranch?": "தொழுவத்திலிருந்து நீக்கவா?",
+  "Ranch Members": "தொழுவ உறுப்பினர்கள்",
+  "Join Requests": "சேரும் கோரிக்கைகள்",
+  "Could not load join requests": "சேரும் கோரிக்கைகளை ஏற்ற முடியவில்லை",
+  "No pending requests": "நிலுவைக் கோரிக்கைகள் இல்லை",
+  "Members": "உறுப்பினர்கள்",
+  "Could not load members": "உறுப்பினர்களை ஏற்ற முடியவில்லை",
+  "Add family user": "குடும்ப உறுப்பினரைச் சேர்",
+  "Add": "சேர்",
+  "Manage together as a family": "குடும்பமாகச் சேர்ந்து நிர்வகிக்கவும்",
+  "Add Family User": "குடும்ப உறுப்பினரைச் சேர்",
+  "Last Synced": "கடைசி ஒத்திசைவு",
+  "Status": "நிலை",
+  "Pending Records": "நிலுவைப் பதிவுகள்",
+  "Auto Sync": "தானியங்கி ஒத்திசைவு",
+  "Sync in the background without asking": "பின்னணியில் தானாக ஒத்திசைக்கவும்",
+  "Sign in to sync": "ஒத்திசைக்க உள்நுழையவும்",
+  "Sync Now": "இப்போது ஒத்திசை",
+  "Upload This Device to Cloud":
+      "இந்தக் கருவியின் பதிவுகளை மேகத்தில் பதிவேற்று",
+  "Download Cloud to This Device":
+      "மேகப் பதிவுகளை இந்தக் கருவிக்குப் பதிவிறக்கு",
+  "Check Cloud Record Counts": "மேகப் பதிவுகளின் எண்ணிக்கையைச் சரிபார்",
+  "Use anytime, anywhere": "எந்நேரமும் எங்கும் பயன்படுத்தலாம்",
+  "Own use": "சொந்த பயன்பாடு",
+  "No editable entries": "திருத்தக்கூடிய பதிவுகள் இல்லை",
   'Vendor': 'வியாபாரி',
   'Market': 'சந்தை',
   'Social': 'சமூகம்',
@@ -237,7 +366,8 @@ class AppText extends Text {
   Widget build(BuildContext context) {
     // Subscribe to locale so already-open routes update with the preference.
     Localizations.localeOf(context);
-    if (!tamilUi || data == null) return super.build(context);
+    if (data == null) return super.build(context);
+    if (ui(data!) == data) return super.build(context);
     return Text(
       ui(data!),
       style: style?.copyWith(
@@ -1476,6 +1606,31 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
 }
 
 const _helpEntries = <(String, String, String)>[
+  (
+    'Vendor',
+    'Purchases and ranch milk add stock; deliveries deduct it. Financial entries need a connection. The original author can add or edit notes for five minutes after saving.',
+    'வாங்கிய பாலும் தொழுவப் பாலும் இருப்பில் சேரும்; விற்பனை இருப்பைக் குறைக்கும். பணப் பதிவுகளுக்கு இணையம் தேவை. சேமித்த ஐந்து நிமிடங்களுக்குள் பதிவு செய்தவர் குறிப்பைச் சேர்க்கலாம் அல்லது திருத்தலாம்.',
+  ),
+  (
+    'Preferences',
+    'Choose your purpose to apply a default layout. In Settings → Preferences, hold a tab and drag it to change its position. The first tab opens on launch.',
+    'பயன்பாட்டு நோக்கத்தைத் தேர்வுசெய்தால் இயல்பான வரிசை அமைக்கப்படும். அமைப்புகள் → விருப்பங்களில் பக்கத்தை அழுத்திப் பிடித்து இழுத்து வரிசையை மாற்றலாம். முதல் பக்கம் தொடக்கத்தில் திறக்கும்.',
+  ),
+  (
+    'Username',
+    'Usernames are unique, ignore letter case, and can be changed once every 30 days. Use 3–20 letters, numbers or underscores, starting with a letter. Availability is checked online; saving reserves the name atomically.',
+    'பயனர்பெயர் தனித்துவமானது; பெரிய, சிறிய எழுத்துகள் ஒன்றாகக் கருதப்படும். 30 நாட்களுக்கு ஒருமுறை மாற்றலாம். 3–20 ஆங்கில எழுத்துகள், எண்கள் அல்லது அடிக்கோடு பயன்படுத்தி எழுத்தில் தொடங்கவும். இணையத்தில் கிடைப்பதைச் சரிபார்த்து சேமிக்கும்போது பெயர் ஒதுக்கப்படும்.',
+  ),
+  (
+    'Social',
+    'Posts are visible to signed-in VIMO users. Share text, a photo or a voice note up to 20 seconds. Ranch records remain private. If publishing times out, retrying the same draft will not create a duplicate.',
+    'உள்நுழைந்த VIMO பயனர்கள் பதிவுகளைப் பார்க்கலாம். உரை, புகைப்படம் அல்லது 20 நொடி குரலைப் பகிரலாம். தொழுவப் பதிவுகள் தனிப்பட்டவை. பகிர்வதில் தாமதம் ஏற்பட்டால் அதே வரைவை மீண்டும் முயற்சிக்கலாம்; நகல் பதிவு உருவாகாது.',
+  ),
+  (
+    'Ranch milk',
+    'Synced ranch milk joins Vendor stock automatically. Existing ranch milk sales and own use are deducted. Corrections and deletions update the same stock once. A negative correction blocks further sales until the stock is corrected.',
+    'ஒத்திசைந்த தொழுவப் பால் வியாபாரி இருப்பில் தானாகச் சேரும். பழைய பால் விற்பனை, சொந்தப் பயன்பாடு கழிக்கப்படும். திருத்தம், நீக்கம் இருப்பை ஒருமுறை மட்டுமே மாற்றும். இருப்பு பற்றாக்குறை இருந்தால் சரிசெய்யும் வரை விற்பனை செய்ய முடியாது.',
+  ),
   (
     'Offline ranch records',
     'Animals, ranch milk, feed, doctor visits and ranch sales save on this device without a network. Pending changes sync when connectivity returns. Keep a backup: clearing browser storage removes local records.',

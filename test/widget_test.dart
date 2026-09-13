@@ -8,7 +8,7 @@ import 'package:ranch_management/main.dart';
 void main() {
   group('VIMO data helpers', () {
     test('stock units distinguish straw bundles from bran kilograms', () {
-      expect(stockUnit('Vaikol'), 'கட்டு');
+      expect(stockUnit('Vaikol'), 'bundles');
       expect(stockUnit('Thavudu'), 'kg');
     });
 

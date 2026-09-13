@@ -29,23 +29,17 @@ void main() {
     await Hive.box('vendor_entries').clear();
   });
   test(
-    'purpose defaults and custom order preserve all five destinations',
+    'purpose defaults and custom order preserve all four destinations',
     () async {
       expect(purposeChosen, false);
       await savePurpose('Vendor', defaultNavigation('Vendor'));
       expect(navigationOrder().first, 'Vendor');
       expect(purposeChosen, true);
-      await savePurpose('Market', [
-        'Social',
-        'Chat',
-        'Sell',
-        'Vendor',
-        'Ranch',
-      ]);
-      expect(navigationOrder(), ['Social', 'Chat', 'Sell', 'Vendor', 'Ranch']);
+      await savePurpose('Market', ['Social', 'Chat', 'Vendor', 'Ranch']);
+      expect(navigationOrder(), ['Social', 'Chat', 'Vendor', 'Ranch']);
       await expectLater(savePurpose('Ranch', ['Ranch']), throwsArgumentError);
       expect(navigationOrder().first, 'Social');
-      expect(defaultNavigation('Market').first, 'Sell');
+      expect(defaultNavigation('Market').first, 'Vendor');
     },
   );
   test(
@@ -132,9 +126,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const MaterialApp(home: MainShell()));
     await tester.pump(const Duration(milliseconds: 600));
-    await tester.tap(find.text('Sell'));
+    expect(find.text('Sell'), findsNothing);
+    await tester.tap(find.text('Sell milk'));
     await tester.pump(const Duration(milliseconds: 600));
-    expect(tester.widget<VendorScreen>(find.byType(VendorScreen)).initialSection, 1);
+    expect(find.byType(VendorScreen), findsOneWidget);
     await tester.tap(find.text('Stock'));
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('Vendor milk stock'), findsOneWidget);
@@ -169,10 +164,7 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 600));
         expect(tester.takeException(), isNull);
-        expect(
-          find.byType(FilterChip).evaluate().length,
-          greaterThanOrEqualTo(7),
-        );
+        expect(find.byType(FilterChip).evaluate().length, equals(2));
         await tester.enterText(
           find.byType(TextFormField).at(0),
           language == 'Tamil' ? 'குமார்' : 'Kumar',
@@ -203,8 +195,65 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('What will you use VIMO for?'), findsOneWidget);
+      expect(find.byType(ReorderableListView), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  test(
+    'legacy tab order removes Sell while preserving custom positions',
+    () async {
+      await Hive.box('settings').put('purposeProfiles', {
+        'local': {
+          'purpose': 'Ranch',
+          'order': ['Social', 'Sell', 'Ranch', 'Vendor', 'Chat'],
+        },
+      });
+      expect(navigationOrder(), ['Social', 'Ranch', 'Vendor', 'Chat']);
+    },
+  );
+  test(
+    'ranch milk credits and corrections join vendor inventory without affecting credit',
+    () {
+      final rows = <Map<String, dynamic>>[
+        {'kind': 'ranch', 'quantity': 10},
+        {'kind': 'ranch', 'quantity': -3},
+        {'kind': 'purchase', 'quantity': 5},
+        {'kind': 'sale', 'quantity': 4},
+      ];
+      expect(vendorMilkBalance(rows), 8);
+      expect(
+        ranchSourceMilk('sale_records', {'type': 'Milk', 'quantity': 3}),
+        -3,
+      );
+      expect(
+        ranchSourceMilk('sale_records', {'type': 'Cow', 'quantity': 1}),
+        0,
+      );
+    },
+  );
+  test('username normalization and format reject ambiguous handles', () {
+    expect(normalizeUsername(' Kumar_1 '), 'kumar_1');
+    expect(validUsername('kumar_1'), isTrue);
+    for (final name in ['Kumar', 'a', '1kumar', 'a b', 'குமார்', 'a/b']) {
+      expect(validUsername(name), isFalse);
+    }
+  });
+  test(
+    'language switches display names without changing stored identifiers',
+    () async {
+      await Hive.box('animals').clear();
+      await Hive.box('animals').add({
+        'name': 'Lakshmi',
+        'nameTamil': 'லட்சுமி',
+        'nameEnglish': 'Lakshmi',
+      });
+      await Hive.box('settings').put('languageMode', 'Tamil');
+      expect(ui('Lakshmi'), 'லட்சுமி');
+      await Hive.box('settings').put('languageMode', 'English');
+      expect(ui('லட்சுமி'), 'Lakshmi');
+      expect(ui('சொந்த பயன்பாடு'), 'Own use');
+      expect(Hive.box('animals').values.first['name'], 'Lakshmi');
     },
   );
 }

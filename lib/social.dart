@@ -1,8 +1,27 @@
 part of 'main.dart';
 
+Future<String?> compressSocialPhoto(String source) async {
+  final bytes = await compute(_socialPhotoEncode, socialPhotoBytes(source));
+  return bytes == null ? null : 'data:image/jpeg;base64,${base64Encode(bytes)}';
+}
+
+Uint8List? _socialPhotoEncode(Uint8List bytes) {
+  final decoded = image_lib.decodeImage(bytes);
+  if (decoded == null) return null;
+  final oriented = image_lib.bakeOrientation(decoded);
+  final image = oriented.width >= oriented.height
+      ? image_lib.copyResize(oriented, width: math.min(oriented.width, 640))
+      : image_lib.copyResize(oriented, height: math.min(oriented.height, 640));
+  final encoded = Uint8List.fromList(image_lib.encodeJpg(image, quality: 72));
+  return encoded.length <= 440000 ? encoded : null;
+}
+
 Uint8List socialPhotoBytes(String source) {
-  try { return base64Decode(source.split(',').last); }
-  on FormatException { return Uint8List(0); }
+  try {
+    return base64Decode(source.split(',').last);
+  } on FormatException {
+    return Uint8List(0);
+  }
 }
 
 class SocialScreen extends StatefulWidget {
@@ -13,7 +32,7 @@ class SocialScreen extends StatefulWidget {
 
 class _SocialScreenState extends State<SocialScreen> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>>? _feed =
-      CloudSyncService.ready
+      firebaseReady && FirebaseAuth.instance.currentUser != null
       ? FirebaseFirestore.instance
             .collection('social_posts')
             .orderBy('createdAt', descending: true)
@@ -147,6 +166,7 @@ class SocialComposer extends StatefulWidget {
 }
 
 class _SocialComposerState extends State<SocialComposer> {
+  String? _postId;
   final _text = TextEditingController();
   final _recorder = AudioRecorder();
   BytesBuilder _pcm = BytesBuilder(copy: false);
@@ -245,20 +265,12 @@ class _SocialComposerState extends State<SocialComposer> {
         padding: const EdgeInsets.all(21),
         children: [
           Text(
-            '@${ranchId()}',
+            '@${accountUsername.isEmpty ? currentUserName() : accountUsername}',
             style: const TextStyle(
               color: _blue,
               fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            bi(
-              'Visible to all signed-in VIMO members. Your private ranch records stay private.',
-              'உள்நுழைந்த அனைத்து VIMO உறுப்பினர்களுக்கும் இந்தப் பதிவு தெரியும். உங்கள் தனிப்பட்ட தொழுவக் கணக்குகள் பகிரப்படாது.',
-            ),
-            style: const TextStyle(color: Ink.muted, fontSize: 13),
           ),
           const SizedBox(height: 24),
           TextField(
@@ -315,7 +327,10 @@ class _SocialComposerState extends State<SocialComposer> {
                     ? null
                     : () async {
                         try {
-                          final photo = await pickImageDataUrl();
+                          final picked = await pickImageDataUrl();
+                          final photo = picked == null
+                              ? null
+                              : await compressSocialPhoto(picked);
                           if (mounted && photo != null) {
                             setState(() => _photo = photo);
                           }
@@ -364,7 +379,8 @@ class _SocialComposerState extends State<SocialComposer> {
                       );
                       return;
                     }
-                    if (!CloudSyncService.ready) {
+                    if (!firebaseReady ||
+                        FirebaseAuth.instance.currentUser == null) {
                       snack(
                         context,
                         bi(
@@ -374,7 +390,13 @@ class _SocialComposerState extends State<SocialComposer> {
                       );
                       return;
                     }
-                    if (_photo.length + _voice.length > 850000) {
+                    if (accountUsername.isEmpty) {
+                      await push(context, const UsernameScreen());
+                      if (!context.mounted || accountUsername.isEmpty) return;
+                    }
+                    if (_photo.length > 600000 ||
+                        _voice.length > 450000 ||
+                        _photo.length + _voice.length > 850000) {
                       snack(
                         context,
                         bi(
@@ -386,19 +408,28 @@ class _SocialComposerState extends State<SocialComposer> {
                     }
                     setState(() => _busy = true);
                     try {
-                      await FirebaseFirestore.instance
-                          .collection('social_posts')
-                          .add({
-                            'authorUid': FirebaseAuth.instance.currentUser!.uid,
-                            'ranchId': ranchId(),
-                            'authorName': currentUserName(),
-                            'text': _text.text.trim(),
-                            'photo': _photo,
-                            'voice': _voice,
-                            'voiceSeconds': _seconds,
-                            'tile': _tile,
-                            'createdAt': FieldValue.serverTimestamp(),
-                          });
+                      final db = FirebaseFirestore.instance;
+                      final ref = db.collection('social_posts').doc(_postId);
+                      _postId = ref.id;
+                      await db
+                          .runTransaction((tx) async {
+                            final existing = await tx.get(ref);
+                            if (existing.exists) return;
+                            tx.set(ref, {
+                              'authorUid':
+                                  FirebaseAuth.instance.currentUser!.uid,
+                              'ranchId': '',
+                              'authorName': accountUsername,
+                              'authorUsername': accountUsername,
+                              'text': _text.text.trim(),
+                              'photo': _photo,
+                              'voice': _voice,
+                              'voiceSeconds': _seconds,
+                              'tile': _tile,
+                              'createdAt': FieldValue.serverTimestamp(),
+                            });
+                          })
+                          .timeout(const Duration(seconds: 20));
                       if (context.mounted) Navigator.pop(context);
                     } catch (_) {
                       if (context.mounted) {
@@ -467,7 +498,7 @@ class _SocialPostState extends State<_SocialPost> {
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         Text(
-                          '@${txt(p, 'ranchId')} · ${stamp == null ? bi('Sending', 'அனுப்புகிறது') : '${stamp.toDate().day}/${stamp.toDate().month}'}',
+                          '@${txt(p, 'authorUsername', txt(p, 'authorName'))} · ${stamp == null ? bi('Sending', 'அனுப்புகிறது') : '${stamp.toDate().day}/${stamp.toDate().month}'}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Ink.muted,
@@ -698,9 +729,7 @@ class _SocialCommentsState extends State<_SocialComments> {
                   children: [
                     for (final doc in snapshot.data!.docs)
                       ListTile(
-                        title: Text(
-                          '${txt(doc.data(), 'authorName')} · @${txt(doc.data(), 'ranchId')}',
-                        ),
+                        title: Text('@${txt(doc.data(), 'authorName')}'),
                         subtitle: Text(txt(doc.data(), 'text')),
                         trailing:
                             doc.data()['authorUid'] ==

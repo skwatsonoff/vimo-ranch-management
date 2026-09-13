@@ -60,8 +60,31 @@ service cloud.firestore {
         );
     }
 
+    function validUsernameChange() {
+      let data = request.resource.data;
+      return (resource == null && !('username' in data) && !('usernameChangedAt' in data))
+        || (resource != null && !data.diff(resource.data).affectedKeys().hasAny(['username', 'usernameChangedAt']))
+        || (data.username is string && data.username.matches('^[a-z][a-z0-9_]{2,19}$')
+          && data.usernameChangedAt == request.time
+          && (resource == null || !('usernameChangedAt' in resource.data) || request.time >= resource.data.usernameChangedAt + duration.value(30, 'd'))
+          && getAfter(/databases/$(database)/documents/usernames/$(data.username)).data.uid == request.auth.uid);
+    }
+    match /usernames/{name} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && name.matches('^[a-z][a-z0-9_]{2,19}$')
+        && request.resource.data.keys().hasOnly(['uid', 'claimedAt'])
+        && request.resource.data.uid == request.auth.uid && request.resource.data.claimedAt == request.time
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == name
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameChangedAt == request.time;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username != name
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameChangedAt == request.time;
+    }
     match /users/{userId} {
-      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create, update: if signedIn() && request.auth.uid == userId && validUsernameChange();
       allow delete: if false;
     }
 
@@ -79,12 +102,13 @@ service cloud.firestore {
     match /social_posts/{postId} {
       function validAuthor(data) {
         return signedIn() && data.authorUid == request.auth.uid
-          && data.ranchId is string && isMember(data.ranchId)
-          && data.authorName is string && data.authorName.size() <= 120;
+          && data.ranchId is string && (data.ranchId == '' || isMember(data.ranchId))
+          && data.authorName is string && data.authorName.size() <= 120
+          && (!('authorUsername' in data) || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == data.authorUsername);
       }
       allow read: if signedIn();
       allow create: if validAuthor(request.resource.data)
-        && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'text', 'photo', 'voice', 'voiceSeconds', 'tile', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'authorUsername', 'text', 'photo', 'voice', 'voiceSeconds', 'tile', 'createdAt'])
         && request.resource.data.text is string && request.resource.data.text.size() <= 2000
         && request.resource.data.photo is string && request.resource.data.photo.size() <= 600000
         && request.resource.data.voice is string && request.resource.data.voice.size() <= 450000
@@ -192,7 +216,33 @@ service cloud.firestore {
           && vendorEntry(entryId).createdByUid == request.auth.uid;
       }
       function stockChange(entry) {
-        return entry.kind == 'purchase' ? entry.quantity : entry.kind == 'sale' ? -entry.quantity : 0;
+        return entry.kind in ['purchase', 'ranch'] ? entry.quantity : entry.kind == 'sale' ? -entry.quantity : 0;
+      }
+      function sourceMilk(box, id) {
+        let path = /databases/$(database)/documents/ranches/$(ranchId)/$(box)/$(id);
+        return !exists(path) ? 0 : box == 'milk_records' ? get(path).data.quantity
+          : (get(path).data.get('type', '') == 'Milk' || get(path).data.get('category', '') == 'Milk Sale') ? -get(path).data.quantity : 0;
+      }
+      function validRanchEntry(entry, id) {
+        let path = /databases/$(database)/documents/ranches/$(ranchId)/vendor_ranch_links/$(entry.linkId);
+        return entry.kind == 'ranch' && entry.sourceBox in ['milk_records', 'sale_records']
+          && entry.linkId == entry.sourceBox + '_' + entry.sourceId
+          && entry.createdByUid == request.auth.uid && entry.cloudId == id
+          && entry.serverCreatedAt == request.time && entry.quantity is number
+          && math.abs(entry.quantity - (sourceMilk(entry.sourceBox, entry.sourceId) - (exists(path) ? get(path).data.quantity : 0))) < 0.00001
+          && getAfter(path).data.entryId == id
+          && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_stock/milk).data.entryId == id;
+      }
+      match /vendor_ranch_links/{linkId} {
+        allow read: if isMember(ranchId);
+        allow create, update: if canRecordEntries(ranchId)
+          && request.resource.data.keys().hasOnly(['sourceBox', 'sourceId', 'quantity', 'entryId'])
+          && request.resource.data.sourceBox in ['milk_records', 'sale_records']
+          && linkId == request.resource.data.sourceBox + '_' + request.resource.data.sourceId
+          && newVendorEntry(request.resource.data.entryId)
+          && vendorEntry(request.resource.data.entryId).linkId == linkId
+          && request.resource.data.quantity == sourceMilk(request.resource.data.sourceBox, request.resource.data.sourceId);
+        allow delete: if false;
       }
       function dueChange(entry) {
         return entry.kind == 'payment' ? -entry.amount : entry.amount - entry.paid;
@@ -202,7 +252,8 @@ service cloud.firestore {
         allow create, update: if canRecordEntries(ranchId) && stockId == 'milk'
           && request.resource.data.keys().hasOnly(['quantity', 'entryId'])
           && newVendorEntry(request.resource.data.entryId)
-          && request.resource.data.quantity is number && request.resource.data.quantity >= 0
+          && request.resource.data.quantity is number
+          && (request.resource.data.quantity >= 0 || vendorEntry(request.resource.data.entryId).kind != 'sale')
           && math.abs(request.resource.data.quantity - ((resource == null ? 0 : resource.data.quantity) + stockChange(vendorEntry(request.resource.data.entryId)))) < 0.00001;
         allow delete: if false;
       }
@@ -218,6 +269,10 @@ service cloud.firestore {
       }
       match /vendor_entries/{entryId} {
         allow read: if isMember(ranchId);
+        allow create: if canRecordEntries(ranchId) && request.resource.data.kind == 'ranch'
+          && request.resource.data.get('amount', 0) == 0 && request.resource.data.get('paid', 0) == 0
+          && request.resource.data.get('personId', '') == ''
+          && validRanchEntry(request.resource.data, entryId);
         allow create: if canRecordEntries(ranchId)
           && request.resource.data.createdByUid == request.auth.uid
           && request.resource.data.cloudId == entryId

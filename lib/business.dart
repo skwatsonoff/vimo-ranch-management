@@ -1,7 +1,7 @@
 part of 'main.dart';
 
 String bi(String en, String ta) => tamilUi ? ta : en;
-const businessTabs = ['Ranch', 'Vendor', 'Sell', 'Social', 'Chat'];
+const businessTabs = ['Ranch', 'Vendor', 'Social', 'Chat'];
 String get _profileKey =>
     firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? 'local' : 'local';
 Map<String, dynamic> get purposeProfile =>
@@ -10,14 +10,17 @@ bool get purposeChosen =>
     ['Ranch', 'Vendor', 'Market'].contains(purposeProfile['purpose']);
 String get appPurpose => txt(purposeProfile, 'purpose', 'Ranch');
 List<String> defaultNavigation(String purpose) => switch (purpose) {
-  'Vendor' => ['Vendor', 'Ranch', 'Sell', 'Social', 'Chat'],
-  'Market' => ['Sell', 'Vendor', 'Ranch', 'Social', 'Chat'],
+  'Vendor' => ['Vendor', 'Ranch', 'Social', 'Chat'],
+  'Market' => ['Vendor', 'Social', 'Ranch', 'Chat'],
   _ => [...businessTabs],
 };
 List<String> navigationOrder() {
-  final saved = purposeProfile['order'];
+  final raw = purposeProfile['order'];
+  final saved = raw is List
+      ? raw.where((id) => businessTabs.contains(id)).toList()
+      : null;
   if (saved is List &&
-      saved.length == 5 &&
+      saved.length == businessTabs.length &&
       saved.toSet().containsAll(businessTabs)) {
     return saved.cast<String>();
   }
@@ -26,7 +29,7 @@ List<String> navigationOrder() {
 
 Future<void> savePurpose(String purpose, List<String> order) async {
   if (!['Ranch', 'Vendor', 'Market'].contains(purpose) ||
-      order.length != 5 ||
+      order.length != businessTabs.length ||
       !order.toSet().containsAll(businessTabs)) {
     throw ArgumentError('Invalid preferences');
   }
@@ -122,60 +125,36 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 28),
-          Text(
-            bi('Your tab order', 'உங்கள் பக்கங்களின் வரிசை'),
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            bi(
-              'Move a page up or down. The first page opens when you launch VIMO.',
-              'மேல் அல்லது கீழ் நகர்த்தி வரிசையை மாற்றலாம். முதல் பக்கம் செயலியைத் திறக்கும்போது தெரியும்.',
+          if (!widget.onboarding) ...[
+            const SizedBox(height: 28),
+            Text(
+              bi('Tab order', 'பக்க வரிசை'),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
             ),
-            style: const TextStyle(color: Ink.muted),
-          ),
-          const SizedBox(height: 16),
-          _InsetGroup(
-            children: [
-              for (var i = 0; i < _order.length; i++)
-                ListTile(
-                  leading: Text(
-                    '${i + 1}',
-                    style: const TextStyle(
-                      color: _blue,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  title: AppText(_order[i]),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: bi('Move up', 'மேலே நகர்த்து'),
-                        onPressed: i == 0
-                            ? null
-                            : () => setState(() {
-                                final item = _order.removeAt(i);
-                                _order.insert(i - 1, item);
-                              }),
-                        icon: const Icon(CupertinoIcons.chevron_up),
-                      ),
-                      IconButton(
-                        tooltip: bi('Move down', 'கீழே நகர்த்து'),
-                        onPressed: i == 4
-                            ? null
-                            : () => setState(() {
-                                final item = _order.removeAt(i);
-                                _order.insert(i + 1, item);
-                              }),
-                        icon: const Icon(CupertinoIcons.chevron_down),
-                      ),
-                    ],
+            const SizedBox(height: 12),
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: _order.length,
+              onReorderItem: (oldIndex, newIndex) => setState(() {
+                _order.insert(newIndex, _order.removeAt(oldIndex));
+              }),
+              itemBuilder: (context, i) => ReorderableDelayedDragStartListener(
+                key: ValueKey(_order[i]),
+                index: i,
+                child: Glass(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: EdgeInsets.zero,
+                  child: ListTile(
+                    title: AppText(_order[i]),
+                    leading: Text((i + 1).toString()),
+                    trailing: const Icon(CupertinoIcons.line_horizontal_3),
                   ),
                 ),
-            ],
-          ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           FilledButton(
             onPressed: _saving
@@ -217,7 +196,7 @@ double vendorMilkBalance(Iterable<Map<String, dynamic>> entries) =>
       0.0,
       (total, row) =>
           total +
-          (row['kind'] == 'purchase'
+          ((row['kind'] == 'purchase' || row['kind'] == 'ranch')
               ? numv(row, 'quantity')
               : row['kind'] == 'sale'
               ? -numv(row, 'quantity')
@@ -314,6 +293,9 @@ class VendorLedger {
       };
       if (CloudSyncService.ready) {
         await CloudSyncService.uploadBox('vendor_people');
+        await CloudSyncService.uploadBox('milk_records');
+        await CloudSyncService.uploadBox('sale_records');
+        await RanchMilkBridge.sync();
         final db = FirebaseFirestore.instance;
         final stockRef = CloudSyncService.ranch
             .collection('vendor_stock')
@@ -708,22 +690,19 @@ class VendorStockScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              bi(
-                'Purchases add stock. Deliveries reduce stock.',
-                'வாங்கும்போது இருப்பு கூடும். விற்கும்போது இருப்பு குறையும்.',
-              ),
-              style: const TextStyle(color: Ink.muted),
-            ),
             const SizedBox(height: 20),
             for (final r in rows.where((r) => r['kind'] != 'payment'))
               ListTile(
-                title: Text(txt(r, 'personName')),
+                title: AppText(txt(r, 'personName')),
                 subtitle: Text('${txt(r, 'date')} · ${txt(r, 'time')}'),
                 trailing: Text(
-                  '${r['kind'] == 'purchase' ? '+' : '−'}${numv(r, 'quantity').toStringAsFixed(2)} L',
+                  '${r['kind'] == 'purchase' || (r['kind'] == 'ranch' && numv(r, 'quantity') >= 0) ? '+' : '−'}${numv(r, 'quantity').abs().toStringAsFixed(2)} L',
                   style: TextStyle(
-                    color: r['kind'] == 'purchase' ? Ink.green : Ink.blue,
+                    color:
+                        r['kind'] == 'purchase' ||
+                            (r['kind'] == 'ranch' && numv(r, 'quantity') >= 0)
+                        ? Ink.green
+                        : Ink.blue,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -923,21 +902,51 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                 ),
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              Row(
                 children: [
                   for (var i = 0; i < 7; i++)
-                    Tooltip(
-                      message: tamilUi ? _dayTamil[i] : _dayNames[i],
-                      child: FilterChip(
-                        label: Text(
-                          tamilUi ? _dayTamil[i] : _dayNames[i].substring(0, 1),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Semantics(
+                          selected: _days.contains(i),
+                          child: Tooltip(
+                            message: tamilUi ? _dayTamil[i] : _dayNames[i],
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(0, 44),
+                                backgroundColor: _days.contains(i)
+                                    ? Ink.violet
+                                    : Colors.white.withValues(alpha: .4),
+                                foregroundColor: _days.contains(i)
+                                    ? Colors.white
+                                    : Ink.body,
+                                shape: const CircleBorder(),
+                              ),
+                              onPressed: () => setState(() {
+                                _days.contains(i)
+                                    ? _days.remove(i)
+                                    : _days.add(i);
+                              }),
+                              child: FittedBox(
+                                child: Text(
+                                  tamilUi
+                                      ? const [
+                                          'ஞா',
+                                          'தி',
+                                          'செ',
+                                          'பு',
+                                          'வி',
+                                          'வெ',
+                                          'ச',
+                                        ][i]
+                                      : _dayNames[i].substring(0, 1),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                        selected: _days.contains(i),
-                        onSelected: (v) => setState(() {
-                          v ? _days.add(i) : _days.remove(i);
-                        }),
                       ),
                     ),
                 ],
@@ -1227,13 +1236,6 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      bi(
-                        'Notes can be added for five minutes after saving. Vendor entries need an internet connection to keep shared stock accurate.',
-                        'சேமித்த பிறகு ஐந்து நிமிடங்களுக்குள் குறிப்பைச் சேர்க்கலாம். பகிரப்பட்ட பால் இருப்பு சரியாக இருக்க இணைய இணைப்பு தேவை.',
-                      ),
-                      style: const TextStyle(color: Ink.muted, fontSize: 12),
-                    ),
                     const SizedBox(height: 16),
                     FilledButton(
                       onPressed: _busy

@@ -8,24 +8,25 @@ members through Firebase.
 
 - New workspaces ask for their purpose. Existing users choose on their first
   visit after this update. Settings → Preferences changes purpose and the order
-  of Ranch, Vendor, Sell, Social and Chat. Preferences are per account on this
+  of Ranch, Vendor, Social and Chat by long-press dragging. Preferences are per account on this
   device. The first destination opens at launch; changing purpose preserves data.
-- Cows and calves remain accessible inside Ranch. Sell contains Sell, Stock and
-  Reports. Vendor purpose routes Sell and Stock to the vendor milk ledger.
+- Cows and calves remain accessible inside Ranch. Vendor contains Milk, Sales,
+  Stock and Reports. Stock includes both milk inventory and feed inventory.
 - Vendor suppliers and customers have separate lists. Customers store address,
   delivery weekdays, morning/evening sessions and daily, every-two-days, weekly,
   monthly or flexible payment terms. Delivery reminders reflect scheduled sessions
   without marking them delivered until an actual sale is recorded.
 - Purchases add vendor milk; deliveries deduct it. Paid amounts and later payments
-  update each person's outstanding balance. Vendor stock is separate from ranch
-  milk. The ledger and customer list appear in backups and the Excel workbook.
+  update each person's outstanding balance. Synced ranch milk and existing ranch
+  milk sales reconcile into vendor stock using per-record transaction checkpoints.
+  The ledger and customer list appear in backups and the Excel workbook.
 - Vendor financial entries require a connection. Firestore transactions update
   the ledger, milk balance and person's balance atomically, with retry IDs and
   server rules preventing negative stock, overpayments and arbitrary edits.
   The original author may update notes for five minutes, enforced by server time.
   Vendor data streams live to approved workspace members. Financial records are
   cloud-authoritative and are not re-uploaded by bulk backup sync.
-- Social posts use the member's VIMO Ranch ID and are visible to signed-in VIMO
+- Social posts use a unique account username and are visible to signed-in VIMO
   users across workspaces. Posts support text, colored text tiles, one compressed
   photo and a voice clip up to 20 seconds. Members can like and comment. Authors
   can delete their own posts/comments. The feed shows the latest 60 posts, with
@@ -142,3 +143,5 @@ For local design testing without signing in:
 
 The normal production build never enables this preview unless the flag is
 explicitly supplied.
+
+Usernames are case-insensitive, 3–20 characters, and server-limited to one change every 30 days. Signup and Settings include live availability checks. Animal names support separate Tamil/English display spellings, with display-only transliteration as a fallback; stored record names remain unchanged.
