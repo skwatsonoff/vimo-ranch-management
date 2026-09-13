@@ -120,7 +120,12 @@ class _VendorWorkspaceState extends State<VendorWorkspace> {
       Padding(
         padding: const EdgeInsets.fromLTRB(21, 12, 21, 0),
         child: LiquidSegmentBar(
-          labels: ['Milk', 'Sales', 'Stock', 'Reports'],
+          labels: [
+            bi('Customers', 'வாடிக்கையாளர்கள்'),
+            'Sales',
+            'Stock',
+            'Reports',
+          ],
           index: _page,
           onChanged: (i) => setState(() => _page = i),
         ),

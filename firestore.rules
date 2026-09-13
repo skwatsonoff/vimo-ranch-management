@@ -88,6 +88,40 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['username', 'photo', 'bio', 'link', 'updatedAt'])
+        && request.resource.data.username == getAfter(/databases/$(database)/documents/users/$(uid)).data.username
+        && request.resource.data.get('photo', '') is string
+        && request.resource.data.get('photo', '').size() <= 600000
+        && (request.resource.data.get('photo', '') == '' || request.resource.data.photo.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$'))
+        && request.resource.data.get('bio', '') is string && request.resource.data.get('bio', '').size() <= 160
+        && request.resource.data.get('link', '') is string && request.resource.data.get('link', '').size() <= 300
+        && (request.resource.data.get('link', '') == '' || request.resource.data.link.matches('^https?://[^ /@]+[.][^ /@]+.*$'))
+        && request.resource.data.updatedAt == request.time;
+      match /followers/{viewer} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == viewer && viewer != uid
+          && exists(/databases/$(database)/documents/profiles/$(uid))
+          && exists(/databases/$(database)/documents/profiles/$(viewer))
+          && request.resource.data.keys().hasOnly(['createdAt']) && request.resource.data.createdAt == request.time
+          && getAfter(/databases/$(database)/documents/profiles/$(viewer)/following/$(uid)).data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == viewer
+          && !existsAfter(/databases/$(database)/documents/profiles/$(viewer)/following/$(uid));
+      }
+      match /following/{target} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == uid && target != uid
+          && exists(/databases/$(database)/documents/profiles/$(uid))
+          && exists(/databases/$(database)/documents/profiles/$(target))
+          && request.resource.data.keys().hasOnly(['createdAt']) && request.resource.data.createdAt == request.time
+          && getAfter(/databases/$(database)/documents/profiles/$(target)/followers/$(uid)).data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == uid
+          && !existsAfter(/databases/$(database)/documents/profiles/$(target)/followers/$(uid));
+      }
+    }
+
     // Public-to-authenticated registry used only to check Ranch ID
     // availability and locate an existing ranch. It contains no ranch records.
     match /ranch_ids/{ranchId} {

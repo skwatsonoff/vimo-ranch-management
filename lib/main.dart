@@ -39,12 +39,15 @@ import 'package:record/record.dart';
 import 'firebase_options.dart';
 import 'web_runtime.dart';
 import 'sync_support.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 part 'interface.dart';
 part 'business.dart';
 part 'social.dart';
 part 'liquid_design.dart';
 part 'account.dart';
+part 'social_profile.dart';
+part 'requested_updates.dart';
 part 'name_display.dart';
 part 'ranch_inventory.dart';
 
@@ -105,6 +108,12 @@ Future<void> main() async {
     // Native Firebase Auth persists sessions automatically; setPersistence is
     // a web API and can make otherwise valid native initialization fail.
     if (kIsWeb) await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+    if (kIsWeb) {
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: false,
+        webExperimentalForceLongPolling: true,
+      );
+    }
     firebaseReady = true;
     if (!kIsWeb) {
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -749,13 +758,12 @@ Future<String?> pickImageDataUrl() async {
   // iOS home-screen PWAs are much more reliable when the native HTML file
   // input is opened directly from the tap event. BrowserRuntime provides that
   // path on web; desktop/mobile Flutter keeps FilePicker as the fallback.
-  try {
-    final webImage = await _browserRuntime.pickImageDataUrl();
-    if (webImage != null && webImage.startsWith('data:image')) {
-      return compressAnimalPhotoDataUrl(webImage);
-    }
-  } catch (_) {
-    // Fall through to the platform picker below.
+  if (kIsWeb) {
+    final image = await _browserRuntime.pickImageDataUrl();
+    if (image == null) return null;
+    final compressed = await compressAnimalPhotoDataUrl(image);
+    if (compressed == null) throw StateError('Could not load this photo');
+    return compressed;
   }
 
   final result = await FilePicker.platform.pickFiles(
@@ -2982,7 +2990,9 @@ double? lastMilkQuantityForCustomer(String customer) =>
 
 const ownUseCustomerName = 'சொந்த பயன்பாடு';
 
-bool isOwnUseCustomer(String name) => name.trim() == ownUseCustomerName;
+bool isOwnUseCustomer(String name) =>
+    {ownUseCustomerName, 'Own use'}.contains(name.trim());
+String get ownUseDisplayName => bi('Own use', ownUseCustomerName);
 
 bool isOwnUseMilk(Map<String, dynamic> record) =>
     txt(record, 'type') == 'Milk' &&
@@ -6542,6 +6552,10 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
       }
       setState(() => _busy = true);
       try {
+        if (accountUsername.isEmpty) {
+          await push(context, const UsernameScreen());
+          if (!mounted || accountUsername.isEmpty) return;
+        }
         await RanchAccessService.createRanch(
           requestedId: _createId.text,
           farm: farm,
@@ -8505,15 +8519,7 @@ class _MainShellState extends State<MainShell> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        actions: [
-          if (canRecordEntries && order[tab] == 'Ranch')
-            IconButton(
-              tooltip: ui('New entry'),
-              icon: const Icon(CupertinoIcons.plus_circle, size: 27),
-              onPressed: () => showEntryActions(context),
-            ),
-          const RanchNotificationButton(),
-        ],
+        actions: [const RanchNotificationButton()],
       ),
       body: Listener(
         onPointerDown: (event) => _swipeStart = event.localPosition,
@@ -8533,6 +8539,25 @@ class _MainShellState extends State<MainShell> {
         },
         child: pages[tab],
       ),
+      floatingActionButton:
+          order[tab] == 'Chat' || (order[tab] != 'Social' && !canRecordEntries)
+          ? null
+          : FloatingActionButton(
+              heroTag: 'workspace-add',
+              tooltip: ui('Add'),
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              focusElevation: 0,
+              hoverElevation: 0,
+              highlightElevation: 0,
+              foregroundColor: Ink.violetDeep,
+              onPressed: () => showWorkspaceAdd(context, order[tab]),
+              child: const Glass(
+                radius: 30,
+                padding: EdgeInsets.all(16),
+                child: Icon(CupertinoIcons.plus),
+              ),
+            ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
@@ -10277,14 +10302,13 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       time: txt(r, 'time'),
     );
   }
-  for (final r in milkRows().where((r) => txt(r, 'cow') == name)) {
+  for (final month in monthlyCowMilk(milkRows(), name)) {
     add(
-      txt(r, 'date'),
-      'Milk recorded',
-      '${numv(r, 'quantity').toStringAsFixed(1)} L • ${txt(r, 'session')}',
+      txt(month, 'date'),
+      ui('Milk'),
+      '${monthLabel(txt(month, 'date'))} · ${numv(month, 'quantity').toStringAsFixed(1)} ${bi('litres', 'லிட்டர்')}',
       Icons.water_drop_rounded,
       Ink.violet,
-      time: txt(r, 'time'),
     );
   }
   for (final r in expenseRows().where(
@@ -13867,7 +13891,7 @@ class _SellScreenState extends State<SellScreen> {
                         label: const AppText(ownUseCustomerName),
                         selected: _ownUse,
                         onSelected: (selected) {
-                          _customer.text = selected ? ownUseCustomerName : '';
+                          _customer.text = selected ? ownUseDisplayName : '';
                           if (selected) {
                             final previous = lastMilkQuantityForCustomer(
                               ownUseCustomerName,
@@ -13982,7 +14006,7 @@ class _SellScreenState extends State<SellScreen> {
                   index: 8,
                   child: LiquidButton(
                     label: _ownUse
-                        ? 'சொந்த பயன்பாட்டை சேமி'
+                        ? bi('Save own use', 'சொந்த பயன்பாட்டை சேமி')
                         : tamilUi
                         ? 'பால் விற்பனையை சேமி'
                         : 'Save ${_types[_type]} Sale',
@@ -14243,28 +14267,33 @@ class _ReportsScreenState extends State<ReportsScreen> {
   String _period = 'This Month';
 
   @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<Box<dynamic>>(
-      valueListenable: Hive.box('milk_records').listenable(),
-      builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
-        valueListenable: Hive.box('sale_records').listenable(),
-        builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
-          valueListenable: Hive.box('food_records').listenable(),
-          builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
-            valueListenable: Hive.box('stock_records').listenable(),
-            builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
-              valueListenable: Hive.box('expense_records').listenable(),
-              builder: (_, _, _) => _content(context),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: Listenable.merge([
+      for (final box in [
+        'milk_records',
+        'sale_records',
+        'food_records',
+        'stock_records',
+        'expense_records',
+        'doctor_records',
+        'purchase_records',
+        'death_records',
+        'vendor_entries',
+      ])
+        Hive.box(box).listenable(),
+    ]),
+    builder: (_, _) => _content(context),
+  );
 
   Widget _content(BuildContext context) {
-    final income = saleIncome(_period);
-    final expense = totalExpense(_period);
+    final income = reportDetailRows(
+      'income',
+      _period,
+    ).fold(0.0, (total, r) => total + numv(r, '_value'));
+    final expense = reportDetailRows(
+      'expense',
+      _period,
+    ).fold(0.0, (total, r) => total + numv(r, '_value'));
     final net = income - expense;
 
     return Shell(
@@ -14344,24 +14373,41 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   _SummaryTile(
                     label: 'Milk Collected',
+                    onTap: () => push(
+                      context,
+                      ReportDetailsScreen(kind: 'collected', period: _period),
+                    ),
                     value: '${milkTotal(_period).toStringAsFixed(1)} L',
                     icon: Icons.water_drop_rounded,
                     color: Ink.violet,
                   ),
                   _SummaryTile(
                     label: 'Milk Sold',
-                    value: '${milkSold(_period).toStringAsFixed(1)} L',
+                    onTap: () => push(
+                      context,
+                      ReportDetailsScreen(kind: 'sold', period: _period),
+                    ),
+                    value:
+                        '${reportDetailRows('sold', _period).fold(0.0, (total, r) => total + numv(r, '_value')).toStringAsFixed(1)} L',
                     icon: Icons.local_shipping_rounded,
                     color: Ink.blue,
                   ),
                   _SummaryTile(
                     label: 'Income',
+                    onTap: () => push(
+                      context,
+                      ReportDetailsScreen(kind: 'income', period: _period),
+                    ),
                     value: money(income),
                     icon: Icons.trending_up_rounded,
                     color: Ink.green,
                   ),
                   _SummaryTile(
                     label: 'Expense',
+                    onTap: () => push(
+                      context,
+                      ReportDetailsScreen(kind: 'expense', period: _period),
+                    ),
                     value: money(expense),
                     icon: Icons.trending_down_rounded,
                     color: Ink.red,
@@ -14464,12 +14510,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
 }
 
 class _SummaryTile extends StatelessWidget {
+  final VoidCallback? onTap;
   final String label;
   final String value;
   final IconData icon;
   final Color color;
 
   const _SummaryTile({
+    this.onTap,
     required this.label,
     required this.value,
     required this.icon,
@@ -14479,6 +14527,7 @@ class _SummaryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Glass(
+      onTap: onTap,
       radius: Gold.r27,
       padding: const EdgeInsets.all(Gold.s16),
       elevation: 0.8,
@@ -15457,13 +15506,8 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _ActionRow(
                     icon: CupertinoIcons.at,
-                    label: bi('Username', 'பயனர்பெயர்'),
-                    onTap: () => push(context, const UsernameScreen()),
-                  ),
-                  _ActionRow(
-                    icon: CupertinoIcons.info_circle,
-                    label: 'Info',
-                    onTap: () => push(context, const AppInfoScreen()),
+                    label: bi('Profile', 'சுயவிவரம்'),
+                    onTap: () => push(context, const SocialProfileScreen()),
                   ),
                 ],
               ),
@@ -15559,6 +15603,11 @@ class SettingsScreen extends StatelessWidget {
                     }
                   },
                 ),
+              ),
+              _ActionRow(
+                icon: CupertinoIcons.info_circle,
+                label: 'Info',
+                onTap: () => push(context, const AppInfoScreen()),
               ),
               if (firebaseReady &&
                   FirebaseAuth.instance.currentUser != null) ...[

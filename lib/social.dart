@@ -70,11 +70,6 @@ class _SocialScreenState extends State<SocialScreen> {
                   ],
                 ),
               ),
-              IconButton.filledTonal(
-                tooltip: bi('New post', 'புதிய பதிவு'),
-                onPressed: () => push(context, const SocialComposer()),
-                icon: const Icon(CupertinoIcons.square_pencil),
-              ),
             ],
           ),
         ),
@@ -173,6 +168,7 @@ class _SocialComposerState extends State<SocialComposer> {
   StreamSubscription<Uint8List>? _audio;
   Completer<void>? _audioDone;
   Timer? _timer;
+  bool _pickingPhoto = false;
   bool _recording = false, _busy = false, _tile = false, _stopping = false;
   String _photo = '', _voice = '';
   int _seconds = 0;
@@ -265,7 +261,9 @@ class _SocialComposerState extends State<SocialComposer> {
         padding: const EdgeInsets.all(21),
         children: [
           Text(
-            '@${accountUsername.isEmpty ? currentUserName() : accountUsername}',
+            accountUsername.isEmpty
+                ? bi('Choose a username', 'பயனர்பெயரைத் தேர்ந்தெடுங்கள்')
+                : '@$accountUsername',
             style: const TextStyle(
               color: _blue,
               fontSize: 18,
@@ -287,7 +285,9 @@ class _SocialComposerState extends State<SocialComposer> {
           ),
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
-            title: Text(bi('Text tile', 'வண்ண அட்டையாக உரை')),
+            title: Text(
+              bi('Colored text background', 'உரைக்கு வண்ணப் பின்னணி'),
+            ),
             value: _tile,
             onChanged: (v) => setState(() => _tile = v),
           ),
@@ -323,14 +323,18 @@ class _SocialComposerState extends State<SocialComposer> {
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
-                onPressed: _busy || _recording
+                onPressed: _busy || _recording || _pickingPhoto
                     ? null
                     : () async {
                         try {
+                          setState(() => _pickingPhoto = true);
                           final picked = await pickImageDataUrl();
                           final photo = picked == null
                               ? null
                               : await compressSocialPhoto(picked);
+                          if (picked != null && photo == null) {
+                            throw StateError('Invalid image');
+                          }
                           if (mounted && photo != null) {
                             setState(() => _photo = photo);
                           }
@@ -344,6 +348,8 @@ class _SocialComposerState extends State<SocialComposer> {
                               ),
                             );
                           }
+                        } finally {
+                          if (mounted) setState(() => _pickingPhoto = false);
                         }
                       },
                 icon: const Icon(CupertinoIcons.photo),
@@ -493,9 +499,15 @@ class _SocialPostState extends State<_SocialPost> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          txt(p, 'authorName'),
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        TextButton(
+                          onPressed: () => push(
+                            context,
+                            SocialProfileScreen(uid: txt(p, 'authorUid')),
+                          ),
+                          child: Text(
+                            txt(p, 'authorUsername', txt(p, 'authorName')),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         Text(
                           '@${txt(p, 'authorUsername', txt(p, 'authorName'))} · ${stamp == null ? bi('Sending', 'அனுப்புகிறது') : '${stamp.toDate().day}/${stamp.toDate().month}'}',
@@ -784,12 +796,16 @@ class _SocialCommentsState extends State<_SocialComments> {
                         ? null
                         : () async {
                             if (_text.text.trim().isEmpty) return;
+                            if (accountUsername.isEmpty) {
+                              await push(context, const UsernameScreen());
+                              if (!mounted || accountUsername.isEmpty) return;
+                            }
                             setState(() => _busy = true);
                             try {
                               await widget.post.collection('comments').add({
                                 'authorUid':
                                     FirebaseAuth.instance.currentUser!.uid,
-                                'authorName': currentUserName(),
+                                'authorName': accountUsername,
                                 'ranchId': ranchId(),
                                 'text': _text.text.trim(),
                                 'createdAt': FieldValue.serverTimestamp(),

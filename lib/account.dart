@@ -39,7 +39,13 @@ class UsernameService {
           final p = (await tx.get(profile)).data() ?? {};
           final existing = await tx.get(handle);
           final old = txt(p, 'username');
-          if (old == name) return;
+          if (old == name) {
+            tx.set(db.collection('profiles').doc(user.uid), {
+              'username': name,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+            return;
+          }
           if (existing.exists) {
             throw StateError(
               bi('Username unavailable', 'இந்தப் பயனர்பெயர் கிடைக்கவில்லை'),
@@ -62,6 +68,10 @@ class UsernameService {
           tx.set(profile, {
             'username': name,
             'usernameChangedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+          tx.set(db.collection('profiles').doc(user.uid), {
+            'username': name,
+            'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
           if (old.isNotEmpty) tx.delete(db.collection('usernames').doc(old));
         })
@@ -194,7 +204,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
             if (context.mounted) Navigator.pop(context);
           } catch (e) {
             if (context.mounted) {
-              snack(context, '$e'.replaceFirst('Bad state: ', ''));
+              snack(context, accountError(e));
             }
           } finally {
             if (mounted) setState(() => _busy = false);

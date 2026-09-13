@@ -67,8 +67,14 @@ class BrowserRuntime {
     late final JSFunction cancelListener;
     late final JSFunction focusListener;
 
-    void finish(String? value) {
-      if (!completer.isCompleted) completer.complete(value);
+    void finish(String? value, [Object? error]) {
+      if (!completer.isCompleted) {
+        if (error == null) {
+          completer.complete(value);
+        } else {
+          completer.completeError(error);
+        }
+      }
       input.removeEventListener('change', changeListener);
       input.removeEventListener('cancel', cancelListener);
       web.window.removeEventListener('focus', focusListener);
@@ -77,23 +83,30 @@ class BrowserRuntime {
     changeListener = ((web.Event _) {
       final files = input.files;
       final file = files == null || files.length == 0 ? null : files.item(0);
-      if (file == null || file.size > 8 * 1024 * 1024) {
+      if (file == null) {
         finish(null);
         return;
       }
 
+      if (file.size > 8 * 1024 * 1024) {
+        finish(null, StateError('This photo exceeds 8 MB'));
+        return;
+      }
       final reader = web.FileReader();
       late final JSFunction loadListener;
       late final JSFunction errorListener;
       loadListener = ((web.Event _) {
         final result = reader.result;
         final dartResult = result?.dartify();
-        finish(dartResult is String ? dartResult : null);
+        finish(
+          dartResult is String ? dartResult : null,
+          dartResult is String ? null : StateError('Could not load this photo'),
+        );
         reader.removeEventListener('load', loadListener);
         reader.removeEventListener('error', errorListener);
       }).toJS;
       errorListener = ((web.Event _) {
-        finish(null);
+        finish(null, StateError('Could not load this photo'));
         reader.removeEventListener('load', loadListener);
         reader.removeEventListener('error', errorListener);
       }).toJS;

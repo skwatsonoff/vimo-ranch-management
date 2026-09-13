@@ -4,6 +4,8 @@ bool get tamilUi =>
     Hive.isBoxOpen('settings') &&
     settingText('languageMode', 'English') == 'Tamil';
 String ui(String value) {
+  if (value == 'Vaikol') return bi('Straw', 'வைக்கோல்');
+  if (value == 'Thavudu') return bi('Bran', 'தவிடு');
   if (tamilUi) return _tamilLabels[value] ?? localizedAnimalLabel(value);
   final reverse = {
     for (final entry in _tamilLabels.entries) entry.value: entry.key,
