@@ -52,53 +52,50 @@ void main() {
     ]);
     expect(monthLabel('2026-04-01'), 'April 2026');
   });
-  test(
-    'Report details filter period and include actual customers and vendor sales',
-    () async {
-      await Hive.box('sale_records').addAll([
-        {
-          'type': 'Milk',
-          'customerName': 'Kumar',
-          'date': todayDate(),
-          'time': '08:30',
-          'quantity': 4,
-          'amount': 200,
-        },
-        {
-          'category': 'Milk Sale',
-          'customerName': 'Older',
-          'date': '2000-01-01',
-          'quantity': 10,
-          'amount': 500,
-        },
-        {
-          'type': 'Milk',
-          'customerName': 'சொந்த பயன்பாடு',
-          'date': todayDate(),
-          'quantity': 1,
-          'amount': 0,
-        },
-      ]);
-      await Hive.box('vendor_entries').add({
-        'kind': 'sale',
-        'personName': 'Store',
+  test('Ranch report details exclude vendor sales and filter period', () async {
+    await Hive.box('sale_records').addAll([
+      {
+        'type': 'Milk',
+        'customerName': 'Kumar',
         'date': todayDate(),
-        'quantity': 2,
-        'amount': 100,
-      });
-      final sold = reportDetailRows('sold', 'Today');
-      expect(sold.length, 2);
-      expect(sold.map(reportRecordName), containsAll(['Kumar', 'Store']));
-      expect(sold.fold(0.0, (sum, r) => sum + numv(r, '_value')), 6);
-      expect(
-        reportDetailRows(
-          'income',
-          'Today',
-        ).fold(0.0, (sum, r) => sum + numv(r, '_value')),
-        300,
-      );
-    },
-  );
+        'time': '08:30',
+        'quantity': 4,
+        'amount': 200,
+      },
+      {
+        'category': 'Milk Sale',
+        'customerName': 'Older',
+        'date': '2000-01-01',
+        'quantity': 10,
+        'amount': 500,
+      },
+      {
+        'type': 'Milk',
+        'customerName': 'சொந்த பயன்பாடு',
+        'date': todayDate(),
+        'quantity': 1,
+        'amount': 0,
+      },
+    ]);
+    await Hive.box('vendor_entries').add({
+      'kind': 'sale',
+      'personName': 'Store',
+      'date': todayDate(),
+      'quantity': 2,
+      'amount': 100,
+    });
+    final sold = reportDetailRows('sold', 'Today');
+    expect(sold.length, 1);
+    expect(sold.map(reportRecordName), equals(['Kumar']));
+    expect(sold.fold(0.0, (sum, r) => sum + numv(r, '_value')), 4);
+    expect(
+      reportDetailRows(
+        'income',
+        'Today',
+      ).fold(0.0, (sum, r) => sum + numv(r, '_value')),
+      200,
+    );
+  });
   test(
     'All expense sources and collected totals reconcile with detail rows',
     () async {

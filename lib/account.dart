@@ -7,9 +7,43 @@ String get accountUsername =>
     txt(asMap(settingValue('usernameProfiles', {})), _profileKey);
 
 class UsernameService {
+  static Future<void> refresh() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError(ui('Please sign in again'));
+    final data =
+        (await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .get(const GetOptions(source: Source.server))
+                .timeout(CloudSyncService.networkTimeout))
+            .data() ??
+        {};
+    final name = txt(data, 'username');
+    if (!validUsername(name)) {
+      throw StateError(
+        bi(
+          'Choose a username before posting.',
+          'பதிவு போடுவதற்கு முன் பயனர்பெயரைத் தேர்ந்தெடுக்கவும்.',
+        ),
+      );
+    }
+    await setSetting('usernameProfiles', {
+      ...asMap(settingValue('usernameProfiles', {})),
+      user.uid: name,
+    });
+  }
+
   static Future<bool> available(String input) async {
     final name = normalizeUsername(input);
     if (!validUsername(name)) return false;
+    if (!firebaseReady) {
+      throw StateError(
+        bi(
+          'Cloud connection is not ready. Reopen the app.',
+          'கிளவுட் இணைப்பு தயாராகவில்லை. செயலியை மீண்டும் திறக்கவும்.',
+        ),
+      );
+    }
     final snap = await FirebaseFirestore.instance
         .collection('usernames')
         .doc(name)
@@ -31,6 +65,7 @@ class UsernameService {
     }
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError(ui('Please sign in again'));
+    await user.getIdToken().timeout(const Duration(seconds: 12));
     final db = FirebaseFirestore.instance;
     final profile = db.collection('users').doc(user.uid);
     final handle = db.collection('usernames').doc(name);
@@ -40,13 +75,21 @@ class UsernameService {
           final existing = await tx.get(handle);
           final old = txt(p, 'username');
           if (old == name) {
+            if (!existing.exists || existing.data()?['uid'] != user.uid) {
+              throw StateError(
+                bi(
+                  'This username needs account recovery. Your existing data is safe.',
+                  'இந்தப் பயனர்பெயருக்கு கணக்கு மீட்பு தேவை. உங்கள் தரவு பாதுகாப்பாக உள்ளது.',
+                ),
+              );
+            }
             tx.set(db.collection('profiles').doc(user.uid), {
               'username': name,
               'updatedAt': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
             return;
           }
-          if (existing.exists) {
+          if (existing.exists && existing.data()?['uid'] != user.uid) {
             throw StateError(
               bi('Username unavailable', 'இந்தப் பயனர்பெயர் கிடைக்கவில்லை'),
             );
@@ -61,10 +104,12 @@ class UsernameService {
               ),
             );
           }
-          tx.set(handle, {
-            'uid': user.uid,
-            'claimedAt': FieldValue.serverTimestamp(),
-          });
+          if (!existing.exists) {
+            tx.set(handle, {
+              'uid': user.uid,
+              'claimedAt': FieldValue.serverTimestamp(),
+            });
+          }
           tx.set(profile, {
             'username': name,
             'usernameChangedAt': FieldValue.serverTimestamp(),
@@ -95,6 +140,14 @@ class _UsernameFieldState extends State<UsernameField> {
   String? _status;
   bool? _available;
   int _revision = 0;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _check(widget.controller.text);
+    });
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -130,14 +183,9 @@ class _UsernameFieldState extends State<UsernameField> {
               ? bi('Username available', 'பயனர்பெயர் கிடைக்கிறது')
               : bi('Username unavailable', 'பயனர்பெயர் கிடைக்கவில்லை');
         });
-      } catch (_) {
+      } catch (error) {
         if (mounted && revision == _revision) {
-          setState(
-            () => _status = bi(
-              'Connect to check availability',
-              'கிடைப்பதைச் சரிபார்க்க இணையத்தில் இணையவும்',
-            ),
-          );
+          setState(() => _status = accountError(error));
         }
       }
     });
@@ -198,6 +246,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
         label: 'Save',
         busy: _busy,
         onPressed: () async {
+          if (_busy) return;
           setState(() => _busy = true);
           try {
             await UsernameService.save(_name.text);

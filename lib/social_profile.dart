@@ -11,6 +11,37 @@ bool validProfileLink(String value) {
 
 String accountError(Object error) {
   if (error is StateError) return error.message;
+  if (error is FirebaseException) {
+    switch (error.code) {
+      case 'permission-denied':
+        return bi(
+          'Cloud permission denied. Your entries are still saved. The app’s cloud rules need updating.',
+          'கிளவுட் அனுமதி மறுக்கப்பட்டது. உங்கள் பதிவுகள் பாதுகாப்பாக உள்ளன. செயலியின் கிளவுட் அனுமதி விதிகளைப் புதுப்பிக்க வேண்டும்.',
+        );
+      case 'unauthenticated':
+        return bi(
+          'Your sign-in expired. Sign in again; local entries are kept.',
+          'உள்நுழைவு காலாவதியானது. மீண்டும் உள்நுழையவும்; உள்ளூர் பதிவுகள் பாதுகாப்பாக உள்ளன.',
+        );
+      case 'unavailable':
+      case 'deadline-exceeded':
+        return bi(
+          'The cloud is not responding. Your changes are kept; retry when connected.',
+          'கிளவுட் பதிலளிக்கவில்லை. மாற்றங்கள் பாதுகாக்கப்பட்டுள்ளன; இணையம் வந்ததும் மீண்டும் முயற்சிக்கவும்.',
+        );
+      default:
+        return bi(
+          'Cloud request failed (${error.code}). Please retry.',
+          'கிளவுட் கோரிக்கை தோல்வி (${error.code}). மீண்டும் முயற்சிக்கவும்.',
+        );
+    }
+  }
+  if (error is TimeoutException) {
+    return bi(
+      'The cloud took too long to respond. Retry; your draft is kept.',
+      'கிளவுட் பதில் தாமதமாகிறது. மீண்டும் முயற்சிக்கவும்; வரைவு பாதுகாக்கப்பட்டுள்ளது.',
+    );
+  }
   return bi(
     'Could not connect. Check your connection and try again.',
     'இணைக்க முடியவில்லை. இணையத்தைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
@@ -45,206 +76,423 @@ class SocialProfileScreen extends StatefulWidget {
 }
 
 class _SocialProfileScreenState extends State<SocialProfileScreen> {
-  String get uid =>
-      widget.uid ??
-      (firebaseReady ? FirebaseAuth.instance.currentUser?.uid : null) ??
-      '';
-  bool get own =>
-      widget.uid == null ||
-      (firebaseReady && widget.uid == FirebaseAuth.instance.currentUser?.uid);
+  String get uid => widget.uid ?? signedInUid;
+  bool get own => uid == signedInUid;
+  int _tab = 0;
   bool _busy = false;
-  late final _profile = uid.isEmpty
-      ? null
-      : FirebaseFirestore.instance.collection('profiles').doc(uid).snapshots();
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(bi('Profile', 'சுயவிவரம்'))),
+    extendBodyBehindAppBar: true,
+    appBar: AppBar(
+      backgroundColor: Colors.transparent,
+      actions: [
+        if (own)
+          IconButton(
+            tooltip: ui('Settings'),
+            icon: const Icon(CupertinoIcons.gear),
+            onPressed: () => push(context, const SettingsScreen()),
+          ),
+      ],
+    ),
     body: Shell(
-      child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: _profile,
-        builder: (context, snapshot) {
-          final data = snapshot.data?.data() ?? <String, dynamic>{};
-          final name = txt(data, 'username', own ? accountUsername : '');
-          return ListView(
-            padding: const EdgeInsets.all(21),
-            children: [
-              Glass(
-                padding: const EdgeInsets.all(24),
-                child: Column(
+      child: uid.isEmpty
+          ? Center(child: Text(ui('Please sign in again')))
+          : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('profiles')
+                  .doc(uid)
+                  .snapshots(),
+              builder: (context, snap) {
+                final data = snap.data?.data() ?? <String, dynamic>{};
+                final name = txt(data, 'username', own ? accountUsername : '');
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
                   children: [
-                    profileAvatar(txt(data, 'photo')),
-                    const SizedBox(height: 16),
-                    Text(
-                      name.isEmpty
-                          ? bi(
-                              'Choose a username',
-                              'பயனர்பெயரைத் தேர்ந்தெடுங்கள்',
-                            )
-                          : '@$name',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (txt(data, 'bio').isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          txt(data, 'bio'),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    if (txt(data, 'link').isNotEmpty &&
-                        validProfileLink(txt(data, 'link')))
-                      TextButton(
-                        onPressed: () async {
-                          try {
-                            await launchUrl(
-                              Uri.parse(txt(data, 'link')),
-                              mode: LaunchMode.externalApplication,
-                            );
-                          } catch (e) {
-                            if (context.mounted) {
-                              snack(context, accountError(e));
-                            }
-                          }
-                        },
-                        child: Text(
-                          txt(data, 'link'),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                    if (uid.isNotEmpty)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    SizedBox(
+                      height: 190,
+                      child: Stack(
+                        fit: StackFit.expand,
                         children: [
-                          _ProfileCount(uid: uid, kind: 'followers'),
-                          _ProfileCount(uid: uid, kind: 'following'),
+                          Opacity(
+                            opacity: .22,
+                            child: Image(
+                              image: heroArtImage,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          const Align(
+                            alignment: Alignment.bottomRight,
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'Vimo',
+                                style: TextStyle(
+                                  fontSize: 44,
+                                  fontWeight: FontWeight.w300,
+                                  fontStyle: FontStyle.italic,
+                                  color: Ink.violet,
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                    const SizedBox(height: 16),
-                    if (own)
-                      LiquidButton(
-                        label: bi('Edit profile', 'சுயவிவரத்தைத் திருத்து'),
-                        onPressed: () async {
-                          await push(
-                            context,
-                            EditSocialProfileScreen(data: data),
-                          );
-                          if (mounted) setState(() {});
-                        },
-                      )
-                    else if (firebaseReady &&
-                        FirebaseAuth.instance.currentUser != null)
-                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                        stream: FirebaseFirestore.instance
-                            .collection('profiles')
-                            .doc(uid)
-                            .collection('followers')
-                            .doc(FirebaseAuth.instance.currentUser!.uid)
-                            .snapshots(),
-                        builder: (context, follower) {
-                          final following = follower.data?.exists == true;
-                          return LiquidButton(
-                            label: following
-                                ? bi('Unfollow', 'பின்தொடர்வதை நிறுத்து')
-                                : bi('Follow', 'பின்தொடர்'),
-                            busy: _busy,
-                            onPressed: () async {
-                              if (_busy || !follower.hasData) return;
-                              if (accountUsername.isEmpty) {
-                                await push(context, const UsernameScreen());
-                                if (!mounted || accountUsername.isEmpty) return;
-                              }
-                              setState(() => _busy = true);
-                              try {
-                                final db = FirebaseFirestore.instance;
-                                final me =
-                                    FirebaseAuth.instance.currentUser!.uid;
-                                final batch = db.batch();
-                                final target = db
-                                    .collection('profiles')
-                                    .doc(uid)
-                                    .collection('followers')
-                                    .doc(me);
-                                final source = db
-                                    .collection('profiles')
-                                    .doc(me)
-                                    .collection('following')
-                                    .doc(uid);
-                                if (following) {
-                                  batch.delete(target);
-                                  batch.delete(source);
-                                } else {
-                                  final payload = {
-                                    'createdAt': FieldValue.serverTimestamp(),
-                                  };
-                                  batch.set(target, payload);
-                                  batch.set(source, payload);
-                                }
-                                await batch.commit().timeout(
-                                  const Duration(seconds: 20),
-                                );
-                              } catch (e) {
-                                if (context.mounted) {
-                                  snack(context, accountError(e));
-                                }
-                              } finally {
-                                if (mounted) setState(() => _busy = false);
-                              }
-                            },
-                          );
-                        },
+                    ),
+                    Glass(
+                      radius: 34,
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              profileAvatar(txt(data, 'photo'), radius: 48),
+                              const SizedBox(width: 18),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      txt(
+                                        data,
+                                        'displayName',
+                                        own ? currentUserName() : name,
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    Text(
+                                      name.isEmpty
+                                          ? bi(
+                                              'Choose a username',
+                                              'பயனர்பெயரைத் தேர்ந்தெடு',
+                                            )
+                                          : '@$name',
+                                      style: const TextStyle(color: Ink.muted),
+                                    ),
+                                    if (txt(data, 'place').isNotEmpty)
+                                      Text(txt(data, 'place')),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _ProfileCount(uid: uid, kind: 'followers'),
+                              _ProfileCount(uid: uid, kind: 'following'),
+                            ],
+                          ),
+                          if (txt(data, 'bio').isNotEmpty)
+                            Text(
+                              txt(data, 'bio'),
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                          const SizedBox(height: 14),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 8,
+                            children: [
+                              if (txt(data, 'whatsapp').isNotEmpty)
+                                OutlinedButton.icon(
+                                  icon: const Icon(CupertinoIcons.chat_bubble),
+                                  label: const Text('WhatsApp'),
+                                  onPressed: () => _link(
+                                    'https://wa.me/${txt(data, 'whatsapp').replaceAll(RegExp(r'[^0-9]'), '')}',
+                                  ),
+                                ),
+                              if (txt(data, 'link').isNotEmpty &&
+                                  validProfileLink(txt(data, 'link')))
+                                OutlinedButton.icon(
+                                  icon: const Icon(CupertinoIcons.link),
+                                  label: Text(bi('My link', 'என் இணைப்பு')),
+                                  onPressed: () => _link(txt(data, 'link')),
+                                ),
+                              if (own)
+                                IconButton(
+                                  tooltip: bi(
+                                    'Edit profile',
+                                    'சுயவிவரத்தைத் திருத்து',
+                                  ),
+                                  icon: const Icon(CupertinoIcons.ellipsis),
+                                  onPressed: () => push(
+                                    context,
+                                    EditSocialProfileScreen(data: data),
+                                  ),
+                                ),
+                              if (!own)
+                                OutlinedButton.icon(
+                                  icon: const Icon(
+                                    CupertinoIcons.chat_bubble_2,
+                                  ),
+                                  label: Text(bi('Message', 'செய்தி')),
+                                  onPressed: () async {
+                                    try {
+                                      final chat = await DirectChatService.open(
+                                        uid,
+                                      );
+                                      if (context.mounted) {
+                                        await push(
+                                          context,
+                                          DirectChatScreen(
+                                            chatId: chat,
+                                            peer: uid,
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        snack(context, accountError(e));
+                                      }
+                                    }
+                                  },
+                                ),
+                            ],
+                          ),
+                          if (!own)
+                            StreamBuilder<
+                              DocumentSnapshot<Map<String, dynamic>>
+                            >(
+                              stream: FirebaseFirestore.instance
+                                  .collection('profiles')
+                                  .doc(uid)
+                                  .collection('followers')
+                                  .doc(signedInUid)
+                                  .snapshots(),
+                              builder: (context, follow) => TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () async {
+                                        if (accountUsername.isEmpty) {
+                                          await push(
+                                            context,
+                                            const UsernameScreen(),
+                                          );
+                                          if (!mounted ||
+                                              accountUsername.isEmpty) {
+                                            return;
+                                          }
+                                        }
+                                        setState(() => _busy = true);
+                                        try {
+                                          final db = FirebaseFirestore.instance;
+                                          final batch = db.batch();
+                                          final a = db
+                                              .collection('profiles')
+                                              .doc(uid)
+                                              .collection('followers')
+                                              .doc(signedInUid);
+                                          final b = db
+                                              .collection('profiles')
+                                              .doc(signedInUid)
+                                              .collection('following')
+                                              .doc(uid);
+                                          if (follow.data?.exists == true) {
+                                            batch.delete(a);
+                                            batch.delete(b);
+                                          } else {
+                                            batch.set(a, {
+                                              'createdAt':
+                                                  FieldValue.serverTimestamp(),
+                                            });
+                                            batch.set(b, {
+                                              'createdAt':
+                                                  FieldValue.serverTimestamp(),
+                                            });
+                                          }
+                                          await batch.commit().timeout(
+                                            CloudSyncService.networkTimeout,
+                                          );
+                                        } catch (e) {
+                                          if (context.mounted) {
+                                            snack(context, accountError(e));
+                                          }
+                                        } finally {
+                                          if (mounted) {
+                                            setState(() => _busy = false);
+                                          }
+                                        }
+                                      },
+                                child: Text(
+                                  follow.data?.exists == true
+                                      ? bi('Unfollow', 'பின்தொடர்வதை நிறுத்து')
+                                      : bi('Follow', 'பின்தொடர்'),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
+                    ),
+                    if (snap.hasError)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(accountError(snap.error!)),
+                      ),
+                    const SizedBox(height: 20),
+                    Glass(
+                      padding: const EdgeInsets.all(5),
+                      child: Row(
+                        children: [
+                          for (final item in [
+                            (
+                              0,
+                              bi('Post', 'பதிவுகள்'),
+                              CupertinoIcons.doc_text,
+                            ),
+                            (1, bi('Ranch', 'பண்ணை'), CupertinoIcons.house),
+                            (2, bi('Vendor', 'கடை'), CupertinoIcons.bag),
+                          ])
+                            Expanded(
+                              child: TextButton(
+                                onPressed: () => setState(() => _tab = item.$1),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: _tab == item.$1
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  foregroundColor: _tab == item.$1
+                                      ? Ink.violet
+                                      : Ink.muted,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (item.$1 == 1)
+                                      const CowMark(size: 23)
+                                    else
+                                      Icon(item.$3, size: 21),
+                                    const SizedBox(width: 6),
+                                    Flexible(child: Text(item.$2)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (_tab == 0) ProfilePostList(uid: uid, own: own),
+                    if (_tab == 1) PublicRanchView(uid: uid, profile: data),
+                    if (_tab == 2)
+                      Glass(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              data['shareShop'] == true
+                                  ? txt(data, 'shopName')
+                                  : bi(
+                                      'This shop is private.',
+                                      'இந்தக் கடை தனிப்பட்டது.',
+                                    ),
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (data['shareShop'] == true) ...[
+                              const SizedBox(height: 12),
+                              Text(txt(data, 'shopDetails')),
+                            ],
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+    ),
+  );
+  Future<void> _link(String value) async {
+    try {
+      await launchUrl(Uri.parse(value), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) snack(context, accountError(e));
+    }
+  }
+}
+
+class ProfilePostList extends StatefulWidget {
+  final String uid;
+  final bool own;
+  const ProfilePostList({super.key, required this.uid, required this.own});
+  @override
+  State<ProfilePostList> createState() => _ProfilePostListState();
+}
+
+class _ProfilePostListState extends State<ProfilePostList> {
+  Timer? _clock;
+  late DateTime _now;
+  @override
+  void initState() {
+    super.initState();
+    _now = DateTime.now();
+    _clock = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('social_posts')
+        .where('authorUid', isEqualTo: widget.uid);
+    if (!widget.own) {
+      query = query.where(
+        'createdAt',
+        isLessThanOrEqualTo: Timestamp.fromDate(_now),
+      );
+    }
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: query
+          .orderBy('createdAt', descending: true)
+          .limit(60)
+          .snapshots(),
+      builder: (context, snap) {
+        if (snap.hasError) return Text(accountError(snap.error!));
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.data!.docs.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(26),
+            child: Text(bi('No posts yet.', 'இன்னும் பதிவுகள் இல்லை.')),
+          );
+        }
+        return Column(
+          children: [
+            for (final post in snap.data!.docs)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if ((post.data()['createdAt'] as Timestamp?)
+                            ?.toDate()
+                            .isAfter(DateTime.now()) ==
+                        true)
+                      Text(
+                        '${bi('Scheduled', 'திட்டமிடப்பட்டது')}: ${(post.data()['createdAt'] as Timestamp).toDate().toLocal()}',
+                        style: const TextStyle(color: Ink.violet),
+                      ),
+                    _SocialPost(key: ValueKey(post.id), post: post),
                   ],
                 ),
               ),
-              if (snapshot.hasError)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(accountError(snapshot.error!)),
-                ),
-              if (uid.isNotEmpty)
-                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: FirebaseFirestore.instance
-                      .collection('social_posts')
-                      .where('authorUid', isEqualTo: uid)
-                      .snapshots(),
-                  builder: (context, posts) {
-                    final docs = [...?posts.data?.docs]
-                      ..sort(
-                        (a, b) =>
-                            ((b.data()['createdAt'] as Timestamp?)
-                                        ?.millisecondsSinceEpoch ??
-                                    0)
-                                .compareTo(
-                                  (a.data()['createdAt'] as Timestamp?)
-                                          ?.millisecondsSinceEpoch ??
-                                      0,
-                                ),
-                      );
-                    return Column(
-                      children: [
-                        for (final post in docs)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 16),
-                            child: _SocialPost(
-                              key: ValueKey(post.id),
-                              post: post,
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-            ],
-          );
-        },
-      ),
-    ),
-  );
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _ProfileCount extends StatelessWidget {
@@ -336,12 +584,30 @@ class EditSocialProfileScreen extends StatefulWidget {
 }
 
 class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
+  late final _name = TextEditingController(
+    text: txt(widget.data, 'displayName', currentUserName()),
+  );
+  late final _place = TextEditingController(text: txt(widget.data, 'place'));
+  late final _whatsapp = TextEditingController(
+    text: txt(widget.data, 'whatsapp'),
+  );
+  late final _shop = TextEditingController(text: txt(widget.data, 'shopName'));
+  late final _shopDetails = TextEditingController(
+    text: txt(widget.data, 'shopDetails'),
+  );
+  late bool _shareRanch = widget.data['shareRanch'] == true;
+  late bool _shareShop = widget.data['shareShop'] == true;
   late final _bio = TextEditingController(text: txt(widget.data, 'bio'));
   late final _link = TextEditingController(text: txt(widget.data, 'link'));
   late String _photo = txt(widget.data, 'photo');
   bool _busy = false, _picking = false;
   @override
   void dispose() {
+    _name.dispose();
+    _place.dispose();
+    _whatsapp.dispose();
+    _shop.dispose();
+    _shopDetails.dispose();
     _bio.dispose();
     _link.dispose();
     super.dispose();
@@ -352,6 +618,16 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
     title: bi('Edit profile', 'சுயவிவரத்தைத் திருத்து'),
     children: [
       Center(child: profileAvatar(_photo)),
+      TextField(
+        controller: _name,
+        maxLength: 80,
+        decoration: fieldStyle(bi('Name', 'பெயர்')),
+      ),
+      TextField(
+        controller: _place,
+        maxLength: 120,
+        decoration: fieldStyle(bi('Location', 'இடம்')),
+      ),
       TextButton(
         onPressed: _picking || _busy
             ? null
@@ -408,12 +684,69 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
         keyboardType: TextInputType.url,
         decoration: fieldStyle(bi('Link (optional)', 'இணைப்பு (விருப்பம்)')),
       ),
+      TextField(
+        controller: _whatsapp,
+        maxLength: 16,
+        keyboardType: TextInputType.phone,
+        decoration: fieldStyle(
+          bi(
+            'WhatsApp with country code',
+            'நாட்டுக் குறியீட்டுடன் வாட்ஸ்அப் எண்',
+          ),
+        ),
+      ),
+      SwitchListTile(
+        value: _shareRanch,
+        title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
+        subtitle: Text(
+          bi(
+            'Only cow photos, names and breeds are shared.',
+            'மாட்டுப் படங்கள், பெயர்கள், இனங்கள் மட்டும் பகிரப்படும்.',
+          ),
+        ),
+        onChanged: CloudSyncService.ready
+            ? (v) => setState(() => _shareRanch = v)
+            : null,
+      ),
+      SwitchListTile(
+        value: _shareShop,
+        title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
+        onChanged: (v) => setState(() => _shareShop = v),
+      ),
+      if (_shareShop) ...[
+        TextField(
+          controller: _shop,
+          maxLength: 100,
+          decoration: fieldStyle(bi('Shop name', 'கடைப் பெயர்')),
+        ),
+        TextField(
+          controller: _shopDetails,
+          maxLength: 500,
+          maxLines: 4,
+          decoration: fieldStyle(bi('Shop details', 'கடை விவரம்')),
+        ),
+      ],
       const SizedBox(height: 24),
       LiquidButton(
         label: 'Save',
         busy: _busy,
         onPressed: () async {
           if (_busy || _picking) return;
+          if (_whatsapp.text.trim().isNotEmpty &&
+              !RegExp(r'^\+?[0-9]{7,15}$').hasMatch(_whatsapp.text.trim())) {
+            snack(
+              context,
+              bi(
+                'Enter 7–15 digits with country code.',
+                'நாட்டுக் குறியீட்டுடன் 7–15 எண்களை உள்ளிடுங்கள்.',
+              ),
+            );
+            return;
+          }
+          if (_name.text.trim().isEmpty) {
+            snack(context, bi('Enter your name.', 'பெயரை உள்ளிடுங்கள்.'));
+            return;
+          }
           if (!validProfileLink(_link.text.trim())) {
             snack(
               context,
@@ -436,12 +769,23 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
                 .doc(uid)
                 .set({
                   'username': accountUsername,
+                  'displayName': _name.text.trim(),
+                  'displayNameFold': _name.text.trim().toLowerCase(),
+                  'place': _place.text.trim(),
+                  'whatsapp': _whatsapp.text.trim(),
+                  'shareRanch': _shareRanch,
+                  'ranchId': _shareRanch ? ranchId() : '',
+                  'ranchName': _shareRanch ? farmName() : '',
+                  'shareShop': _shareShop,
+                  'shopName': _shop.text.trim(),
+                  'shopDetails': _shopDetails.text.trim(),
                   'photo': _photo,
                   'bio': _bio.text.trim(),
                   'link': _link.text.trim(),
                   'updatedAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true))
                 .timeout(const Duration(seconds: 20));
+            AutoSyncService.scheduleSync(reason: 'profile changed');
             if (context.mounted) Navigator.pop(context);
           } catch (e) {
             if (context.mounted) snack(context, accountError(e));

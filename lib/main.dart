@@ -50,6 +50,8 @@ part 'social_profile.dart';
 part 'requested_updates.dart';
 part 'name_display.dart';
 part 'ranch_inventory.dart';
+part 'community.dart';
+part 'vendor_stock_separation.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -107,7 +109,13 @@ Future<void> main() async {
     );
     // Native Firebase Auth persists sessions automatically; setPersistence is
     // a web API and can make otherwise valid native initialization fail.
-    if (kIsWeb) await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+    if (kIsWeb) {
+      try {
+        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+      } catch (_) {
+        /* Storage restrictions must not disable Firebase itself. */
+      }
+    }
     if (kIsWeb) {
       FirebaseFirestore.instance.settings = const Settings(
         persistenceEnabled: false,
@@ -126,6 +134,8 @@ Future<void> main() async {
   for (final name in backupBoxNames) {
     await Hive.openBox(name);
   }
+  // Private account messages must never enter a ranch backup or shared box.
+  await Hive.openBox('community_outbox');
 
   await applyPrelaunchResetOnce();
   await seedAnimals();
@@ -612,7 +622,7 @@ String _excelWorksheet(
   return b.toString();
 }
 
-String buildCompleteExcelWorkbook() {
+String buildCompleteExcelWorkbook({bool includeVendor = true}) {
   List<Map<String, dynamic>> boxData(String boxName) => Hive.box(boxName).values
       .whereType<Map>()
       .map((value) => Map<String, dynamic>.from(value))
@@ -695,8 +705,16 @@ String buildCompleteExcelWorkbook() {
     ..write(_excelWorksheet('Doctor Visits', boxData('doctor_records')))
     ..write(_excelWorksheet('Purchases', boxData('purchase_records')))
     ..write(_excelWorksheet('Sales', boxData('sale_records')))
-    ..write(_excelWorksheet('Vendor People', boxData('vendor_people')))
-    ..write(_excelWorksheet('Vendor Ledger', boxData('vendor_entries')))
+    ..write(
+      includeVendor
+          ? _excelWorksheet('Vendor People', boxData('vendor_people'))
+          : '',
+    )
+    ..write(
+      includeVendor
+          ? _excelWorksheet('Vendor Ledger', boxData('vendor_entries'))
+          : '',
+    )
     ..write(_excelWorksheet('Deaths and Loss', boxData('death_records')))
     ..write(_excelWorksheet('Calving Records', boxData('calving_records')))
     ..write(_excelWorksheet('Family Users', boxData('family_users')))
@@ -2517,7 +2535,7 @@ String rolePermissionSummary(String role) => switch (normalizeFamilyRole(
 };
 bool get canViewRanch => ranchId().isNotEmpty;
 
-bool autoSyncEnabled() => settingValue('autoSyncEnabled', true) == true;
+bool autoSyncEnabled() => true;
 bool pendingSync() => settingValue('pendingSync', false) == true;
 int pendingSyncCount() => toInt(settingValue('pendingSyncCount', 0));
 
@@ -3028,22 +3046,13 @@ double milkSold(String period) {
 }
 
 double availableMilk(String period) {
-  final vendor = Hive.isBoxOpen('vendor_entries')
-      ? vendorRows(
-          'vendor_entries',
-        ).where((r) => matchPeriod(txt(r, 'date'), period)).toList()
-      : <Map<String, dynamic>>[];
-  final ranchUsedByVendor = math.max(
-    0.0,
-    _vendorSum(vendor, 'sale', 'quantity') -
-        _vendorSum(vendor, 'purchase', 'quantity'),
+  return math.max(
+    0,
+    milkTotal(period) -
+        milkSold(period) -
+        milkOwnUse(period) -
+        legacyVendorRanchUse(period),
   );
-  final balance =
-      milkTotal(period) -
-      milkSold(period) -
-      milkOwnUse(period) -
-      ranchUsedByVendor;
-  return balance < 0 ? 0 : balance;
 }
 
 int pregnantCowCount() => animals()
@@ -3540,6 +3549,8 @@ class RanchAccessService {
         if (boxName == 'settings' || !Hive.isBoxOpen(boxName)) continue;
         await Hive.box(boxName).clear();
       }
+      await setSetting('pendingSettingKeys', <String, dynamic>{});
+      await setSetting('settingsQueueInitialized', false);
     } finally {
       AutoSyncService.endRemoteWrite();
     }
@@ -3606,6 +3617,7 @@ class RanchAccessService {
         transaction.set(ranch, {
           'ranchId': normalized,
           'farmName': farmName(),
+          'farmNameFold': farmName().toLowerCase(),
           'ownerName': ownerName().isEmpty
               ? displayNameFor(current)
               : ownerName(),
@@ -3623,6 +3635,7 @@ class RanchAccessService {
       transaction.set(registry, {
         'ranchId': normalized,
         'farmName': farmName(),
+        'farmNameFold': farmName().toLowerCase(),
         'ownerUid': current.uid,
         'createdAt': now,
       }, SetOptions(merge: true));
@@ -3672,6 +3685,7 @@ class RanchAccessService {
         user == null ? 'Ranch Member' : displayNameFor(user!),
       ),
     );
+    AutoSyncService.scheduleSync(reason: 'ranch activated');
     await setSetting('syncStatus', 'Waiting to sync');
     // Membership has already been verified. Optional profile I/O must not
     // keep an authorized user behind the access-loading screen.
@@ -3730,7 +3744,7 @@ class RanchAccessService {
     } catch (error) {
       if (sameSession()) {
         await setSetting('lastSyncError', 'Ranch profile: $error');
-        await setSetting('syncStatus', 'Will retry automatically');
+        AutoSyncService.scheduleSync(reason: 'profile retry');
       }
     }
   }
@@ -3827,12 +3841,14 @@ class RanchAccessService {
       transaction.set(registry, {
         'ranchId': id,
         'farmName': farm,
+        'farmNameFold': farm.toLowerCase(),
         'ownerUid': current.uid,
         'createdAt': now,
       });
       transaction.set(ranch, {
         'ranchId': id,
         'farmName': farm,
+        'farmNameFold': farm.toLowerCase(),
         'ownerName': owner,
         'place': place,
         'ownerUid': current.uid,
@@ -4034,6 +4050,10 @@ class CloudSyncService {
     'liveSyncError',
     'purposeProfiles',
     'usernameProfiles',
+    'pendingSettingKeys',
+    'settingsQueueInitialized',
+    'autoSyncEnabled',
+    'socialDrafts',
   };
 
   static FirebaseFirestore get db => FirebaseFirestore.instance;
@@ -4046,7 +4066,7 @@ class CloudSyncService {
       FirebaseAuth.instance.currentUser != null &&
       ranchId().isNotEmpty;
 
-  static const networkTimeout = Duration(seconds: 35);
+  static const networkTimeout = Duration(seconds: 12);
 
   static bool mayUpload(String boxName, Map<String, dynamic> data) {
     if (boxName == 'vendor_entries') return false;
@@ -4107,6 +4127,7 @@ class CloudSyncService {
             .set({
               'appName': appName(),
               'farmName': farmName(),
+              'farmNameFold': farmName().toLowerCase(),
               'ownerName': ownerName(),
               'place': placeName(),
               'autoSyncEnabled': autoSyncEnabled(),
@@ -4126,18 +4147,28 @@ class CloudSyncService {
     final col = ranch.collection(boxName);
     if (boxName == 'settings') {
       if (!canManageRanch) return;
+      final pending = asMap(settingValue('pendingSettingKeys', {}));
       await runSyncSteps({
-        for (final entry in box.toMap().entries)
-          if (!localOnlySettings.contains('${entry.key}'))
-            '${entry.key}': () => col
-                .doc('${entry.key}')
-                .set({
-                  'settingKey': '${entry.key}',
-                  'value': entry.value,
-                  'updatedBy': currentUserName(),
-                  'updatedAtText': DateTime.now().toIso8601String(),
-                }, SetOptions(merge: true))
-                .timeout(networkTimeout),
+        for (final entry in pending.entries)
+          if (!localOnlySettings.contains(entry.key))
+            entry.key: () async {
+              final value = box.get(entry.key);
+              await col
+                  .doc(entry.key)
+                  .set({
+                    'settingKey': entry.key,
+                    'value': value,
+                    'updatedBy': currentUserName(),
+                    'updatedAtText': DateTime.now().toIso8601String(),
+                  })
+                  .timeout(networkTimeout);
+              final current = asMap(settingValue('pendingSettingKeys', {}));
+              if (current[entry.key] == entry.value &&
+                  sameSyncValue(box.get(entry.key), value)) {
+                current.remove(entry.key);
+                await box.put('pendingSettingKeys', current);
+              }
+            },
       });
       return;
     }
@@ -4251,7 +4282,12 @@ class CloudSyncService {
       for (final doc in snap.docs) {
         if (localOnlySettings.contains(doc.id)) continue;
         final data = localCloudData(doc.data());
-        if (data.containsKey('value')) await box.put(doc.id, data['value']);
+        if (asMap(settingValue('pendingSettingKeys', {})).containsKey(doc.id)) {
+          continue;
+        }
+        if (data.containsKey('value')) {
+          await AutoSyncService.putRemote(box, doc.id, data['value']);
+        }
       }
       return;
     }
@@ -4607,12 +4643,18 @@ Map<String, dynamic> syncBusinessFields(Map<String, dynamic> data) => {
 };
 
 String syncFailureHint(String error) {
+  if (AutoSyncService.countPending() == 0) {
+    return bi(
+      'No local records are waiting. The cloud connection or access check needs attention.',
+      'அனுப்பப்படாத உள்ளூர் பதிவுகள் இல்லை. கிளவுட் இணைப்பு அல்லது அனுமதிச் சரிபார்ப்பில் பிரச்சினை உள்ளது.',
+    );
+  }
   if (error.contains('permission') ||
       error.contains('approval') ||
       error.contains('PERMISSION_DENIED')) {
     return tamilUi
         ? 'சில பதிவுகளுக்கு நிர்வாகியின் அனுமதி தேவை. பதிவுகள் இந்தக் கருவியில் பாதுகாப்பாக உள்ளன.'
-        : 'Some entries need admin permission. They are still saved on this device.';
+        : 'The cloud rejected access to some entries. Check ranch membership and the deployed cloud rules. Local entries are kept.';
   }
   if (error.contains('Photo')) {
     return tamilUi
@@ -4633,6 +4675,8 @@ class CollaborationRealtimeSyncService {
   const CollaborationRealtimeSyncService._();
 
   static String _listeningRanch = '';
+  static String _listeningUid = '';
+  static Future<void>? _starting;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _messageSubscription;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
@@ -4641,13 +4685,16 @@ class CollaborationRealtimeSyncService {
   static final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
   _vendorSubscriptions = [];
 
-  static Future<void> ensureStarted() async {
+  static Future<void> ensureStarted() =>
+      _starting ??= _ensureStarted().whenComplete(() => _starting = null);
+  static Future<void> _ensureStarted() async {
     if (!CloudSyncService.ready) {
       await stop();
       return;
     }
     final desiredRanch = ranchId();
     if (_listeningRanch == desiredRanch &&
+        _listeningUid == RanchAccessService.uid &&
         _messageSubscription != null &&
         _taskSubscription != null) {
       return;
@@ -4656,13 +4703,17 @@ class CollaborationRealtimeSyncService {
     await stop();
     if (!CloudSyncService.ready || desiredRanch.isEmpty) return;
     _listeningRanch = desiredRanch;
-    for (final box in ['vendor_people', 'vendor_entries']) {
+    _listeningUid = RanchAccessService.uid;
+    final desiredUid = _listeningUid;
+    for (final box in backupBoxNames.where(
+      (name) => name != 'ranch_messages' && name != 'ranch_tasks',
+    )) {
       _vendorSubscriptions.add(
         CloudSyncService.ranch
             .collection(box)
-            .snapshots()
+            .snapshots(includeMetadataChanges: true)
             .listen(
-              (snapshot) => _enqueue(box, snapshot),
+              (snapshot) => _enqueue(box, snapshot, desiredRanch, desiredUid),
               onError: _handleError,
             ),
       );
@@ -4672,14 +4723,16 @@ class CollaborationRealtimeSyncService {
         .collection('ranch_messages')
         .snapshots(includeMetadataChanges: true)
         .listen(
-          (snapshot) => _enqueue('ranch_messages', snapshot),
+          (snapshot) =>
+              _enqueue('ranch_messages', snapshot, desiredRanch, desiredUid),
           onError: _handleError,
         );
     _taskSubscription = CloudSyncService.ranch
         .collection('ranch_tasks')
         .snapshots(includeMetadataChanges: true)
         .listen(
-          (snapshot) => _enqueue('ranch_tasks', snapshot),
+          (snapshot) =>
+              _enqueue('ranch_tasks', snapshot, desiredRanch, desiredUid),
           onError: _handleError,
         );
   }
@@ -4687,9 +4740,16 @@ class CollaborationRealtimeSyncService {
   static void _enqueue(
     String boxName,
     QuerySnapshot<Map<String, dynamic>> snapshot,
+    String sourceRanch,
+    String sourceUid,
   ) {
     _applyQueue = _applyQueue
-        .then((_) => _applySnapshot(boxName, snapshot))
+        .then<void>((_) async {
+          if (sourceRanch != ranchId() || sourceUid != RanchAccessService.uid) {
+            return;
+          }
+          await _applySnapshot(boxName, snapshot);
+        })
         .catchError(_handleError);
   }
 
@@ -4720,6 +4780,23 @@ class CollaborationRealtimeSyncService {
     try {
       for (final change in snapshot.docChanges) {
         final cloudId = change.doc.id;
+        if (boxName == 'settings') {
+          if (CloudSyncService.localOnlySettings.contains(cloudId) ||
+              asMap(
+                settingValue('pendingSettingKeys', {}),
+              ).containsKey(cloudId)) {
+            continue;
+          }
+          if (change.type != DocumentChangeType.removed &&
+              change.doc.data()?.containsKey('value') == true) {
+            await AutoSyncService.putRemote(
+              box,
+              cloudId,
+              localCloudData(change.doc.data()!)['value'],
+            );
+          }
+          continue;
+        }
         final localKey = localKeyByCloudId[cloudId];
         if (change.type == DocumentChangeType.removed) {
           if (localKey != null &&
@@ -4743,9 +4820,15 @@ class CollaborationRealtimeSyncService {
         }
 
         final local = asMap(box.get(localKey));
-        if (local['pendingUpload'] == true &&
-            toInt(local['updatedAtMillis']) >
-                toInt(remote['updatedAtMillis'])) {
+        if (!sameSyncValue(
+              syncBusinessFields(local),
+              syncBusinessFields(remote),
+            ) &&
+            (toInt(local['updatedAtMillis']) >
+                    toInt(remote['updatedAtMillis']) ||
+                (local['pendingUpload'] == true &&
+                    toInt(local['updatedAtMillis']) ==
+                        toInt(remote['updatedAtMillis'])))) {
           continue;
         }
         await AutoSyncService.putRemote(box, localKey, remote);
@@ -4764,6 +4847,7 @@ class CollaborationRealtimeSyncService {
     _messageSubscription = null;
     _taskSubscription = null;
     _listeningRanch = '';
+    _listeningUid = '';
     for (final subscription in _vendorSubscriptions) {
       await subscription.cancel();
     }
@@ -4808,7 +4892,12 @@ class AutoSyncService {
   }
 
   static int countPending() {
-    var total = 0;
+    var total = Hive.isBoxOpen('community_outbox')
+        ? Hive.box('community_outbox').values
+              .whereType<Map>()
+              .where((m) => m['senderUid'] == signedInUid)
+              .length
+        : 0;
     final pendingAnimals = <String>{};
     for (final name in backupBoxNames) {
       if (name == 'settings' || !Hive.isBoxOpen(name)) continue;
@@ -4822,6 +4911,7 @@ class AutoSyncService {
       settingValue('pendingAnimalEntryUpdates', <String, dynamic>{}),
     );
     return total +
+        asMap(settingValue('pendingSettingKeys', {})).length +
         health.keys.where((id) => !pendingAnimals.contains(id)).length;
   }
 
@@ -4855,7 +4945,18 @@ class AutoSyncService {
       _subscriptions.add(
         Hive.box(boxName).watch().listen((event) {
           if (boxName == 'vendor_entries') return;
-          if (boxName == 'settings') return;
+          if (boxName == 'settings') {
+            if (_consumeRemoteEcho(boxName, event.key, event.value)) return;
+            if (!canManageRanch) return;
+            if (CloudSyncService.localOnlySettings.contains('${event.key}')) {
+              return;
+            }
+            final keys = asMap(settingValue('pendingSettingKeys', {}));
+            keys['${event.key}'] = DateTime.now().microsecondsSinceEpoch;
+            unawaited(Hive.box('settings').put('pendingSettingKeys', keys));
+            markDirty(reason: 'settings change', quiet: true);
+            return;
+          }
           // Only writes we are ourselves making from the cloud are ignored.
           // Edits made at any other moment, including while an upload is in
           // flight, still mark the store dirty so they cannot be lost.
@@ -4905,10 +5006,12 @@ class AutoSyncService {
       onFocus: () => scheduleSync(reason: 'app focus'),
     );
 
-    _periodic = Timer.periodic(
-      const Duration(hours: 4),
-      (_) => scheduleSync(reason: '4 hour auto sync'),
-    );
+    _periodic = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(CollaborationRealtimeSyncService.ensureStarted());
+      if (countPending() > 0 || settingText('lastSyncError', '').isNotEmpty) {
+        scheduleSync(reason: 'retry pending changes');
+      }
+    });
     unawaited(refreshPendingCount());
     _debounce = Timer(
       const Duration(seconds: 4),
@@ -4940,15 +5043,24 @@ class AutoSyncService {
     if (!quiet) {
       scheduleSync(reason: reason);
     } else if (isOnlineNow()) {
-      _debounce?.cancel();
-      _debounce = Timer(const Duration(seconds: 8), () => run(reason: reason));
+      // A continuous stream of inputs must not postpone the first upload.
+      if (_debounce?.isActive != true) {
+        _debounce = Timer(
+          const Duration(milliseconds: 600),
+          () => run(reason: reason),
+        );
+      }
     }
   }
 
   static void scheduleSync({String reason = 'auto'}) {
     unawaited(CollaborationRealtimeSyncService.ensureStarted());
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(seconds: 2), () => run(reason: reason));
+    if (_debounce?.isActive != true) {
+      _debounce = Timer(
+        const Duration(milliseconds: 600),
+        () => run(reason: reason),
+      );
+    }
   }
 
   static Future<void> run({String reason = 'auto'}) async {
@@ -4977,6 +5089,14 @@ class AutoSyncService {
       }
       return;
     }
+    if (signedInUid.isNotEmpty && !CloudSyncService.ready) {
+      try {
+        await DirectChatService.flush();
+      } catch (error) {
+        await settings.put('lastSyncError', 'Messages: $error');
+        await refreshPendingCount();
+      }
+    }
     if (!CloudSyncService.ready) {
       if (reason == 'manual') {
         throw StateError('Sign in and open your ranch to sync');
@@ -4985,7 +5105,10 @@ class AutoSyncService {
     }
     await settings.put('lastAutoSyncReason', reason);
     try {
-      await _coordinator.run(_performSync, rerun: reason == 'manual');
+      await _coordinator.run(
+        _performSync,
+        rerun: reason == 'manual' || countPending() > 0,
+      );
     } catch (_) {
       if (reason == 'manual') rethrow;
     }
@@ -4994,6 +5117,8 @@ class AutoSyncService {
   static Future<void> _performSync() async {
     final settings = Hive.box('settings');
     final startedAtRevision = _changes;
+    final sessionUid = RanchAccessService.uid;
+    final sessionRanch = ranchId();
     Object? failure;
     try {
       await settings.put('syncStatus', 'Syncing...');
@@ -5005,9 +5130,12 @@ class AutoSyncService {
               .get(const GetOptions(source: Source.server))
               .timeout(CloudSyncService.networkTimeout);
       final access = member.data();
+      if (sessionUid != RanchAccessService.uid || sessionRanch != ranchId()) {
+        return;
+      }
       if (access == null ||
           access['active'] == false ||
-          txt(access, 'status') != 'active') {
+          txt(access, 'status', 'active') != 'active') {
         throw StateError(
           'Ranch access needs admin approval. Local entries are still saved.',
         );
@@ -5016,11 +5144,26 @@ class AutoSyncService {
         'currentRole',
         normalizeFamilyRole(txt(access, 'role')),
       );
+      if (canManageRanch &&
+          settingValue('settingsQueueInitialized', false) != true) {
+        final pending = asMap(settingValue('pendingSettingKeys', {}));
+        for (final key in settings.keys) {
+          if (!CloudSyncService.localOnlySettings.contains('$key')) {
+            pending.putIfAbsent(
+              '$key',
+              () => DateTime.now().microsecondsSinceEpoch,
+            );
+          }
+        }
+        await settings.put('pendingSettingKeys', pending);
+        await settings.put('settingsQueueInitialized', true);
+      }
       await runSyncSteps({
+        'private messages': DirectChatService.flush,
         'records': CloudSyncService.uploadAll,
         'animal health': flushPendingAnimalEntryUpdates,
         'download': CloudSyncService.downloadAll,
-        'ranch milk': RanchMilkBridge.sync,
+        'public ranch': PublicRanchService.refresh,
       });
       final blocked = <String>{};
       for (final name in backupBoxNames) {
@@ -5059,7 +5202,7 @@ class AutoSyncService {
         _retryAttempts = math.min(_retryAttempts + 1, 5);
         _debounce?.cancel();
         _debounce = Timer(
-          Duration(seconds: 10 * (1 << _retryAttempts)),
+          Duration(seconds: failure == null ? 1 : 5 * (1 << _retryAttempts)),
           () => run(reason: 'retry pending entries'),
         );
       }
@@ -7411,7 +7554,13 @@ class _SignupScreenState extends State<SignupScreen> {
           bi('Username unavailable', 'பயனர்பெயர் கிடைக்கவில்லை'),
         );
       }
-      if (kIsWeb) await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+      if (kIsWeb) {
+        try {
+          await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+        } catch (_) {
+          /* Storage restrictions must not disable Firebase itself. */
+        }
+      }
       if (FirebaseAuth.instance.currentUser == null) {
         await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: email,
@@ -8475,12 +8624,10 @@ class _MainShellState extends State<MainShell> {
     if (!purposeChosen) return const PreferencesScreen(onboarding: true);
     final order = navigationOrder();
     final pageMap = <String, Widget>{
-      'Ranch': isDataEntryUser
-          ? const AnimalsScreen()
-          : DashboardScreen(onOpenCard: _openCard),
+      'Ranch': RanchWorkspace(onOpenCard: _openCard),
       'Vendor': const VendorWorkspace(),
       'Social': const SocialScreen(),
-      'Chat': const RanchChatScreen(),
+      'Chat': const CommunityChatsScreen(),
     };
     const items = <String, _NavItem>{
       'Ranch': _NavItem(
@@ -8510,16 +8657,23 @@ class _MainShellState extends State<MainShell> {
       appBar: AppBar(
         toolbarHeight: 52,
         leading: IconButton(
-          tooltip: ui('Settings'),
-          icon: const Icon(Icons.settings_outlined, size: 26),
-          onPressed: _openSettings,
+          tooltip: bi('Profile', 'சுயவிவரம்'),
+          icon: const CurrentProfileAvatar(radius: 19),
+          onPressed: () => push(context, const SocialProfileScreen()),
         ),
         title: AppText(
           '${appName()} ${ui(appPurpose)}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        actions: [const RanchNotificationButton()],
+        actions: [
+          IconButton(
+            tooltip: ui('Search'),
+            icon: const Icon(CupertinoIcons.search),
+            onPressed: () => push(context, const CommunitySearchScreen()),
+          ),
+          const RanchNotificationButton(),
+        ],
       ),
       body: Listener(
         onPointerDown: (event) => _swipeStart = event.localPosition,
@@ -14333,7 +14487,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   blur: Gold.s13,
                   padding: const EdgeInsets.all(Gold.s13),
                   elevation: 0.8,
-                  onTap: () => push(context, const ExportReportScreen()),
+                  onTap: () =>
+                      push(context, const ExportReportScreen(ranchOnly: true)),
                   child: const Icon(
                     Icons.file_download_outlined,
                     color: Ink.violetDeep,
@@ -14359,7 +14514,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
           ),
           const SizedBox(height: Gold.s21),
-          VendorReportSummary(period: _period),
           Reveal(
             index: 2,
             child: LayoutBuilder(
@@ -14906,7 +15060,8 @@ class ReportDetailScreen extends StatelessWidget {
         LiquidButton(
           label: 'Export Reports',
           icon: Icons.file_download_outlined,
-          onPressed: () => push(context, const ExportReportScreen()),
+          onPressed: () =>
+              push(context, const ExportReportScreen(ranchOnly: true)),
         ),
       ],
     );
@@ -15070,7 +15225,8 @@ class _Cell extends StatelessWidget {
 // -----------------------------------------------------------------------------
 
 class ExportReportScreen extends StatelessWidget {
-  const ExportReportScreen({super.key});
+  final bool ranchOnly;
+  const ExportReportScreen({super.key, this.ranchOnly = false});
 
   String _milkCsv() {
     final b = StringBuffer(
@@ -15238,7 +15394,9 @@ class ExportReportScreen extends StatelessWidget {
       title: 'Export',
       children: [
         _ExportTile(
-          title: 'All Data - Excel Workbook',
+          title: ranchOnly
+              ? 'Ranch - Excel Workbook'
+              : 'All Data - Excel Workbook',
           subtitle:
               'Animals, milk, stock, sales, expenses, visits and settings in one file',
           icon: Icons.dataset_rounded,
@@ -15246,7 +15404,7 @@ class ExportReportScreen extends StatelessWidget {
           onTap: () async {
             if (await downloadExcelFile(
                   'vimo_all_data_$stamp.xls',
-                  buildCompleteExcelWorkbook(),
+                  buildCompleteExcelWorkbook(includeVendor: !ranchOnly),
                 ) &&
                 context.mounted) {
               snack(context, 'Complete Excel workbook downloaded');
@@ -16664,7 +16822,9 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                             const SizedBox(width: Gold.s13),
                             Expanded(
                               child: AppText(
-                                signedIn ? 'Connected' : 'Working offline',
+                                signedIn && isOnlineNow()
+                                    ? 'Signed in'
+                                    : 'Working offline',
                                 style: const TextStyle(
                                   fontSize: Gold.t21,
                                   fontWeight: FontWeight.w700,
@@ -16740,28 +16900,18 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                       vertical: Gold.s5,
                     ),
                     elevation: 0.8,
-                    child: SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: autoSyncEnabled(),
-                      activeThumbColor: Ink.violet,
-                      title: const AppText(
-                        'Auto Sync',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: Gold.t13,
-                          color: Ink.navy,
+                    child: ListTile(
+                      leading: const Icon(
+                        CupertinoIcons.arrow_2_circlepath,
+                        color: Ink.violet,
+                      ),
+                      title: Text(bi('Automatic sync', 'தானியங்கி ஒத்திசைவு')),
+                      subtitle: Text(
+                        bi(
+                          'Every change is saved locally and sent when connected.',
+                          'ஒவ்வொரு மாற்றமும் கருவியில் சேமிக்கப்பட்டு இணையம் வந்ததும் அனுப்பப்படும்.',
                         ),
                       ),
-                      subtitle: const AppText(
-                        'Sync in the background without asking',
-                        style: TextStyle(fontSize: Gold.t10, color: Ink.muted),
-                      ),
-                      onChanged: (v) async {
-                        await setSetting('autoSyncEnabled', v);
-                        if (v) {
-                          AutoSyncService.scheduleSync(reason: 'switched on');
-                        }
-                      },
                     ),
                   ),
                 ),
@@ -16777,33 +16927,6 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     ),
                   )
                 else ...[
-                  Reveal(
-                    index: 6,
-                    child: LiquidButton(
-                      label: 'Sync Now',
-                      icon: Icons.sync_rounded,
-                      busy: _busy,
-                      onPressed: () => _run(
-                        () => AutoSyncService.run(reason: 'manual'),
-                        'Sync complete',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: Gold.s13),
-                  Reveal(
-                    index: 7,
-                    child: GhostButton(
-                      label: 'Upload This Device to Cloud',
-                      icon: Icons.cloud_upload_rounded,
-                      onPressed: _busy
-                          ? null
-                          : () => _run(
-                              () => AutoSyncService.run(reason: 'manual'),
-                              'Sync complete',
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: Gold.s13),
                   Reveal(
                     index: 8,
                     child: GhostButton(
