@@ -1,4 +1,8 @@
 VIMO sync and community changes — review status
+
+LATEST CONTINUATION: Read CODEX_HANDOFF.md. GitHub emulator CI now runs but
+found a social_posts GET permission failure; fix it before release. The latest
+full Flutter suite passed 57 tests.
 ==============================================
 
 Based on `codex/ranch-vendor-market-glass` at

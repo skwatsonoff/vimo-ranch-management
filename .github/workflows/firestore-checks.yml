@@ -1,7 +1,5 @@
 name: Firestore checks
 on:
-  push:
-    branches: [codex/sync-profile-community-fix]
   pull_request:
     branches: [codex/ranch-vendor-market-glass]
 permissions:
@@ -15,7 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -26,4 +24,4 @@ jobs:
           NODE_PATH: /tmp/vimo-rules/node_modules
         run: |
           mkdir -p tmp
-          /tmp/vimo-rules/node_modules/.bin/firebase emulators:exec --only firestore --project demo-vimo --config firebase.test.json 'node test/firestore_rules_test.cjs && node test/community_rules_test.cjs && node test/current_profile_rules_test.cjs'
+          /tmp/vimo-rules/node_modules/.bin/firebase emulators:exec --only firestore --project demo-vimo --config firebase.test.json 'node test/run_rules_checks.cjs'

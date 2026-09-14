@@ -217,8 +217,9 @@ class _SocialComposerState extends State<SocialComposer> {
     if (_text.text.isEmpty &&
         _photo.isEmpty &&
         _voice.isEmpty &&
-        !asMap(settingValue('socialDrafts', {})).containsKey(_draftOwner))
+        !asMap(settingValue('socialDrafts', {})).containsKey(_draftOwner)) {
       return;
+    }
     unawaited(
       setSetting('socialDrafts', {
         ...asMap(settingValue('socialDrafts', {})),

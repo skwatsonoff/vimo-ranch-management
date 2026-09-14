@@ -113,5 +113,5 @@ const assert = require('node:assert/strict');
     assert.equal((await getDoc(doc(db, 'ranches/test/milk_records/m1'))).data().quantity, 10); checks++;
     await assertFails(bridge(outsider, 'outsider', 'm1')); checks++;
     console.log(`PASS: ${checks} Firestore stock, credit, concurrency, edit-window and social permission checks.`);
-  } catch(error) { const report = await fetch('http://127.0.0.1:8088/emulator/v1/projects/demo-vimo:ruleCoverage').then(r=>r.text()); fs.writeFileSync('tmp/rule-coverage.json', report); throw error; } finally { await env.cleanup(); }
+  } catch(error) { console.error('Failed after', checks, 'completed checks'); const report = await fetch('http://127.0.0.1:8088/emulator/v1/projects/demo-vimo:ruleCoverage').then(r=>r.text()); fs.writeFileSync('tmp/rule-coverage.json', report); throw error; } finally { await env.cleanup(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
