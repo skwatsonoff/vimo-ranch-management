@@ -39,20 +39,28 @@ members through Firebase.
 Run `flutter analyze lib test` and `flutter test`. The active source is in `lib`;
 archived source ZIPs and directories are not part of the app.
 
-`test/firestore_rules_test.cjs` tests vendor stock, payment balances, concurrent
+`test/run_rules_checks.cjs` runs the vendor, community, username/profile and HTTP
+feed security suites. They test vendor stock, payment balances, concurrent
 sales, immutable financial fields, the five-minute edit window, cross-workspace
 isolation and social ownership rules. It runs only against the demo emulator:
 
 ```powershell
 npm install --prefix tmp/rules-qa --no-save @firebase/rules-unit-testing firebase
 $env:NODE_PATH = (Resolve-Path 'tmp/rules-qa/node_modules').Path
-npx --yes firebase-tools emulators:exec --config firebase.test.json --project demo-vimo --only firestore 'node test/firestore_rules_test.cjs'
+npx --yes firebase-tools emulators:exec --config firebase.test.json --project demo-vimo --only firestore 'node test/run_rules_checks.cjs'
 ```
 
 The emulator requires Java 21 or newer. Preview builds use
 `flutter build web --release --dart-define=VIMO_PREVIEW_MODE=true --output=tmp/business-preview`.
 Never deploy that preview directory. Production uses `flutter build web --release`
 and `firebase deploy --only hosting,firestore:rules --project my-ranch-sync`.
+
+For signed-in local integration tests, start Auth and Firestore using
+`firebase emulators:start --config firebase.test.json --project demo-vimo`, then
+build with `flutter build web --release --dart-define=VIMO_USE_EMULATORS=true
+--output=tmp/integration`. This flag selects only the isolated demo project.
+Never deploy an emulator build. Production deployment includes
+`hosting,firestore:rules,firestore:indexes`.
 
 ## Included
 

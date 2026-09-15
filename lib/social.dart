@@ -32,12 +32,13 @@ class SocialScreen extends StatefulWidget {
 
 class _SocialScreenState extends State<SocialScreen> {
   Timer? _feedClock;
-  DateTime _feedTime = DateTime.now();
+  Future<List<SocialPostRecord>>? _feed;
   @override
   void initState() {
     super.initState();
+    _refreshFeed();
     _feedClock = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() => _feedTime = DateTime.now());
+      if (mounted) setState(_refreshFeed);
     });
   }
 
@@ -47,18 +48,12 @@ class _SocialScreenState extends State<SocialScreen> {
     super.dispose();
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>>? get _feed =>
-      firebaseReady && FirebaseAuth.instance.currentUser != null
-      ? FirebaseFirestore.instance
-            .collection('social_posts')
-            .where(
-              'createdAt',
-              isLessThanOrEqualTo: Timestamp.fromDate(_feedTime),
-            )
-            .orderBy('createdAt', descending: true)
-            .limit(60)
-            .snapshots()
-      : null;
+  void _refreshFeed() {
+    _feed = firebaseReady && FirebaseAuth.instance.currentUser != null
+        ? SocialFeed.load()
+        : null;
+  }
+
   @override
   Widget build(BuildContext context) => Shell(
     child: Column(
@@ -103,8 +98,8 @@ class _SocialScreenState extends State<SocialScreen> {
                     ),
                   ),
                 )
-              : StreamBuilder(
-                  stream: _feed,
+              : FutureBuilder(
+                  future: _feed,
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return Center(
@@ -122,7 +117,7 @@ class _SocialScreenState extends State<SocialScreen> {
                     if (!snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
-                    final docs = snapshot.data!.docs;
+                    final docs = snapshot.data!;
                     if (docs.isEmpty) {
                       return Center(
                         child: Padding(
@@ -568,7 +563,7 @@ class _SocialComposerState extends State<SocialComposer> {
 }
 
 class _SocialPost extends StatefulWidget {
-  final QueryDocumentSnapshot<Map<String, dynamic>> post;
+  final SocialPostRecord post;
   const _SocialPost({super.key, required this.post});
   @override
   State<_SocialPost> createState() => _SocialPostState();

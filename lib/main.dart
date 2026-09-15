@@ -30,6 +30,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as image_lib;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -44,6 +45,7 @@ import 'package:url_launcher/url_launcher.dart';
 part 'interface.dart';
 part 'business.dart';
 part 'social.dart';
+part 'social_feed.dart';
 part 'liquid_design.dart';
 part 'account.dart';
 part 'social_profile.dart';
@@ -64,6 +66,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// Local visual-QA switch. Production builds keep this false unless the
 /// developer explicitly passes --dart-define=VIMO_PREVIEW_MODE=true.
 const bool vimoPreviewMode = bool.fromEnvironment('VIMO_PREVIEW_MODE');
+// Local integration builds use an isolated demo project, never live ranch data.
+const bool vimoUseEmulators = bool.fromEnvironment('VIMO_USE_EMULATORS');
 
 /// One deliberate pre-launch reset. Keep this marker unchanged in every future
 /// release: changing it would clear real customer data on the next app start.
@@ -105,7 +109,15 @@ Future<void> main() async {
 
   try {
     await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
+      options: vimoUseEmulators
+          ? const FirebaseOptions(
+              apiKey: 'demo-vimo-api-key',
+              appId: '1:123456789:web:demo-vimo',
+              messagingSenderId: '123456789',
+              projectId: 'demo-vimo',
+              authDomain: 'demo-vimo.firebaseapp.com',
+            )
+          : DefaultFirebaseOptions.currentPlatform,
     );
     // Native Firebase Auth persists sessions automatically; setPersistence is
     // a web API and can make otherwise valid native initialization fail.
@@ -121,6 +133,10 @@ Future<void> main() async {
         persistenceEnabled: false,
         webExperimentalForceLongPolling: true,
       );
+    }
+    if (vimoUseEmulators) {
+      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
+      FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8088);
     }
     firebaseReady = true;
     if (!kIsWeb) {
@@ -8565,7 +8581,20 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     _languageChanges = Hive.box('settings').watch().listen((event) {
-      if (mounted) {
+      // Sync writes status and queue metadata frequently. Rebuilding the whole
+      // shell for those writes tears down/recreates Firestore UI listeners and
+      // can overwhelm the watch stream while a record is being acknowledged.
+      if (mounted &&
+          const {
+            'languageMode',
+            'purposeProfiles',
+            'usernameProfiles',
+            'currentUser',
+            'currentRole',
+            'farmName',
+            'appName',
+            'ranchId',
+          }.contains(event.key)) {
         setState(() {
           if (event.key == 'purposeProfiles') _tab = 0;
         });

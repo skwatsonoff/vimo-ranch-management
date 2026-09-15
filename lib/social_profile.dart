@@ -109,7 +109,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
                   children: [
                     SizedBox(
-                      height: 190,
+                      height: 110,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
@@ -140,7 +140,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                     ),
                     Glass(
                       radius: 34,
-                      padding: const EdgeInsets.all(22),
+                      padding: const EdgeInsets.all(18),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -159,7 +159,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                         own ? currentUserName() : name,
                                       ),
                                       style: const TextStyle(
-                                        fontSize: 24,
+                                        fontSize: 21,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -361,7 +361,12 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     if (item.$1 == 1)
-                                      const CowMark(size: 23)
+                                      CustomPaint(
+                                        size: const Size(25, 23),
+                                        painter: _ProfileCowPainter(
+                                          _tab == 1 ? Ink.violet : Ink.muted,
+                                        ),
+                                      )
                                     else
                                       Icon(item.$3, size: 21),
                                     const SizedBox(width: 6),
@@ -415,6 +420,72 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
   }
 }
 
+// A simple silhouette stays recognisable at tab size, unlike the detailed art.
+class _ProfileCowPainter extends CustomPainter {
+  final Color color;
+  const _ProfileCowPainter(this.color);
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 28, size.height / 24);
+    final paint = Paint()..color = color;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(3, 7, 18, 11),
+        const Radius.circular(4),
+      ),
+      paint,
+    );
+    for (final x in [5.0, 16.0]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, 15, 3, 7),
+          const Radius.circular(1),
+        ),
+        paint,
+      );
+    }
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(19, 6, 7, 9),
+        const Radius.circular(2),
+      ),
+      paint,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(19, 8)
+        ..lineTo(16, 4)
+        ..lineTo(21, 6)
+        ..lineTo(23, 3)
+        ..lineTo(24, 7)
+        ..close(),
+      paint,
+    );
+    final tail = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(
+      Path()
+        ..moveTo(4, 9)
+        ..quadraticBezierTo(0, 8, 1, 17),
+      tail,
+    );
+    canvas.drawCircle(const Offset(23.5, 9), .8, Paint()..color = Colors.white);
+    canvas.drawOval(
+      const Rect.fromLTWH(8, 9, 6, 4),
+      Paint()..color = Colors.white.withValues(alpha: .65),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProfileCowPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
 class ProfilePostList extends StatefulWidget {
   final String uid;
   final bool own;
@@ -425,13 +496,13 @@ class ProfilePostList extends StatefulWidget {
 
 class _ProfilePostListState extends State<ProfilePostList> {
   Timer? _clock;
-  late DateTime _now;
+  late Future<List<SocialPostRecord>> _posts;
   @override
   void initState() {
     super.initState();
-    _now = DateTime.now();
+    _refresh();
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
+      if (mounted) setState(_refresh);
     });
   }
 
@@ -443,26 +514,14 @@ class _ProfilePostListState extends State<ProfilePostList> {
 
   @override
   Widget build(BuildContext context) {
-    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-        .collection('social_posts')
-        .where('authorUid', isEqualTo: widget.uid);
-    if (!widget.own) {
-      query = query.where(
-        'createdAt',
-        isLessThanOrEqualTo: Timestamp.fromDate(_now),
-      );
-    }
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: query
-          .orderBy('createdAt', descending: true)
-          .limit(60)
-          .snapshots(),
+    return FutureBuilder<List<SocialPostRecord>>(
+      future: _posts,
       builder: (context, snap) {
         if (snap.hasError) return Text(accountError(snap.error!));
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snap.data!.docs.isEmpty) {
+        if (snap.data!.isEmpty) {
           return Padding(
             padding: const EdgeInsets.all(26),
             child: Text(bi('No posts yet.', 'இன்னும் பதிவுகள் இல்லை.')),
@@ -470,7 +529,7 @@ class _ProfilePostListState extends State<ProfilePostList> {
         }
         return Column(
           children: [
-            for (final post in snap.data!.docs)
+            for (final post in snap.data!)
               Padding(
                 padding: const EdgeInsets.only(bottom: 18),
                 child: Column(
@@ -493,6 +552,9 @@ class _ProfilePostListState extends State<ProfilePostList> {
       },
     );
   }
+
+  void _refresh() =>
+      _posts = SocialFeed.load(authorUid: widget.uid, own: widget.own);
 }
 
 class _ProfileCount extends StatelessWidget {

@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
   const env = await initializeTestEnvironment({ projectId: 'demo-vimo', firestore: { host: '127.0.0.1', port: 8088, rules: fs.readFileSync('firestore.rules', 'utf8') } });
   let checks = 0;
   try {
+    await env.clearFirestore();
     await env.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
       for (const uid of ['owner', 'helper']) await setDoc(doc(db, `ranches/test/members/${uid}`), { active: true, status: 'active', role: uid === 'owner' ? 'Admin' : 'Data Entry' });
@@ -54,7 +55,9 @@ const assert = require('node:assert/strict');
     assert.equal((await getDoc(doc(db, 'ranches/test/vendor_stock/vendor_milk'))).data().quantity, 4); checks++;
     const post = { authorUid: 'owner', ranchId: 'test', authorName: 'Kumar', text: 'Milk question', photo: '', voice: '', voiceSeconds: 0, tile: true, createdAt: serverTimestamp() };
     await assertSucceeds(setDoc(doc(db, 'social_posts/post1'), post)); checks++;
-    await assertSucceeds(getDoc(doc(outsider, 'social_posts/post1'))); checks++;
+    // The emulator freezes request.time at Listen stream creation. Use a new
+    // reader after publication so this tests visibility at the actual read time.
+    await assertSucceeds(getDoc(doc(env.authenticatedContext('outsider').firestore(), 'social_posts/post1'))); checks++;
     await assertFails(getDoc(doc(anon, 'social_posts/post1'))); checks++;
     await assertFails(setDoc(doc(outsider, 'social_posts/spoof'), { ...post, authorUid: 'outsider' })); checks++;
     await assertFails(updateDoc(doc(outsider, 'social_posts/post1'), { text: 'Changed' })); checks++;

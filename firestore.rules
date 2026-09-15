@@ -169,7 +169,11 @@ service cloud.firestore {
           && data.authorName is string && data.authorName.size() <= 120
           && (!('authorUsername' in data) || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == data.authorUsername);
       }
-      allow read: if signedIn() && (resource == null || resource.data.authorUid == request.auth.uid || resource.data.createdAt <= request.time);
+      // The composer reads its new ID before writing in a transaction.
+      // Keep that missing-document check out of list-query authorization.
+      allow get: if signedIn() && !exists(/databases/$(database)/documents/social_posts/$(postId));
+      allow get, list: if signedIn() && resource.data.createdAt <= request.time;
+      allow get, list: if signedIn() && resource.data.authorUid == request.auth.uid;
       allow create: if validAuthor(request.resource.data)
         && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'authorUsername', 'text', 'photo', 'voice', 'voiceSeconds', 'tile', 'createdAt'])
         && request.resource.data.text is string && request.resource.data.text.size() <= 2000

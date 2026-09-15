@@ -1,5 +1,15 @@
 VIMO sync and community changes — review status
 
+2026-09-15 laptop update: the prior emulator blocker is resolved. All 89 original
+security checks plus seven authenticated HTTP feed checks pass. All 57 Flutter
+tests pass. Browser integration reproduced and fixed the shared Firestore
+watch-stream crash; status updates no longer rebuild the entire main shell.
+Scheduled feeds use fresh authenticated HTTP queries, retaining time-based
+privacy rules. Cross-account automatic upload, offline upload after reconnect,
+username creation and post publication/feed rendering were verified locally.
+The profile header is more compact and its Ranch tab has a clear cow silhouette.
+See the newest section in CODEX_HANDOFF.md for exact evidence and release status.
+
 LATEST CONTINUATION: Read CODEX_HANDOFF.md. GitHub emulator CI now runs but
 found a social_posts GET permission failure; fix it before release. The latest
 full Flutter suite passed 57 tests.

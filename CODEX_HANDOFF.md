@@ -1,5 +1,35 @@
 # Continue VIMO on the laptop
 
+## Laptop verification — 2026-09-15 (supersedes blockers below)
+
+- Reproduced the same Firestore 12.19.0 `ca9` / `b815` watch-stream crash in
+  the user's production browser and the isolated integration app.
+- The main shell no longer rebuilds for every sync status/queue write. This
+  prevents repeated UI listener cancellation/recreation during synchronization.
+  The repaired integration session completed profile, username and record writes
+  without the previous SDK assertion.
+- Time-bound social feeds now use authenticated REST runQuery requests every
+  30 seconds. A reused Listen stream retained an earlier request.time and denied
+  newer feed boundaries. Firebase user ID tokens still enforce Firestore rules;
+  scheduled posts remain unreadable by others before their publication time.
+- Split missing-post get permission from list authorization; tested the actual
+  composer read-before-create transaction, owner queries, and anonymous denial.
+- All 57 Flutter tests passed. Analysis has no errors or warnings (two existing
+  informational lints in sync_core_checks.dart). The original 89 rules checks
+  and seven additional real HTTP authorization checks passed locally.
+- Browser verified: mobile Ranch Sell choices, separate Vendor navigation,
+  storage detail entry point, profile layout and cow silhouette, username check
+  and save, profile save, publishing and feed display, Personal/Business chat.
+- Two isolated signed-in accounts share demo ranch `integration`: a saved ₹123
+  expense appeared on the other device without manual sync. A ₹77 offline entry
+  reached Firestore after reconnect; a fresh client displayed the ₹200 total.
+- Production Firebase CLI login is available. Release build, GitHub publication,
+  deployment and fresh production verification are the final steps in progress.
+
+Local integration uses `--dart-define=VIMO_USE_EMULATORS=true` with project
+`demo-vimo`, Auth on 9099 and Firestore on 8088. Never deploy that build or the
+VIMO_PREVIEW_MODE build. Production builds omit both flags.
+
 Repository: https://github.com/skwatsonoff/vimo-ranch-management
 PR: https://github.com/skwatsonoff/vimo-ranch-management/pull/2
 Working branch: `codex/sync-profile-community-fix`
