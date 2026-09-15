@@ -65,64 +65,11 @@ Future<void> showWorkspaceAdd(BuildContext context, String workspace) async {
     await push(context, const AddEntryScreen());
     return;
   }
-  await showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (sheet) => SafeArea(
-      child: Glass(
-        padding: const EdgeInsets.all(21),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ActionRow(
-              icon: CupertinoIcons.drop,
-              label: bi('Buy milk', 'பால் வாங்கு'),
-              onTap: () {
-                Navigator.pop(sheet);
-                push(
-                  context,
-                  Scaffold(
-                    appBar: AppBar(title: Text(bi('Buy milk', 'பால் வாங்கு'))),
-                    body: const VendorScreen(),
-                  ),
-                );
-              },
-            ),
-            _ActionRow(
-              icon: CupertinoIcons.person_2,
-              label: bi('Sell milk', 'பால் விற்பனை'),
-              onTap: () {
-                Navigator.pop(sheet);
-                push(
-                  context,
-                  Scaffold(
-                    appBar: AppBar(
-                      title: Text(bi('Sell milk', 'பால் விற்பனை')),
-                    ),
-                    body: const VendorScreen(initialSection: 1),
-                  ),
-                );
-              },
-            ),
-            _ActionRow(
-              icon: CupertinoIcons.cart,
-              label: bi('Add sale', 'விற்பனையைச் சேர்'),
-              onTap: () {
-                Navigator.pop(sheet);
-                push(context, const SellScreen());
-              },
-            ),
-            _ActionRow(
-              icon: CupertinoIcons.cube_box,
-              label: bi('Add feed stock', 'தீவன இருப்பைச் சேர்'),
-              onTap: () {
-                Navigator.pop(sheet);
-                push(context, const SellScreen(initialSection: 1));
-              },
-            ),
-          ],
-        ),
-      ),
+  await push(
+    context,
+    Scaffold(
+      appBar: AppBar(title: Text(bi('Vendor', 'விற்பனையாளர்'))),
+      body: const VendorWorkspace(),
     ),
   );
 }
@@ -192,18 +139,6 @@ List<Map<String, dynamic>> reportDetailRows(String kind, String period) {
       add(doctorRows(), 'cost', 'Doctor');
       add(purchaseRows(), 'amount', 'Purchase');
       add(deathRows(), 'cost', 'Loss recorded');
-  }
-  if (Hive.isBoxOpen('vendor_entries')) {
-    final entries = vendorRows('vendor_entries');
-    if (kind == 'sold') {
-      add(entries.where((r) => txt(r, 'kind') == 'sale'), 'quantity', 'Milk');
-    }
-    if (kind == 'income') {
-      add(entries.where((r) => txt(r, 'kind') == 'sale'), 'amount', 'Sale');
-    }
-    if (kind == 'expense') {
-      add(entries.where((r) => txt(r, 'kind') == 'purchase'), 'amount', 'Milk');
-    }
   }
   result.sort(
     (a, b) => '${txt(b, 'date')} ${txt(b, 'time')}'.compareTo(

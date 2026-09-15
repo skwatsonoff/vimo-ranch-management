@@ -31,14 +31,29 @@ class SocialScreen extends StatefulWidget {
 }
 
 class _SocialScreenState extends State<SocialScreen> {
-  late final Stream<QuerySnapshot<Map<String, dynamic>>>? _feed =
-      firebaseReady && FirebaseAuth.instance.currentUser != null
-      ? FirebaseFirestore.instance
-            .collection('social_posts')
-            .orderBy('createdAt', descending: true)
-            .limit(60)
-            .snapshots()
-      : null;
+  Timer? _feedClock;
+  Future<List<SocialPostRecord>>? _feed;
+  @override
+  void initState() {
+    super.initState();
+    _refreshFeed();
+    _feedClock = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(_refreshFeed);
+    });
+  }
+
+  @override
+  void dispose() {
+    _feedClock?.cancel();
+    super.dispose();
+  }
+
+  void _refreshFeed() {
+    _feed = firebaseReady && FirebaseAuth.instance.currentUser != null
+        ? SocialFeed.load()
+        : null;
+  }
+
   @override
   Widget build(BuildContext context) => Shell(
     child: Column(
@@ -83,8 +98,8 @@ class _SocialScreenState extends State<SocialScreen> {
                     ),
                   ),
                 )
-              : StreamBuilder(
-                  stream: _feed,
+              : FutureBuilder(
+                  future: _feed,
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return Center(
@@ -102,7 +117,7 @@ class _SocialScreenState extends State<SocialScreen> {
                     if (!snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
-                    final docs = snapshot.data!.docs;
+                    final docs = snapshot.data!;
                     if (docs.isEmpty) {
                       return Center(
                         child: Padding(
@@ -162,6 +177,7 @@ class SocialComposer extends StatefulWidget {
 
 class _SocialComposerState extends State<SocialComposer> {
   String? _postId;
+  DateTime? _publishAt;
   final _text = TextEditingController();
   final _recorder = AudioRecorder();
   BytesBuilder _pcm = BytesBuilder(copy: false);
@@ -172,8 +188,53 @@ class _SocialComposerState extends State<SocialComposer> {
   bool _recording = false, _busy = false, _tile = false, _stopping = false;
   String _photo = '', _voice = '';
   int _seconds = 0;
+  bool _published = false;
+  late final String _draftOwner;
+  @override
+  void initState() {
+    super.initState();
+    _draftOwner = signedInUid;
+    final draft = asMap(
+      asMap(settingValue('socialDrafts', {}))[_draftOwner] ?? {},
+    );
+    _text.text = txt(draft, 'text');
+    _photo = txt(draft, 'photo');
+    _voice = txt(draft, 'voice');
+    _tile = draft['tile'] == true;
+    _seconds = toInt(draft['seconds']);
+    _publishAt = DateTime.tryParse(txt(draft, 'publishAt'));
+    _postId = txt(draft, 'postId').isEmpty ? null : txt(draft, 'postId');
+    _text.addListener(_persistDraft);
+  }
+
+  void _persistDraft() {
+    if (_published) return;
+    if (_text.text.isEmpty &&
+        _photo.isEmpty &&
+        _voice.isEmpty &&
+        !asMap(settingValue('socialDrafts', {})).containsKey(_draftOwner)) {
+      return;
+    }
+    unawaited(
+      setSetting('socialDrafts', {
+        ...asMap(settingValue('socialDrafts', {})),
+        _draftOwner: {
+          'text': _text.text,
+          'photo': _photo,
+          'voice': _voice,
+          'seconds': _seconds,
+          'tile': _tile,
+          'publishAt': _publishAt?.toIso8601String() ?? '',
+          'postId': _postId ?? '',
+        },
+      }),
+    );
+  }
+
   @override
   void dispose() {
+    _persistDraft();
+    _text.removeListener(_persistDraft);
     _text.dispose();
     _timer?.cancel();
     unawaited(_audio?.cancel());
@@ -369,6 +430,30 @@ class _SocialComposerState extends State<SocialComposer> {
             ],
           ),
           const SizedBox(height: 24),
+          ListTile(
+            leading: const Icon(CupertinoIcons.clock),
+            title: Text(
+              _publishAt == null
+                  ? bi('Publish now', 'இப்போதே வெளியிடு')
+                  : '${bi('Scheduled', 'திட்டமிடப்பட்டது')}: ${_publishAt!.toLocal()}',
+            ),
+            trailing: _publishAt == null
+                ? null
+                : IconButton(
+                    icon: const Icon(CupertinoIcons.xmark),
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() => _publishAt = null),
+                  ),
+            onTap: _busy
+                ? null
+                : () async {
+                    final time = await choosePostTime(context);
+                    if (time != null && mounted) {
+                      setState(() => _publishAt = time);
+                    }
+                  },
+          ),
           FilledButton(
             onPressed: _busy || _recording || _stopping
                 ? null
@@ -412,11 +497,24 @@ class _SocialComposerState extends State<SocialComposer> {
                       );
                       return;
                     }
+                    if (_publishAt != null &&
+                        !_publishAt!.isAfter(DateTime.now())) {
+                      snack(
+                        context,
+                        bi(
+                          'Choose a future time.',
+                          'வருங்கால நேரத்தைத் தேர்ந்தெடுக்கவும்.',
+                        ),
+                      );
+                      return;
+                    }
                     setState(() => _busy = true);
                     try {
+                      await UsernameService.refresh();
                       final db = FirebaseFirestore.instance;
                       final ref = db.collection('social_posts').doc(_postId);
                       _postId = ref.id;
+                      _persistDraft();
                       await db
                           .runTransaction((tx) async {
                             final existing = await tx.get(ref);
@@ -432,21 +530,19 @@ class _SocialComposerState extends State<SocialComposer> {
                               'voice': _voice,
                               'voiceSeconds': _seconds,
                               'tile': _tile,
-                              'createdAt': FieldValue.serverTimestamp(),
+                              'createdAt': _publishAt == null
+                                  ? FieldValue.serverTimestamp()
+                                  : Timestamp.fromDate(_publishAt!),
                             });
                           })
                           .timeout(const Duration(seconds: 20));
+                      _published = true;
+                      final drafts = asMap(settingValue('socialDrafts', {}))
+                        ..remove(_draftOwner);
+                      await setSetting('socialDrafts', drafts);
                       if (context.mounted) Navigator.pop(context);
-                    } catch (_) {
-                      if (context.mounted) {
-                        snack(
-                          context,
-                          bi(
-                            'Could not publish. Your draft is still here.',
-                            'பகிர முடியவில்லை. உங்கள் வரைவு இங்கே உள்ளது.',
-                          ),
-                        );
-                      }
+                    } catch (error) {
+                      if (context.mounted) snack(context, accountError(error));
                     } finally {
                       if (mounted) setState(() => _busy = false);
                     }
@@ -467,7 +563,7 @@ class _SocialComposerState extends State<SocialComposer> {
 }
 
 class _SocialPost extends StatefulWidget {
-  final QueryDocumentSnapshot<Map<String, dynamic>> post;
+  final SocialPostRecord post;
   const _SocialPost({super.key, required this.post});
   @override
   State<_SocialPost> createState() => _SocialPostState();
@@ -490,9 +586,15 @@ class _SocialPostState extends State<_SocialPost> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    backgroundColor: _blue.withValues(alpha: .09),
-                    child: const Icon(CupertinoIcons.person, color: _blue),
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('profiles')
+                        .doc(txt(p, 'authorUid'))
+                        .snapshots(),
+                    builder: (_, profile) => profileAvatar(
+                      txt(profile.data?.data() ?? {}, 'photo'),
+                      radius: 23,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -521,6 +623,22 @@ class _SocialPostState extends State<_SocialPost> {
                   ),
                   if (p['authorUid'] == FirebaseAuth.instance.currentUser?.uid)
                     IconButton(
+                      tooltip: bi('Schedule post', 'பதிவைத் திட்டமிடு'),
+                      icon: const Icon(CupertinoIcons.clock, size: 18),
+                      onPressed: () async {
+                        final time = await choosePostTime(context);
+                        if (time == null) return;
+                        try {
+                          await widget.post.reference
+                              .update({'createdAt': Timestamp.fromDate(time)})
+                              .timeout(CloudSyncService.networkTimeout);
+                        } catch (e) {
+                          if (context.mounted) snack(context, accountError(e));
+                        }
+                      },
+                    ),
+                  if (p['authorUid'] == FirebaseAuth.instance.currentUser?.uid)
+                    IconButton(
                       tooltip: ui('Delete'),
                       icon: const Icon(CupertinoIcons.trash, size: 18),
                       onPressed: () async {
@@ -544,7 +662,9 @@ class _SocialPostState extends State<_SocialPost> {
                         );
                         if (yes == true) {
                           try {
-                            await widget.post.reference.delete();
+                            await widget.post.reference.delete().timeout(
+                              CloudSyncService.networkTimeout,
+                            );
                           } catch (_) {
                             if (context.mounted) {
                               snack(
@@ -559,6 +679,22 @@ class _SocialPostState extends State<_SocialPost> {
                 ],
               ),
               const SizedBox(height: 16),
+              if (photo.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.memory(
+                      socialPhotoBytes(photo),
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => Text(
+                        bi('Photo unavailable', 'புகைப்படம் கிடைக்கவில்லை'),
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
               if (txt(p, 'text').isNotEmpty)
                 Container(
                   width: double.infinity,
@@ -583,21 +719,6 @@ class _SocialPostState extends State<_SocialPost> {
                       fontWeight: p['tile'] == true
                           ? FontWeight.w600
                           : FontWeight.w400,
-                    ),
-                  ),
-                ),
-              if (photo.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.memory(
-                      socialPhotoBytes(photo),
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => Text(
-                        bi('Photo unavailable', 'புகைப்படம் கிடைக்கவில்லை'),
-                      ),
                     ),
                   ),
                 ),

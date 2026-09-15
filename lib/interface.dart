@@ -736,7 +736,7 @@ class _ConversationView extends StatefulWidget {
 class _ConversationViewState extends State<_ConversationView> {
   static const int _voiceSampleRate = 8000;
   static const int _maxVoiceSeconds = 35;
-  int _section = 0;
+  final int _section = 0;
   bool _sending = false;
   bool _recording = false;
   bool _sendingVoice = false;
@@ -1204,55 +1204,6 @@ class _ConversationViewState extends State<_ConversationView> {
         child: Shell(
           child: Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 12, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE9E9EE),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: CupertinoSlidingSegmentedControl<int>(
-                            groupValue: _section,
-                            padding: EdgeInsets.zero,
-                            backgroundColor: Colors.transparent,
-                            thumbColor: Colors.white,
-                            children: const {
-                              0: Padding(
-                                padding: EdgeInsets.symmetric(vertical: 10),
-                                child: AppText('Messages'),
-                              ),
-                              1: Padding(
-                                padding: EdgeInsets.symmetric(vertical: 10),
-                                child: AppText('Tasks'),
-                              ),
-                            },
-                            onValueChanged: (v) {
-                              if (v != null) setState(() => _section = v);
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: ui('New task'),
-                      onPressed: () =>
-                          push(context, const TaskComposerScreen()),
-                      icon: const Icon(
-                        CupertinoIcons.square_pencil,
-                        color: _blue,
-                        size: 26,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               Expanded(
                 child: _section == 1
                     ? tasks.isEmpty

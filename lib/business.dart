@@ -192,16 +192,19 @@ List<Map<String, dynamic>> vendorRows(String box) => Hive.box(box)
     .map((e) => {...asMap(e.value), '_key': e.key})
     .toList();
 double vendorMilkBalance(Iterable<Map<String, dynamic>> entries) =>
-    entries.fold(
-      0.0,
-      (total, row) =>
-          total +
-          ((row['kind'] == 'purchase' || row['kind'] == 'ranch')
-              ? numv(row, 'quantity')
-              : row['kind'] == 'sale'
-              ? -numv(row, 'quantity')
-              : 0),
-    );
+    vendorOpeningBalance(entries) +
+    entries
+        .where((r) => r['stockScope'] == 'vendor_v2')
+        .fold(
+          0.0,
+          (total, r) =>
+              total +
+              (r['kind'] == 'purchase' || r['kind'] == 'collection'
+                  ? numv(r, 'quantity')
+                  : r['kind'] == 'sale'
+                  ? -numv(r, 'quantity')
+                  : 0),
+        );
 double vendorPersonDue(
   String personId,
   Iterable<Map<String, dynamic>> entries,
@@ -248,8 +251,9 @@ class VendorLedger {
       );
     }
     if (!canRecordEntries) throw StateError(ui('Permission denied'));
-    if (!['purchase', 'sale', 'payment'].contains(kind) ||
-        (kind == 'purchase' && person['kind'] != 'supplier') ||
+    if (!['collection', 'purchase', 'sale', 'payment'].contains(kind) ||
+        (['collection', 'purchase'].contains(kind) &&
+            person['kind'] != 'supplier') ||
         (kind == 'sale' && person['kind'] != 'customer') ||
         ![quantity, price, paid, payment].every((n) => n.isFinite && n >= 0) ||
         (kind != 'payment' &&
@@ -273,6 +277,7 @@ class VendorLedger {
         'pendingUpload': false,
         'cloudId': id,
         'kind': kind,
+        'stockScope': 'vendor_v2',
         'personId': personId,
         'personName': txt(person, 'name'),
         'personKind': txt(person, 'kind'),
@@ -293,13 +298,11 @@ class VendorLedger {
       };
       if (CloudSyncService.ready) {
         await CloudSyncService.uploadBox('vendor_people');
-        await CloudSyncService.uploadBox('milk_records');
-        await CloudSyncService.uploadBox('sale_records');
-        await RanchMilkBridge.sync();
+        await SeparateVendorStock.ensureInitialized();
         final db = FirebaseFirestore.instance;
         final stockRef = CloudSyncService.ranch
             .collection('vendor_stock')
-            .doc('milk');
+            .doc('vendor_milk');
         final accountRef = CloudSyncService.ranch
             .collection('vendor_accounts')
             .doc(personId);
@@ -336,7 +339,7 @@ class VendorLedger {
           tx.set(stockRef, {
             'quantity':
                 balance +
-                (kind == 'purchase'
+                (['collection', 'purchase'].contains(kind)
                     ? quantity
                     : kind == 'sale'
                     ? -quantity
@@ -390,7 +393,12 @@ class VendorLedger {
 
 class VendorScreen extends StatefulWidget {
   final int initialSection;
-  const VendorScreen({super.key, this.initialSection = 0});
+  final bool showTabs;
+  const VendorScreen({
+    super.key,
+    this.initialSection = 0,
+    this.showTabs = true,
+  });
   @override
   State<VendorScreen> createState() => _VendorScreenState();
 }
@@ -402,6 +410,13 @@ class _VendorScreenState extends State<VendorScreen> {
   void initState() {
     super.initState();
     if (CloudSyncService.ready) {
+      if (canManageRanch) {
+        unawaited(
+          SeparateVendorStock.ensureInitialized().catchError((Object error) {
+            if (mounted) snack(context, accountError(error));
+          }),
+        );
+      }
       unawaited(
         CloudSyncService.downloadBox(
           'vendor_entries',
@@ -423,7 +438,7 @@ class _VendorScreenState extends State<VendorScreen> {
             all
                 .where(
                   (p) =>
-                      p['kind'] == (_section == 0 ? 'supplier' : 'customer') &&
+                      p['kind'] == (_section < 2 ? 'supplier' : 'customer') &&
                       '${p['name']} ${p['place']}'.toLowerCase().contains(
                         _search.toLowerCase(),
                       ),
@@ -447,20 +462,26 @@ class _VendorScreenState extends State<VendorScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(21, 16, 21, 32),
             children: [
-              LiquidSegmentBar(
-                labels: [
-                  bi('Buy milk', 'பால் வாங்குவது'),
-                  bi('Sell milk', 'பால் விற்பது'),
-                ],
-                index: _section,
-                onChanged: (v) => setState(() {
-                  _section = v;
-                  _search = '';
-                }),
-              ),
+              if (widget.showTabs)
+                LiquidSegmentBar(
+                  labels: [
+                    bi('Collect milk', 'பால் சேகரிப்பு'),
+                    bi('Buy milk', 'பால் கொள்முதல்'),
+                    bi('Sell milk', 'பால் விற்பது'),
+                  ],
+                  index: _section,
+                  onChanged: (v) => setState(() {
+                    _section = v;
+                    _search = '';
+                  }),
+                ),
               const SizedBox(height: 24),
               Text(
-                bi('Your milk business', 'உங்கள் பால் வணிகம்'),
+                _section == 0
+                    ? bi('Collect milk', 'பால் சேகரிப்பு')
+                    : _section == 1
+                    ? bi('Buy milk', 'பால் கொள்முதல்')
+                    : bi('Sell milk', 'பால் விற்பனை'),
                 style: const TextStyle(
                   fontSize: 30,
                   fontWeight: FontWeight.w700,
@@ -477,6 +498,7 @@ class _VendorScreenState extends State<VendorScreen> {
               ),
               const SizedBox(height: 20),
               Glass(
+                onTap: () => push(context, const MilkOriginScreen()),
                 padding: const EdgeInsets.all(22),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -515,6 +537,11 @@ class _VendorScreenState extends State<VendorScreen> {
                       spacing: 24,
                       runSpacing: 12,
                       children: [
+                        _BusinessMetric(
+                          label: bi('Collected today', 'இன்று சேகரித்தது'),
+                          value:
+                              '${_vendorSum(today, 'collection', 'quantity').toStringAsFixed(1)} L',
+                        ),
                         _BusinessMetric(
                           label: bi('Bought today', 'இன்று வாங்கியது'),
                           value:
@@ -565,8 +592,15 @@ class _VendorScreenState extends State<VendorScreen> {
                           CupertinoIcons.chevron_right,
                           size: 16,
                         ),
-                        onTap: () =>
-                            push(context, VendorPersonScreen(person: p)),
+                        onTap: () => push(
+                          context,
+                          VendorPersonScreen(
+                            person: p,
+                            intakeKind: _section == 0
+                                ? 'collection'
+                                : 'purchase',
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -576,7 +610,7 @@ class _VendorScreenState extends State<VendorScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      _section == 0
+                      _section < 2
                           ? bi('Milk suppliers', 'பால் கொடுப்பவர்கள்')
                           : bi('Customers', 'வாடிக்கையாளர்கள்'),
                       style: const TextStyle(
@@ -591,7 +625,7 @@ class _VendorScreenState extends State<VendorScreen> {
                       onPressed: () => push(
                         context,
                         VendorPersonForm(
-                          kind: _section == 0 ? 'supplier' : 'customer',
+                          kind: _section < 2 ? 'supplier' : 'customer',
                         ),
                       ),
                       icon: const Icon(CupertinoIcons.plus),
@@ -642,7 +676,13 @@ class _VendorScreenState extends State<VendorScreen> {
                         CupertinoIcons.chevron_right,
                         size: 16,
                       ),
-                      onTap: () => push(context, VendorPersonScreen(person: p)),
+                      onTap: () => push(
+                        context,
+                        VendorPersonScreen(
+                          person: p,
+                          intakeKind: _section == 0 ? 'collection' : 'purchase',
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -679,27 +719,33 @@ class VendorStockScreen extends StatelessWidget {
               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 20),
-            Glass(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                '${vendorMilkBalance(rows).toStringAsFixed(2)} L',
-                style: const TextStyle(
-                  fontSize: 42,
-                  fontWeight: FontWeight.w700,
+            GestureDetector(
+              onTap: () => push(context, const MilkOriginScreen()),
+              child: Glass(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  '${vendorMilkBalance(rows).toStringAsFixed(2)} L',
+                  style: const TextStyle(
+                    fontSize: 42,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 20),
             const SizedBox(height: 20),
-            for (final r in rows.where((r) => r['kind'] != 'payment'))
+            for (final r in rows.where(
+              (r) => r['kind'] != 'payment' && r['kind'] != 'ranch',
+            ))
               ListTile(
+                onTap: () => push(context, MilkOriginScreen(entry: r)),
                 title: AppText(txt(r, 'personName')),
                 subtitle: Text('${txt(r, 'date')} · ${txt(r, 'time')}'),
                 trailing: Text(
-                  '${r['kind'] == 'purchase' || (r['kind'] == 'ranch' && numv(r, 'quantity') >= 0) ? '+' : '−'}${numv(r, 'quantity').abs().toStringAsFixed(2)} L',
+                  '${['collection', 'purchase'].contains(r['kind']) || (r['kind'] == 'ranch' && numv(r, 'quantity') >= 0) ? '+' : '−'}${numv(r, 'quantity').abs().toStringAsFixed(2)} L',
                   style: TextStyle(
                     color:
-                        r['kind'] == 'purchase' ||
+                        ['collection', 'purchase'].contains(r['kind']) ||
                             (r['kind'] == 'ranch' && numv(r, 'quantity') >= 0)
                         ? Ink.green
                         : Ink.blue,
@@ -754,6 +800,11 @@ class VendorReportSummary extends StatelessWidget {
                 runSpacing: 16,
                 children: [
                   _BusinessMetric(
+                    label: bi('Collected', 'சேகரித்த பால்'),
+                    value:
+                        '${_vendorSum(rows, 'collection', 'quantity').toStringAsFixed(2)} L',
+                  ),
+                  _BusinessMetric(
                     label: bi('Purchased', 'வாங்கிய பால்'),
                     value:
                         '${_vendorSum(rows, 'purchase', 'quantity').toStringAsFixed(2)} L',
@@ -766,7 +817,7 @@ class VendorReportSummary extends StatelessWidget {
                   _BusinessMetric(
                     label: bi('Purchase cost', 'வாங்கிய செலவு'),
                     value:
-                        '${currencySymbol()}${_vendorSum(rows, 'purchase', 'amount').toStringAsFixed(2)}',
+                        '${currencySymbol()}${(_vendorSum(rows, 'purchase', 'amount') + _vendorSum(rows, 'collection', 'amount')).toStringAsFixed(2)}',
                   ),
                   _BusinessMetric(
                     label: bi('Sales value', 'விற்பனைத் தொகை'),
@@ -1052,7 +1103,12 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
 
 class VendorPersonScreen extends StatefulWidget {
   final Map<String, dynamic> person;
-  const VendorPersonScreen({super.key, required this.person});
+  final String intakeKind;
+  const VendorPersonScreen({
+    super.key,
+    required this.person,
+    this.intakeKind = 'purchase',
+  });
   @override
   State<VendorPersonScreen> createState() => _VendorPersonScreenState();
 }
@@ -1169,7 +1225,9 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                           value: false,
                           label: Text(
                             supplier
-                                ? bi('Buy milk', 'பால் வாங்கு')
+                                ? widget.intakeKind == 'collection'
+                                      ? bi('Collect milk', 'பால் சேகரிப்பு')
+                                      : bi('Buy milk', 'பால் வாங்கு')
                                 : bi('Deliver milk', 'பால் விற்பனை'),
                           ),
                         ),
@@ -1208,7 +1266,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (!supplier)
+                      if (!supplier || widget.intakeKind == 'collection')
                         Wrap(
                           spacing: 12,
                           children: [
@@ -1252,7 +1310,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                                   kind: _payment
                                       ? 'payment'
                                       : supplier
-                                      ? 'purchase'
+                                      ? widget.intakeKind
                                       : 'sale',
                                   quantity: double.tryParse(_qty.text) ?? 0,
                                   price: double.tryParse(_price.text) ?? 0,
@@ -1315,11 +1373,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                       children: [
                         ListTile(
                           title: Text(
-                            '${ui(r['kind'] == 'purchase'
-                                ? 'Purchased'
-                                : r['kind'] == 'sale'
-                                ? 'Sold'
-                                : 'Payment')} · ${currencySymbol()}${numv(r, 'amount').toStringAsFixed(2)}',
+                            '${vendorEntryLabel(txt(r, 'kind'))} · ${currencySymbol()}${numv(r, 'amount').toStringAsFixed(2)}',
                           ),
                           subtitle: Text(
                             '${txt(r, 'date')} · ${txt(r, 'time')}\n${r['kind'] == 'payment' ? '' : '${numv(r, 'quantity')} L × ${currencySymbol()}${numv(r, 'price')}\n'}${txt(r, 'notes')}',
