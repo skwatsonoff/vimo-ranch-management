@@ -130,9 +130,32 @@ void main() {
     await tester.tap(find.text('Sell milk'));
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(VendorScreen), findsOneWidget);
-    await tester.tap(find.text('Stock'));
+    await tester.tap(find.text('Milk stock'));
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('Vendor milk stock'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Ranch sell contains milk, cows, calves and manure', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: RanchWorkspace(onOpenCard: (_) {})),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Sell'));
+    await tester.pump(const Duration(milliseconds: 600));
+    for (final label in ['Milk', 'Cow', 'Calf', 'Manure']) {
+      expect(find.text(label), findsWidgets);
+    }
+    expect(find.byType(VendorScreen), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -188,7 +211,7 @@ void main() {
         const MaterialApp(home: Scaffold(body: VendorScreen())),
       );
       await tester.pump(const Duration(milliseconds: 600));
-      expect(find.text('Your milk business'), findsOneWidget);
+      expect(find.text('Collect milk'), findsWidgets);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(
         const MaterialApp(home: PreferencesScreen(onboarding: true)),
@@ -212,26 +235,32 @@ void main() {
       expect(navigationOrder(), ['Social', 'Ranch', 'Vendor', 'Chat']);
     },
   );
-  test(
-    'ranch milk credits and corrections join vendor inventory without affecting credit',
-    () {
-      final rows = <Map<String, dynamic>>[
-        {'kind': 'ranch', 'quantity': 10},
-        {'kind': 'ranch', 'quantity': -3},
-        {'kind': 'purchase', 'quantity': 5},
-        {'kind': 'sale', 'quantity': 4},
-      ];
-      expect(vendorMilkBalance(rows), 8);
-      expect(
-        ranchSourceMilk('sale_records', {'type': 'Milk', 'quantity': 3}),
-        -3,
-      );
-      expect(
-        ranchSourceMilk('sale_records', {'type': 'Cow', 'quantity': 1}),
-        0,
-      );
-    },
-  );
+  test('ranch milk credits and corrections never enter vendor inventory', () {
+    final rows = <Map<String, dynamic>>[
+      {'kind': 'ranch', 'quantity': 10},
+      {'kind': 'ranch', 'quantity': -3},
+      {'kind': 'purchase', 'quantity': 5},
+      {'kind': 'sale', 'quantity': 4},
+    ];
+    expect(vendorMilkBalance(rows), 1);
+    expect(
+      ranchSourceMilk('sale_records', {'type': 'Milk', 'quantity': 3}),
+      -3,
+    );
+    expect(ranchSourceMilk('sale_records', {'type': 'Cow', 'quantity': 1}), 0);
+  });
+  test('vendor collection and bulk purchases fund only vendor sales', () {
+    final rows = <Map<String, dynamic>>[
+      {'kind': 'ranch', 'quantity': 100},
+      {'kind': 'purchase', 'quantity': 5},
+      {'kind': 'sale', 'quantity': 8},
+      {'kind': 'collection', 'quantity': 10, 'stockScope': 'vendor_v2'},
+      {'kind': 'purchase', 'quantity': 20, 'stockScope': 'vendor_v2'},
+      {'kind': 'sale', 'quantity': 7, 'stockScope': 'vendor_v2'},
+    ];
+    expect(vendorOpeningBalance(rows), 0);
+    expect(vendorMilkBalance(rows), 23);
+  });
   test('username normalization and format reject ambiguous handles', () {
     expect(normalizeUsername(' Kumar_1 '), 'kumar_1');
     expect(validUsername('kumar_1'), isTrue);

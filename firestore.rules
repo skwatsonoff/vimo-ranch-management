@@ -13,8 +13,8 @@ service cloud.firestore {
     function isMember(ranchId) {
       return signedIn()
         && exists(memberPath(ranchId))
-        && get(memberPath(ranchId)).data.active != false
-        && get(memberPath(ranchId)).data.status == 'active';
+        && get(memberPath(ranchId)).data.get('active', true) != false
+        && get(memberPath(ranchId)).data.get('status', 'active') == 'active';
     }
 
     function memberRole(ranchId) {
@@ -91,7 +91,7 @@ service cloud.firestore {
     match /profiles/{uid} {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['username', 'photo', 'bio', 'link', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['username', 'photo', 'bio', 'link', 'updatedAt', 'displayName', 'displayNameFold', 'place', 'whatsapp', 'shareRanch', 'ranchId', 'ranchName', 'shareShop', 'shopName', 'shopDetails'])
         && request.resource.data.username == getAfter(/databases/$(database)/documents/users/$(uid)).data.username
         && request.resource.data.get('photo', '') is string
         && request.resource.data.get('photo', '').size() <= 600000
@@ -99,7 +99,36 @@ service cloud.firestore {
         && request.resource.data.get('bio', '') is string && request.resource.data.get('bio', '').size() <= 160
         && request.resource.data.get('link', '') is string && request.resource.data.get('link', '').size() <= 300
         && (request.resource.data.get('link', '') == '' || request.resource.data.link.matches('^https?://[^ /@]+[.][^ /@]+.*$'))
+        && request.resource.data.get('displayName', '') is string && request.resource.data.get('displayName', '').size() <= 80
+        && request.resource.data.get('displayNameFold', '') is string && request.resource.data.get('displayNameFold', '').size() <= 160
+        && request.resource.data.get('place', '') is string && request.resource.data.get('place', '').size() <= 120
+        && request.resource.data.get('whatsapp', '') is string && (request.resource.data.get('whatsapp', '') == '' || request.resource.data.whatsapp.matches('^[+]?[0-9]{7,15}$'))
+        && request.resource.data.get('shareRanch', false) is bool
+        && request.resource.data.get('ranchName', '') is string && request.resource.data.get('ranchName', '').size() <= 160
+        && (request.resource.data.get('shareRanch', false) == false || isMember(request.resource.data.ranchId))
+        && request.resource.data.get('shareShop', false) is bool
+        && request.resource.data.get('shopName', '') is string && request.resource.data.get('shopName', '').size() <= 100
+        && request.resource.data.get('shopDetails', '') is string && request.resource.data.get('shopDetails', '').size() <= 500
         && request.resource.data.updatedAt == request.time;
+      match /contacts/{peer} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid && peer != uid
+          && exists(/databases/$(database)/documents/profiles/$(peer))
+          && request.resource.data.keys().hasOnly(['category', 'createdAt'])
+          && request.resource.data.category == 'personal' && request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+      match /cows/{cow} {
+        function profile() { return get(/databases/$(database)/documents/profiles/$(uid)).data; }
+        allow read: if signedIn() && (request.auth.uid == uid || (profile().get('shareRanch', false) == true && exists(/databases/$(database)/documents/ranches/$(profile().ranchId)/members/$(uid)) && get(/databases/$(database)/documents/ranches/$(profile().ranchId)/members/$(uid)).data.get('active', true) != false && get(/databases/$(database)/documents/ranches/$(profile().ranchId)/members/$(uid)).data.get('status', 'active') == 'active'));
+        allow create, update: if signedIn() && request.auth.uid == uid && profile().get('shareRanch', false) == true && isMember(profile().ranchId)
+          && request.resource.data.keys().hasOnly(['name', 'cowId', 'photo', 'breed'])
+          && request.resource.data.name is string && request.resource.data.name.size() <= 160
+          && request.resource.data.cowId is string && request.resource.data.cowId.size() <= 160
+          && request.resource.data.photo is string && request.resource.data.photo.size() <= 700000
+          && request.resource.data.breed is string && request.resource.data.breed.size() <= 160;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
       match /followers/{viewer} {
         allow read: if signedIn();
         allow create: if signedIn() && request.auth.uid == viewer && viewer != uid
@@ -140,7 +169,11 @@ service cloud.firestore {
           && data.authorName is string && data.authorName.size() <= 120
           && (!('authorUsername' in data) || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == data.authorUsername);
       }
-      allow read: if signedIn();
+      // The composer reads its new ID before writing in a transaction.
+      // Keep that missing-document check out of list-query authorization.
+      allow get: if signedIn() && !exists(/databases/$(database)/documents/social_posts/$(postId));
+      allow get, list: if signedIn() && resource.data.createdAt <= request.time;
+      allow get, list: if signedIn() && resource.data.authorUid == request.auth.uid;
       allow create: if validAuthor(request.resource.data)
         && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'authorUsername', 'text', 'photo', 'voice', 'voiceSeconds', 'tile', 'createdAt'])
         && request.resource.data.text is string && request.resource.data.text.size() <= 2000
@@ -149,8 +182,12 @@ service cloud.firestore {
         && request.resource.data.photo.size() + request.resource.data.voice.size() <= 850000
         && request.resource.data.text.size() + request.resource.data.photo.size() + request.resource.data.voice.size() > 0
         && request.resource.data.voiceSeconds is int && request.resource.data.voiceSeconds >= 0 && request.resource.data.voiceSeconds <= 20
-        && request.resource.data.tile is bool && request.resource.data.createdAt == request.time;
-      allow update: if false;
+        && request.resource.data.tile is bool && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdAt >= request.time && request.resource.data.createdAt <= request.time + duration.value(366, 'd');
+      allow update: if signedIn() && resource.data.authorUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt is timestamp && request.resource.data.createdAt > request.time
+        && request.resource.data.createdAt <= request.time + duration.value(366, 'd');
       allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
       match /likes/{userId} {
         allow read: if signedIn();
@@ -169,6 +206,28 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
         allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
         allow update: if false;
+      }
+    }
+
+    match /direct_chats/{chat} {
+      function participant() { return signedIn() && request.auth.uid in resource.data.participants; }
+      allow read: if participant();
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['participants'])
+        && request.resource.data.participants is list && request.resource.data.participants.size() == 2
+        && request.resource.data.participants[0] is string && request.resource.data.participants[1] is string
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && chat == request.resource.data.participants[0] + '_' + request.resource.data.participants[1]
+        && request.auth.uid in request.resource.data.participants;
+      allow update: if participant() && request.resource.data == resource.data;
+      allow delete: if false;
+      match /messages/{message} {
+        function member() { return signedIn() && request.auth.uid in get(/databases/$(database)/documents/direct_chats/$(chat)).data.participants; }
+        allow read: if member();
+        allow create: if member() && request.resource.data.keys().hasOnly(['senderUid', 'text', 'createdAt'])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
       }
     }
 
@@ -250,7 +309,7 @@ service cloud.firestore {
           && vendorEntry(entryId).createdByUid == request.auth.uid;
       }
       function stockChange(entry) {
-        return entry.kind in ['purchase', 'ranch'] ? entry.quantity : entry.kind == 'sale' ? -entry.quantity : 0;
+        return entry.kind in ['collection', 'purchase', 'ranch'] ? entry.quantity : entry.kind == 'sale' ? -entry.quantity : 0;
       }
       function sourceMilk(box, id) {
         let path = /databases/$(database)/documents/ranches/$(ranchId)/$(box)/$(id);
@@ -283,11 +342,17 @@ service cloud.firestore {
       }
       match /vendor_stock/{stockId} {
         allow read: if isMember(ranchId);
-        allow create, update: if canRecordEntries(ranchId) && stockId == 'milk'
+        // One-time, admin-owned cutover. Retain the original ledger and stock.
+        allow create: if isAdmin(ranchId) && stockId == 'vendor_milk'
+          && request.resource.data.keys().hasOnly(['quantity', 'entryId'])
+          && request.resource.data.entryId == 'migration_v2'
+          && request.resource.data.quantity is number && request.resource.data.quantity >= 0;
+        allow create, update: if canRecordEntries(ranchId) && stockId == 'vendor_milk'
           && request.resource.data.keys().hasOnly(['quantity', 'entryId'])
           && newVendorEntry(request.resource.data.entryId)
-          && request.resource.data.quantity is number
-          && (request.resource.data.quantity >= 0 || vendorEntry(request.resource.data.entryId).kind != 'sale')
+          && vendorEntry(request.resource.data.entryId).stockScope == 'vendor_v2'
+          && vendorEntry(request.resource.data.entryId).kind in ['collection', 'purchase', 'sale', 'payment']
+          && request.resource.data.quantity is number && request.resource.data.quantity >= 0
           && math.abs(request.resource.data.quantity - ((resource == null ? 0 : resource.data.quantity) + stockChange(vendorEntry(request.resource.data.entryId)))) < 0.00001;
         allow delete: if false;
       }
@@ -303,24 +368,21 @@ service cloud.firestore {
       }
       match /vendor_entries/{entryId} {
         allow read: if isMember(ranchId);
-        allow create: if canRecordEntries(ranchId) && request.resource.data.kind == 'ranch'
-          && request.resource.data.get('amount', 0) == 0 && request.resource.data.get('paid', 0) == 0
-          && request.resource.data.get('personId', '') == ''
-          && validRanchEntry(request.resource.data, entryId);
         allow create: if canRecordEntries(ranchId)
           && request.resource.data.createdByUid == request.auth.uid
           && request.resource.data.cloudId == entryId
           && request.resource.data.serverCreatedAt == request.time
-          && request.resource.data.kind in ['purchase', 'sale', 'payment']
+          && request.resource.data.stockScope == 'vendor_v2'
+          && request.resource.data.kind in ['collection', 'purchase', 'sale', 'payment']
           && get(/databases/$(database)/documents/ranches/$(ranchId)/vendor_people/$(request.resource.data.personId)).data.kind == request.resource.data.personKind
-          && (request.resource.data.kind == 'payment' || (request.resource.data.kind == 'purchase' && request.resource.data.personKind == 'supplier') || (request.resource.data.kind == 'sale' && request.resource.data.personKind == 'customer'))
+          && (request.resource.data.kind == 'payment' || (request.resource.data.kind in ['collection', 'purchase'] && request.resource.data.personKind == 'supplier') || (request.resource.data.kind == 'sale' && request.resource.data.personKind == 'customer'))
           && request.resource.data.quantity is number && request.resource.data.quantity >= 0
           && request.resource.data.price is number && request.resource.data.price >= 0
           && request.resource.data.amount is number && request.resource.data.amount > 0
           && request.resource.data.paid is number && request.resource.data.paid >= 0 && request.resource.data.paid <= request.resource.data.amount
           && request.resource.data.notes is string && request.resource.data.notes.size() <= 500
           && (request.resource.data.kind == 'payment' || (request.resource.data.quantity > 0 && request.resource.data.price > 0 && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011))
-          && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_stock/milk).data.entryId == entryId
+          && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_stock/vendor_milk).data.entryId == entryId
           && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_accounts/$(request.resource.data.personId)).data.entryId == entryId;
         allow update: if canRecordEntries(ranchId)
           && resource.data.createdByUid == request.auth.uid

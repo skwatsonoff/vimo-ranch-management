@@ -5,6 +5,7 @@ const fs = require('node:fs');
  const env=await initializeTestEnvironment({projectId:'demo-vimo',firestore:{host:'127.0.0.1',port:8088,rules:fs.readFileSync('firestore.rules','utf8')}});
  let checks=0;
  try {
+  await env.clearFirestore();
   const a=env.authenticatedContext('profile-a').firestore(), b=env.authenticatedContext('profile-b').firestore();
   async function claim(db,uid,name) {
    return runTransaction(db,async tx=>{
