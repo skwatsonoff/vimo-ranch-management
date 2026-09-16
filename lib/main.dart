@@ -130,8 +130,11 @@ Future<void> main() async {
     }
     if (kIsWeb) {
       FirebaseFirestore.instance.settings = const Settings(
-        persistenceEnabled: false,
-        webExperimentalForceLongPolling: true,
+        // Keep watch targets in IndexedDB across reconnects. The memory-only
+        // cache plus forced long polling can hit the SDK's ca9/b815 target
+        // teardown race and poison every subsequent read and write.
+        persistenceEnabled: true,
+        webExperimentalAutoDetectLongPolling: true,
       );
     }
     if (vimoUseEmulators) {
@@ -5138,9 +5141,8 @@ class AutoSyncService {
     Object? failure;
     try {
       await settings.put('syncStatus', 'Syncing...');
-      await CloudSyncService.db.enableNetwork().timeout(
-        CloudSyncService.networkTimeout,
-      );
+      // Firestore reconnects automatically. Do not reset its network/backoff
+      // state on every save while listeners and transient reads are active.
       final member =
           await RanchAccessService.memberRef(ranchId(), RanchAccessService.uid)
               .get(const GetOptions(source: Source.server))
