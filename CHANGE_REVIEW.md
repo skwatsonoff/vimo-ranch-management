@@ -1,5 +1,13 @@
 VIMO sync and community changes — review status
 
+Released 2026-09-16: PR #2 merged (`ace79b3`), with the final browser sync
+transport correction in `2e65d34`. Hosting, Firestore rules and indexes are live
+at https://my-ranch-sync.web.app. Fresh signed-in production verification showed
+Synced, zero pending records and a current last-sync timestamp; profile feed and
+username availability loaded without the previously reproduced SDK assertion.
+See CODEX_HANDOFF.md's release section for evidence. Older blockers below are
+historical and superseded by this release.
+
 2026-09-15 laptop update: the prior emulator blocker is resolved. All 89 original
 security checks plus seven authenticated HTTP feed checks pass. All 57 Flutter
 tests pass. Browser integration reproduced and fixed the shared Firestore
@@ -10,7 +18,7 @@ username creation and post publication/feed rendering were verified locally.
 The profile header is more compact and its Ranch tab has a clear cow silhouette.
 See the newest section in CODEX_HANDOFF.md for exact evidence and release status.
 
-LATEST CONTINUATION: Read CODEX_HANDOFF.md. GitHub emulator CI now runs but
+HISTORICAL CHECKPOINT: Read CODEX_HANDOFF.md. GitHub emulator CI now runs but
 found a social_posts GET permission failure; fix it before release. The latest
 full Flutter suite passed 57 tests.
 ==============================================

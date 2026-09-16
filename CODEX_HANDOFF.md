@@ -1,5 +1,32 @@
 # Continue VIMO on the laptop
 
+## Released — 2026-09-16 (supersedes all historical blockers below)
+
+- PR #2 was merged into `codex/ranch-vendor-market-glass` as `ace79b3`.
+  The laptop now checks out that branch. Additional sync correction: `2e65d34`.
+- Production hosting, Firestore rules and indexes were deployed successfully to
+  https://my-ranch-sync.web.app. The production build uses no emulator flags.
+- Fresh production verification reproduced the SDK assertion after the first
+  release, so reducing shell rebuilds alone was insufficient. The follow-up uses
+  IndexedDB persistence and automatic transport detection, and stops resetting
+  network/backoff state on every synchronization pass.
+- After deploying the follow-up, the user's signed-in `myvimo` ranch progressed
+  from three pending changes to `Synced`, `Pending Records 0`, and
+  `Last Synced Today 18:10`. No new console errors/warnings were recorded while
+  navigating profile/settings/sync and checking username availability.
+- Production profile feed loaded successfully with `No posts yet`; follower
+  counts resolved. The existing `skwatson` username lookup returned available,
+  saved successfully, and the profile editor then displayed `@skwatson`.
+- Release build passed; source analysis has no errors/warnings (two existing
+  informational lints); all six sync coordinator checks passed again. Previous
+  validation: 57 Flutter tests and 96 Firestore security checks passed, with
+  GitHub CI successful on `94017bf` before merging.
+- No fabricated posts, livestock, milk or financial records were added to the
+  production account. Cross-account/offline record tests used the demo emulator.
+
+The sections below retain the earlier investigation history; their release
+blockers and old working-branch instructions are no longer current.
+
 ## Laptop verification — 2026-09-15 (supersedes blockers below)
 
 - Reproduced the same Firestore 12.19.0 `ca9` / `b815` watch-stream crash in
