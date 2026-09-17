@@ -41,6 +41,26 @@ class SocialFeed {
     final host = vimoUseEmulators
         ? 'http://127.0.0.1:8088'
         : 'https://firestore.googleapis.com';
+    final documentsPath = 'projects/$project/databases/(default)/documents';
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+    // Use a server-confirmed boundary. Even a slightly fast device clock makes
+    // createdAt <= deviceNow broader than the rules' request.time permission.
+    String? publishedThrough;
+    if (!own) {
+      final clockResponse = await http.post(
+        Uri.parse('$host/v1/$documentsPath:batchGet'),
+        headers: headers,
+        body: jsonEncode({'documents': ['$documentsPath/users/${user.uid}']}),
+      ).timeout(CloudSyncService.networkTimeout);
+      if (clockResponse.statusCode != 200) {
+        throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+      }
+      final clockRows = jsonDecode(clockResponse.body) as List<dynamic>;
+      publishedThrough = clockRows.first['readTime'] as String;
+    }
     final filters = <Map<String, dynamic>>[
       if (authorUid != null)
         {
@@ -56,7 +76,7 @@ class SocialFeed {
             'field': {'fieldPath': 'createdAt'},
             'op': 'LESS_THAN_OR_EQUAL',
             'value': {
-              'timestampValue': DateTime.now().toUtc().toIso8601String(),
+              'timestampValue': publishedThrough,
             },
           },
         },
@@ -64,12 +84,9 @@ class SocialFeed {
     final response = await http
         .post(
           Uri.parse(
-            '$host/v1/projects/$project/databases/(default)/documents:runQuery',
+            '$host/v1/$documentsPath:runQuery',
           ),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
+          headers: headers,
           body: jsonEncode({
             'structuredQuery': {
               'from': [
