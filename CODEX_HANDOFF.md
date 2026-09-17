@@ -1,5 +1,18 @@
 # Continue VIMO on the laptop
 
+## Social feed release verification — 2026-09-17
+
+- Fixed the remaining production Social error caused by a device-time query
+  boundary exceeding Firestore Rules `request.time`. Public feeds now obtain a
+  server-confirmed read time before querying visible posts.
+- The expanded HTTP security suite passed all 11 checks, including fast-device
+  denial, scheduled-post privacy and server-time feed success.
+- Production web build and Firebase Hosting deployment succeeded. Fresh signed-in
+  verification loaded the `@skwatson` feed with Schedule/Delete/Comments controls
+  and no new browser console errors.
+- Release commit `0ea815c` is on both GitHub `main` and
+  `codex/ranch-vendor-market-glass`.
+
 ## Released — 2026-09-16 (supersedes all historical blockers below)
 
 - PR #2 was merged into `codex/ranch-vendor-market-glass` as `ace79b3`.

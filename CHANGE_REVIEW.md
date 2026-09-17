@@ -1,5 +1,11 @@
 VIMO sync and community changes — review status
 
+2026-09-17 final verification: commit `0ea815c` fixes the live Social feed by
+using a Firestore server read time for scheduled-post visibility queries. All 11
+HTTP security checks passed, the production build was deployed, and the signed-in
+live feed loaded without new console errors. GitHub `main` and the release branch
+both point to this release commit.
+
 Released 2026-09-16: PR #2 merged (`ace79b3`), with the final browser sync
 transport correction in `2e65d34`. Hosting, Firestore rules and indexes are live
 at https://my-ranch-sync.web.app. Fresh signed-in production verification showed
