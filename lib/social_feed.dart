@@ -21,6 +21,26 @@ dynamic decodeSocialField(Map<String, dynamic> field) {
   if (field.containsKey('doubleValue')) return field['doubleValue'];
   if (field.containsKey('booleanValue')) return field['booleanValue'];
   if (field.containsKey('stringValue')) return field['stringValue'];
+  if (field.containsKey('arrayValue')) {
+    final values = (field['arrayValue'] as Map<String, dynamic>)['values'];
+    return values is List
+        ? [
+            for (final value in values)
+              decodeSocialField(Map<String, dynamic>.from(value as Map)),
+          ]
+        : <dynamic>[];
+  }
+  if (field.containsKey('mapValue')) {
+    final fields = (field['mapValue'] as Map<String, dynamic>)['fields'];
+    return fields is Map
+        ? {
+            for (final entry in fields.entries)
+              '${entry.key}': decodeSocialField(
+                Map<String, dynamic>.from(entry.value as Map),
+              ),
+          }
+        : <String, dynamic>{};
+  }
   return null;
 }
 

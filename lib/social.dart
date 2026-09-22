@@ -31,21 +31,11 @@ class SocialScreen extends StatefulWidget {
 }
 
 class _SocialScreenState extends State<SocialScreen> {
-  Timer? _feedClock;
   Future<List<SocialPostRecord>>? _feed;
   @override
   void initState() {
     super.initState();
     _refreshFeed();
-    _feedClock = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(_refreshFeed);
-    });
-  }
-
-  @override
-  void dispose() {
-    _feedClock?.cancel();
-    super.dispose();
   }
 
   void _refreshFeed() {
@@ -58,36 +48,6 @@ class _SocialScreenState extends State<SocialScreen> {
   Widget build(BuildContext context) => Shell(
     child: Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(21, 16, 21, 20),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      bi('The VIMO community', 'VIMO சமூகம்'),
-                      style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -.8,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      bi(
-                        'Share a moment. Ask for help.',
-                        'அனுபவங்களைப் பகிருங்கள். உதவி கேளுங்கள்.',
-                      ),
-                      style: const TextStyle(color: Ink.muted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: _feed == null
               ? Center(
@@ -177,7 +137,6 @@ class SocialComposer extends StatefulWidget {
 
 class _SocialComposerState extends State<SocialComposer> {
   String? _postId;
-  DateTime? _publishAt;
   final _text = TextEditingController();
   final _recorder = AudioRecorder();
   BytesBuilder _pcm = BytesBuilder(copy: false);
@@ -185,7 +144,7 @@ class _SocialComposerState extends State<SocialComposer> {
   Completer<void>? _audioDone;
   Timer? _timer;
   bool _pickingPhoto = false;
-  bool _recording = false, _busy = false, _tile = false, _stopping = false;
+  bool _recording = false, _busy = false, _stopping = false;
   String _photo = '', _voice = '';
   int _seconds = 0;
   bool _published = false;
@@ -200,9 +159,7 @@ class _SocialComposerState extends State<SocialComposer> {
     _text.text = txt(draft, 'text');
     _photo = txt(draft, 'photo');
     _voice = txt(draft, 'voice');
-    _tile = draft['tile'] == true;
     _seconds = toInt(draft['seconds']);
-    _publishAt = DateTime.tryParse(txt(draft, 'publishAt'));
     _postId = txt(draft, 'postId').isEmpty ? null : txt(draft, 'postId');
     _text.addListener(_persistDraft);
   }
@@ -223,8 +180,6 @@ class _SocialComposerState extends State<SocialComposer> {
           'photo': _photo,
           'voice': _voice,
           'seconds': _seconds,
-          'tile': _tile,
-          'publishAt': _publishAt?.toIso8601String() ?? '',
           'postId': _postId ?? '',
         },
       }),
@@ -324,7 +279,7 @@ class _SocialComposerState extends State<SocialComposer> {
           Text(
             accountUsername.isEmpty
                 ? bi('Choose a username', 'பயனர்பெயரைத் தேர்ந்தெடுங்கள்')
-                : '@$accountUsername',
+                : accountUsername,
             style: const TextStyle(
               color: _blue,
               fontSize: 18,
@@ -332,25 +287,15 @@ class _SocialComposerState extends State<SocialComposer> {
             ),
           ),
           const SizedBox(height: 24),
-          TextField(
+          MentionInput(
             controller: _text,
             minLines: 5,
             maxLines: 10,
             maxLength: 2000,
-            decoration: InputDecoration(
-              hintText: bi(
+            hint: bi(
                 'What would you like to share?',
                 'எதைப் பகிர விரும்புகிறீர்கள்?',
               ),
-            ),
-          ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              bi('Colored text background', 'உரைக்கு வண்ணப் பின்னணி'),
-            ),
-            value: _tile,
-            onChanged: (v) => setState(() => _tile = v),
           ),
           if (_photo.isNotEmpty) ...[
             ClipRRect(
@@ -430,30 +375,6 @@ class _SocialComposerState extends State<SocialComposer> {
             ],
           ),
           const SizedBox(height: 24),
-          ListTile(
-            leading: const Icon(CupertinoIcons.clock),
-            title: Text(
-              _publishAt == null
-                  ? bi('Publish now', 'இப்போதே வெளியிடு')
-                  : '${bi('Scheduled', 'திட்டமிடப்பட்டது')}: ${_publishAt!.toLocal()}',
-            ),
-            trailing: _publishAt == null
-                ? null
-                : IconButton(
-                    icon: const Icon(CupertinoIcons.xmark),
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() => _publishAt = null),
-                  ),
-            onTap: _busy
-                ? null
-                : () async {
-                    final time = await choosePostTime(context);
-                    if (time != null && mounted) {
-                      setState(() => _publishAt = time);
-                    }
-                  },
-          ),
           FilledButton(
             onPressed: _busy || _recording || _stopping
                 ? null
@@ -497,17 +418,6 @@ class _SocialComposerState extends State<SocialComposer> {
                       );
                       return;
                     }
-                    if (_publishAt != null &&
-                        !_publishAt!.isAfter(DateTime.now())) {
-                      snack(
-                        context,
-                        bi(
-                          'Choose a future time.',
-                          'வருங்கால நேரத்தைத் தேர்ந்தெடுக்கவும்.',
-                        ),
-                      );
-                      return;
-                    }
                     setState(() => _busy = true);
                     try {
                       await UsernameService.refresh();
@@ -526,13 +436,12 @@ class _SocialComposerState extends State<SocialComposer> {
                               'authorName': accountUsername,
                               'authorUsername': accountUsername,
                               'text': _text.text.trim(),
+                              'mentions': mentionSelections[_text] ?? const [],
                               'photo': _photo,
                               'voice': _voice,
                               'voiceSeconds': _seconds,
-                              'tile': _tile,
-                              'createdAt': _publishAt == null
-                                  ? FieldValue.serverTimestamp()
-                                  : Timestamp.fromDate(_publishAt!),
+                              'tile': false,
+                              'createdAt': FieldValue.serverTimestamp(),
                             });
                           })
                           .timeout(const Duration(seconds: 20));
@@ -571,9 +480,112 @@ class _SocialPost extends StatefulWidget {
 
 class _SocialPostState extends State<_SocialPost> {
   bool _busy = false;
+  bool _hidden = false;
+  bool _commentsVisible = false;
   late final _likes = widget.post.reference.collection('likes').snapshots();
+  late final Future<DocumentSnapshot<Map<String, dynamic>>> _author =
+      FirebaseFirestore.instance
+          .collection('profiles')
+          .doc(txt(widget.post.data(), 'authorUid'))
+          .get();
+
+  String _relative(Timestamp? stamp) {
+    if (stamp == null) return bi('Sending', 'அனுப்புகிறது');
+    final elapsed = DateTime.now().difference(stamp.toDate());
+    if (elapsed.inMinutes < 1) return bi('now', 'இப்போது');
+    if (elapsed.inHours < 1) return '${elapsed.inMinutes}m';
+    if (elapsed.inDays < 1) return '${elapsed.inHours}h';
+    if (elapsed.inDays < 7) return '${elapsed.inDays}d';
+    return '${stamp.toDate().day}/${stamp.toDate().month}/${stamp.toDate().year}';
+  }
+
+  Future<void> _deletePost() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: const SquircleBorder(radius: Gold.r27),
+        title: Text(bi('Delete this post?', 'இந்தப் பதிவை நீக்கவா?')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const AppText('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const AppText('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true) return;
+    await widget.post.reference.delete().timeout(CloudSyncService.networkTimeout);
+  }
+
+  Future<void> _showLikes() async {
+    final likes = await widget.post.reference.collection('likes').get();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Glass(
+        radius: Gold.r34,
+        opacity: .96,
+        child: SafeArea(
+          child: SizedBox(
+            height: math.min(420, 100 + likes.docs.length * 64),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${likes.size} ${bi('likes', 'விருப்பங்கள்')}',
+                  style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (final like in likes.docs)
+                        FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                          future: FirebaseFirestore.instance.collection('profiles').doc(like.id).get(),
+                          builder: (context, profile) {
+                            final data = profile.data?.data() ?? const <String, dynamic>{};
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: profileAvatar(txt(data, 'photo'), radius: 21),
+                              title: Text(txt(data, 'displayName', txt(data, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')))),
+                              subtitle: Text(txt(data, 'username'), style: const TextStyle(color: Ink.violetDeep)),
+                              onTap: () {
+                                Navigator.pop(context);
+                                push(this.context, SocialProfileScreen(uid: like.id));
+                              },
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reportPost() async {
+    final uid = signedInUid;
+    if (uid.isEmpty) return;
+    await widget.post.reference.collection('reports').doc(uid).set({
+      'reporterUid': uid,
+      'reason': 'reported from post menu',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    if (mounted) snack(context, bi('Post reported', 'பதிவு புகாரளிக்கப்பட்டது'));
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_hidden) return const SizedBox.shrink();
     final p = widget.post.data();
     final stamp = p['createdAt'] as Timestamp?;
     final photo = txt(p, 'photo');
@@ -586,11 +598,8 @@ class _SocialPostState extends State<_SocialPost> {
             children: [
               Row(
                 children: [
-                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('profiles')
-                        .doc(txt(p, 'authorUid'))
-                        .snapshots(),
+                  FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    future: _author,
                     builder: (_, profile) => profileAvatar(
                       txt(profile.data?.data() ?? {}, 'photo'),
                       radius: 23,
@@ -602,6 +611,11 @@ class _SocialPostState extends State<_SocialPost> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         TextButton(
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
                           onPressed: () => push(
                             context,
                             SocialProfileScreen(uid: txt(p, 'authorUid')),
@@ -612,7 +626,7 @@ class _SocialPostState extends State<_SocialPost> {
                           ),
                         ),
                         Text(
-                          '@${txt(p, 'authorUsername', txt(p, 'authorName'))} · ${stamp == null ? bi('Sending', 'அனுப்புகிறது') : '${stamp.toDate().day}/${stamp.toDate().month}'}',
+                          '${txt(p, 'authorUsername', txt(p, 'authorName'))} · ${_relative(stamp)}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Ink.muted,
@@ -621,61 +635,30 @@ class _SocialPostState extends State<_SocialPost> {
                       ],
                     ),
                   ),
-                  if (p['authorUid'] == FirebaseAuth.instance.currentUser?.uid)
-                    IconButton(
-                      tooltip: bi('Schedule post', 'பதிவைத் திட்டமிடு'),
-                      icon: const Icon(CupertinoIcons.clock, size: 18),
-                      onPressed: () async {
-                        final time = await choosePostTime(context);
-                        if (time == null) return;
-                        try {
-                          await widget.post.reference
-                              .update({'createdAt': Timestamp.fromDate(time)})
-                              .timeout(CloudSyncService.networkTimeout);
-                        } catch (e) {
-                          if (context.mounted) snack(context, accountError(e));
-                        }
-                      },
-                    ),
-                  if (p['authorUid'] == FirebaseAuth.instance.currentUser?.uid)
-                    IconButton(
-                      tooltip: ui('Delete'),
-                      icon: const Icon(CupertinoIcons.trash, size: 18),
-                      onPressed: () async {
-                        final yes = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: Text(
-                              bi('Delete this post?', 'இந்தப் பதிவை நீக்கவா?'),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: const AppText('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: const AppText('Delete'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (yes == true) {
-                          try {
-                            await widget.post.reference.delete().timeout(
-                              CloudSyncService.networkTimeout,
-                            );
-                          } catch (_) {
-                            if (context.mounted) {
-                              snack(
-                                context,
-                                ui('Unable to delete. Try again.'),
-                              );
-                            }
-                          }
-                        }
-                      },
-                    ),
+                  PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    color: const Color(0xF5FFFFFF),
+                    shape: const SquircleBorder(radius: Gold.r21),
+                    icon: const Icon(CupertinoIcons.ellipsis, size: 22),
+                    onSelected: (value) async {
+                      try {
+                        if (value == 'delete') await _deletePost();
+                        if (value == 'likes') await _showLikes();
+                        if (value == 'hide') setState(() => _hidden = true);
+                        if (value == 'report') await _reportPost();
+                      } catch (error) {
+                        if (mounted) snack(context, accountError(error));
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      if (p['authorUid'] == signedInUid)
+                        PopupMenuItem(value: 'delete', child: Text(bi('Delete', 'நீக்கு'))),
+                      PopupMenuItem(value: 'likes', child: Text(bi('Who liked this', 'விரும்பியவர்கள்'))),
+                      PopupMenuItem(value: 'hide', child: Text(bi('I am not interested', 'எனக்கு விருப்பமில்லை'))),
+                      if (p['authorUid'] != signedInUid)
+                        PopupMenuItem(value: 'report', child: Text(bi('Report this post', 'இந்தப் பதிவைப் புகாரளி'))),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -696,32 +679,15 @@ class _SocialPostState extends State<_SocialPost> {
                 ),
               const SizedBox(height: 12),
               if (txt(p, 'text').isNotEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: p['tile'] == true
-                      ? const EdgeInsets.all(24)
-                      : EdgeInsets.zero,
-                  decoration: p['tile'] == true
-                      ? BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xffdbeafe), Color(0xffede9fe)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        )
-                      : null,
-                  child: Text(
+                  MentionText(
                     txt(p, 'text'),
-                    style: TextStyle(
-                      fontSize: p['tile'] == true ? 24 : 16,
+                    mentions: p['mentions'] is List ? List.from(p['mentions']) : const [],
+                    style: const TextStyle(
+                      fontSize: 16,
                       height: 1.5,
-                      fontWeight: p['tile'] == true
-                          ? FontWeight.w600
-                          : FontWeight.w400,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
-                ),
               if (txt(p, 'voice').isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -744,7 +710,9 @@ class _SocialPostState extends State<_SocialPost> {
                   return Wrap(
                     spacing: 16,
                     children: [
-                      TextButton.icon(
+                      GestureDetector(
+                        onLongPress: snapshot.hasData ? _showLikes : null,
+                        child: TextButton.icon(
                         onPressed: _busy || !snapshot.hasData
                             ? null
                             : () async {
@@ -782,12 +750,10 @@ class _SocialPostState extends State<_SocialPost> {
                         label: Text(
                           '${snapshot.data?.size ?? 0} ${bi('likes', 'விருப்பங்கள்')}',
                         ),
+                        ),
                       ),
                       TextButton.icon(
-                        onPressed: () => push(
-                          context,
-                          _SocialComments(post: widget.post.reference),
-                        ),
+                        onPressed: () => setState(() => _commentsVisible = !_commentsVisible),
                         icon: const Icon(CupertinoIcons.chat_bubble),
                         label: Text(bi('Comments', 'கருத்துகள்')),
                       ),
@@ -795,6 +761,8 @@ class _SocialPostState extends State<_SocialPost> {
                   );
                 },
               ),
+              if (_commentsVisible)
+                _SocialComments(post: widget.post.reference),
             ],
           ),
         ),
@@ -825,14 +793,17 @@ class _SocialCommentsState extends State<_SocialComments> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Ink.canvasTop,
-    appBar: AppBar(title: Text(bi('Comments', 'கருத்துகள்'))),
-    body: Shell(
-      child: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder(
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(top: 8),
+    padding: const EdgeInsets.only(top: 8),
+    decoration: const BoxDecoration(
+      border: Border(top: BorderSide(color: Color(0x167B61D1))),
+    ),
+    child: Column(
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 320),
+          child: StreamBuilder(
               stream: _stream,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
@@ -859,11 +830,20 @@ class _SocialCommentsState extends State<_SocialComments> {
                   );
                 }
                 return ListView(
+                  shrinkWrap: true,
                   children: [
                     for (final doc in snapshot.data!.docs)
                       ListTile(
-                        title: Text('@${txt(doc.data(), 'authorName')}'),
-                        subtitle: Text(txt(doc.data(), 'text')),
+                        title: Text(
+                          txt(doc.data(), 'authorName'),
+                          style: const TextStyle(color: Ink.violetDeep),
+                        ),
+                        subtitle: MentionText(
+                          txt(doc.data(), 'text'),
+                          mentions: doc.data()['mentions'] is List
+                              ? List.from(doc.data()['mentions'])
+                              : const [],
+                        ),
                         trailing:
                             doc.data()['authorUid'] ==
                                 FirebaseAuth.instance.currentUser?.uid
@@ -891,24 +871,22 @@ class _SocialCommentsState extends State<_SocialComments> {
                   ],
                 );
               },
-            ),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+              padding: const EdgeInsets.only(top: 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
-                    child: TextField(
+                    child: MentionInput(
                       controller: _text,
                       minLines: 1,
                       maxLines: 4,
                       maxLength: 1000,
-                      decoration: InputDecoration(
-                        hintText: bi('Write a comment', 'கருத்தை எழுதுங்கள்'),
-                      ),
+                      hint: bi('Write a comment', 'கருத்தை எழுதுங்கள்'),
                     ),
                   ),
                   IconButton.filled(
@@ -929,6 +907,7 @@ class _SocialCommentsState extends State<_SocialComments> {
                                 'authorName': accountUsername,
                                 'ranchId': ranchId(),
                                 'text': _text.text.trim(),
+                                'mentions': mentionSelections[_text] ?? const [],
                                 'createdAt': FieldValue.serverTimestamp(),
                               });
                               _text.clear();
@@ -947,10 +926,9 @@ class _SocialCommentsState extends State<_SocialComments> {
                   ),
                 ],
               ),
-            ),
           ),
-        ],
-      ),
+        ),
+      ],
     ),
   );
 }

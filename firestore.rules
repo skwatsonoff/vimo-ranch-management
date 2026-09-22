@@ -91,12 +91,13 @@ service cloud.firestore {
     match /profiles/{uid} {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['username', 'photo', 'bio', 'link', 'updatedAt', 'displayName', 'displayNameFold', 'place', 'whatsapp', 'shareRanch', 'ranchId', 'ranchName', 'shareShop', 'shopName', 'shopDetails'])
+        && request.resource.data.keys().hasOnly(['username', 'photo', 'bio', 'bioMentions', 'link', 'updatedAt', 'displayName', 'displayNameFold', 'place', 'whatsapp', 'shareRanch', 'ranchId', 'ranchName', 'ranchLayout', 'shareShop', 'shopName', 'shopDetails'])
         && request.resource.data.username == getAfter(/databases/$(database)/documents/users/$(uid)).data.username
         && request.resource.data.get('photo', '') is string
         && request.resource.data.get('photo', '').size() <= 600000
         && (request.resource.data.get('photo', '') == '' || request.resource.data.photo.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$'))
         && request.resource.data.get('bio', '') is string && request.resource.data.get('bio', '').size() <= 160
+        && request.resource.data.get('bioMentions', []) is list && request.resource.data.get('bioMentions', []).size() <= 12
         && request.resource.data.get('link', '') is string && request.resource.data.get('link', '').size() <= 300
         && (request.resource.data.get('link', '') == '' || request.resource.data.link.matches('^https?://[^ /@]+[.][^ /@]+.*$'))
         && request.resource.data.get('displayName', '') is string && request.resource.data.get('displayName', '').size() <= 80
@@ -105,6 +106,7 @@ service cloud.firestore {
         && request.resource.data.get('whatsapp', '') is string && (request.resource.data.get('whatsapp', '') == '' || request.resource.data.whatsapp.matches('^[+]?[0-9]{7,15}$'))
         && request.resource.data.get('shareRanch', false) is bool
         && request.resource.data.get('ranchName', '') is string && request.resource.data.get('ranchName', '').size() <= 160
+        && request.resource.data.get('ranchLayout', 'grid') in ['grid', 'list']
         && (request.resource.data.get('shareRanch', false) == false || isMember(request.resource.data.ranchId))
         && request.resource.data.get('shareShop', false) is bool
         && request.resource.data.get('shopName', '') is string && request.resource.data.get('shopName', '').size() <= 100
@@ -175,8 +177,9 @@ service cloud.firestore {
       allow get, list: if signedIn() && resource.data.createdAt <= request.time;
       allow get, list: if signedIn() && resource.data.authorUid == request.auth.uid;
       allow create: if validAuthor(request.resource.data)
-        && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'authorUsername', 'text', 'photo', 'voice', 'voiceSeconds', 'tile', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'authorUsername', 'text', 'mentions', 'photo', 'voice', 'voiceSeconds', 'tile', 'createdAt'])
         && request.resource.data.text is string && request.resource.data.text.size() <= 2000
+        && request.resource.data.get('mentions', []) is list && request.resource.data.get('mentions', []).size() <= 20
         && request.resource.data.photo is string && request.resource.data.photo.size() <= 600000
         && request.resource.data.voice is string && request.resource.data.voice.size() <= 450000
         && request.resource.data.photo.size() + request.resource.data.voice.size() <= 850000
@@ -201,11 +204,20 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create: if validAuthor(request.resource.data)
           && exists(/databases/$(database)/documents/social_posts/$(postId))
-          && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'text', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'text', 'mentions', 'createdAt'])
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000
+          && request.resource.data.get('mentions', []) is list && request.resource.data.get('mentions', []).size() <= 20
           && request.resource.data.createdAt == request.time;
         allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
         allow update: if false;
+      }
+      match /reports/{reporterId} {
+        allow create: if signedIn() && request.auth.uid == reporterId
+          && request.resource.data.reporterUid == request.auth.uid
+          && request.resource.data.reason is string
+          && request.resource.data.reason.size() <= 200
+          && request.resource.data.createdAt == request.time;
+        allow read, update, delete: if false;
       }
     }
 
@@ -436,6 +448,20 @@ service cloud.firestore {
         allow read: if isMember(ranchId);
         allow create, update: if canWriteSale(ranchId);
         allow delete: if canEditAnimals(ranchId);
+      }
+
+      match /ranch_customers/{customerId} {
+        allow read: if isMember(ranchId);
+        allow create, update: if canRecordEntries(ranchId)
+          && request.resource.data.customerId == customerId
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.get('place', '') is string
+          && request.resource.data.get('place', '').size() <= 160
+          && request.resource.data.get('contact', '') is string
+          && request.resource.data.get('contact', '').size() <= 32;
+        allow delete: if isAdmin(ranchId);
       }
 
       match /death_records/{documentId} {

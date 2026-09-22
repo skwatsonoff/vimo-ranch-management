@@ -170,51 +170,9 @@ class RanchWorkspace extends StatefulWidget {
 }
 
 class _RanchWorkspaceState extends State<RanchWorkspace> {
-  int _page = 0;
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Padding(
-        padding: const EdgeInsets.all(12),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in [
-              (0, bi('Overview', 'முகப்பு')),
-              (1, bi('Cows', 'மாடுகள்')),
-              (2, bi('Calves', 'கன்றுகள்')),
-              (3, bi('Sell', 'விற்பனை')),
-              (4, bi('Stock', 'இருப்பு')),
-              (5, bi('Reports', 'அறிக்கைகள்')),
-            ])
-              ChoiceChip(
-                label: Text(item.$2),
-                selected: _page == item.$1,
-                onSelected: (_) => setState(() => _page = item.$1),
-              ),
-          ],
-        ),
-      ),
-      Expanded(
-        child: switch (_page) {
-          0 => DashboardScreen(onOpenCard: widget.onOpenCard),
-          1 => const AnimalsScreen(key: ValueKey('ranch-cows'), initialTab: 0),
-          2 => const AnimalsScreen(
-            key: ValueKey('ranch-calves'),
-            initialTab: 1,
-          ),
-          3 => const SellScreen(key: ValueKey('ranch-sell'), embedded: true),
-          4 => const SellScreen(
-            key: ValueKey('ranch-stock'),
-            embedded: true,
-            initialSection: 1,
-          ),
-          _ => const ReportsScreen(),
-        },
-      ),
-    ],
-  );
+  Widget build(BuildContext context) =>
+      DashboardScreen(onOpenCard: widget.onOpenCard);
 }
 
 class VendorOnlyReports extends StatefulWidget {

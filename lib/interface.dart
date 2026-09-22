@@ -1017,8 +1017,11 @@ class _ConversationViewState extends State<_ConversationView> {
                 color: participantColor,
               )
             else
-              Text(
+              MentionText(
                 txt(message, 'text'),
+                mentions: message['mentions'] is List
+                    ? List.from(message['mentions'])
+                    : const [],
                 style: const TextStyle(
                   fontSize: 16,
                   height: 1.35,
@@ -1298,8 +1301,8 @@ class _ConversationViewState extends State<_ConversationView> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: Glass(
-                      padding: const EdgeInsets.fromLTRB(16, 2, 4, 2),
-                      radius: 26,
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      radius: 22,
                       opacity: .62,
                       elevation: .65,
                       child: _recording || _sendingVoice
@@ -1366,22 +1369,24 @@ class _ConversationViewState extends State<_ConversationView> {
                           : Row(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
+                                IconButton(
+                                  tooltip: ui('Assign'),
+                                  onPressed: _sending
+                                      ? null
+                                      : () => push(context, const TaskComposerScreen()),
+                                  icon: const Icon(
+                                    CupertinoIcons.checkmark_square,
+                                    size: 25,
+                                    color: Ink.violetDeep,
+                                  ),
+                                ),
                                 Expanded(
-                                  child: TextField(
+                                  child: MentionInput(
                                     controller: widget.message,
                                     minLines: 1,
                                     maxLines: 5,
-                                    textCapitalization:
-                                        TextCapitalization.sentences,
-                                    textInputAction: TextInputAction.newline,
-                                    decoration: InputDecoration(
-                                      hintText: ui('Message'),
-                                      border: InputBorder.none,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                          ),
-                                    ),
+                                    hint: ui('Message'),
+                                    ranchOnly: true,
                                   ),
                                 ),
                                 ValueListenableBuilder<TextEditingValue>(
@@ -1407,7 +1412,7 @@ class _ConversationViewState extends State<_ConversationView> {
                                                         .arrow_up_circle_fill
                                                   : CupertinoIcons
                                                         .mic_circle_fill,
-                                              size: 34,
+                                              size: 29,
                                               color: _blue,
                                             ),
                                     );

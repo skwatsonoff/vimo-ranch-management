@@ -20,11 +20,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui';
 
 import 'package:audioplayers/audioplayers.dart' hide Source;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -89,6 +89,7 @@ const List<String> backupBoxNames = [
   'ranch_messages',
   'ranch_tasks',
   'notifications',
+  'ranch_customers',
   'vendor_people',
   'vendor_entries',
 ];
@@ -1256,14 +1257,12 @@ class Glass extends StatelessWidget {
     final accessible = MediaQuery.highContrastOf(context);
     final effectiveOpacity = accessible ? .96 : opacity;
 
+    // A real backdrop blur on every card forces the GPU to repeatedly sample
+    // and blur the whole scene. The translucent fill and painted rim keep the
+    // glass character without an off-screen blur pass per surface.
     Widget surface = ClipPath(
       clipper: SquircleClipper(radius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: accessible ? 0 : blur,
-          sigmaY: accessible ? 0 : blur,
-        ),
-        child: CustomPaint(
+      child: CustomPaint(
           foregroundPainter: _GlassSkinPainter(
             radius: radius,
             strength: specular,
@@ -1289,7 +1288,6 @@ class Glass extends StatelessWidget {
             ),
             child: Padding(padding: padding, child: child),
           ),
-        ),
       ),
     );
 
@@ -1402,43 +1400,9 @@ class _PressableState extends State<Pressable> {
 
 /// The ambient canvas. Three slow-drifting colour fields sit under a heavy blur
 /// so the glass above always has something with structure to refract.
-class LiquidCanvas extends StatefulWidget {
+class LiquidCanvas extends StatelessWidget {
   final Widget child;
   const LiquidCanvas({super.key, required this.child});
-
-  @override
-  State<LiquidCanvas> createState() => _LiquidCanvasState();
-}
-
-class _LiquidCanvasState extends State<LiquidCanvas>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 48),
-    );
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context) ||
-        MediaQuery.accessibleNavigationOf(context)) {
-      _c.stop();
-    } else if (!_c.isAnimating) {
-      _c.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1453,16 +1417,12 @@ class _LiquidCanvasState extends State<LiquidCanvas>
       ),
       child: Stack(
         children: [
-          Positioned.fill(
+          const Positioned.fill(
             child: RepaintBoundary(
-              child: AnimatedBuilder(
-                animation: _c,
-                builder: (_, _) =>
-                    CustomPaint(painter: _AuroraPainter(_c.value)),
-              ),
+              child: CustomPaint(painter: _AuroraPainter(0.18)),
             ),
           ),
-          widget.child,
+          child,
         ],
       ),
     );
@@ -2071,7 +2031,7 @@ InputDecoration fieldStyle(
   );
 
   return InputDecoration(
-    labelText: ui(label),
+    hintText: ui(label),
     prefixIcon:
         prefix ??
         (icon == null
@@ -2082,14 +2042,10 @@ InputDecoration fieldStyle(
               )),
     prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
     suffixIcon: suffix,
-    labelStyle: const TextStyle(
+    hintStyle: const TextStyle(
       color: Ink.muted,
       fontWeight: FontWeight.w600,
       fontSize: Gold.t13,
-    ),
-    floatingLabelStyle: const TextStyle(
-      color: Ink.violetDeep,
-      fontWeight: FontWeight.w600,
     ),
     filled: true,
     fillColor: Color(0x52FFFFFF),
@@ -4137,6 +4093,7 @@ class CloudSyncService {
         'ranch_messages',
         'ranch_tasks',
         'notifications',
+        'ranch_customers',
         'vendor_people',
         'settings',
       ])
@@ -5763,7 +5720,7 @@ class _AnimalAvatarState extends State<AnimalAvatar>
       _c = AnimationController(
         vsync: this,
         duration: const Duration(seconds: 5),
-      )..repeat();
+      )..value = .2;
     } else if (!needed && _c != null) {
       _c!.dispose();
       _c = null;
@@ -7850,6 +7807,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     await Hive.box('ranch_messages').add({
       'messageId': messageId,
       'text': value,
+      'mentions': mentionSelections[_message] ?? const [],
       'sender': currentUserName(),
       'date': todayDate(),
       'time': currentTime(),
@@ -7863,6 +7821,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
       sourceId: messageId,
     );
     if (_message.text.trim() == value) _message.clear();
+    mentionSelections[_message] = const [];
   }
 
   Future<void> _deleteMessage(dynamic key, Map<String, dynamic> message) async {
@@ -8169,6 +8128,8 @@ Future<void> editRecentEntry(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, updateDialog) => AlertDialog(
+        shape: const SquircleBorder(radius: Gold.r27),
+        backgroundColor: const Color(0xF2FFFFFF),
         title: AppText(tamilUi ? 'பதிவை மாற்று' : 'Edit entry'),
         content: SizedBox(
           width: 360,
@@ -8302,6 +8263,8 @@ Future<void> addRecentEntryNote(
   final note = await showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
+      shape: const SquircleBorder(radius: Gold.r27),
+      backgroundColor: const Color(0xF2FFFFFF),
       title: AppText(tamilUi ? 'Note சேர்க்க' : 'Add note'),
       content: TextField(
         controller: controller,
@@ -8639,6 +8602,9 @@ class _MainShellState extends State<MainShell> {
           const RecordListScreen(title: 'Milk Details', recordType: 'milk'),
         );
         break;
+      case 'sell':
+        push(context, const SellScreen());
+        break;
       default:
         push(
           context,
@@ -8687,22 +8653,38 @@ class _MainShellState extends State<MainShell> {
       backgroundColor: Ink.canvasTop,
       appBar: AppBar(
         toolbarHeight: 52,
-        leading: IconButton(
-          tooltip: bi('Profile', 'சுயவிவரம்'),
-          icon: const CurrentProfileAvatar(radius: 19),
-          onPressed: () => push(context, const SocialProfileScreen()),
+        leadingWidth: 58,
+        leading: Semantics(
+          button: true,
+          label: bi('Profile', 'சுயவிவரம்'),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => push(context, const SocialProfileScreen()),
+            child: const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: CurrentProfileAvatar(radius: 20),
+              ),
+            ),
+          ),
         ),
         title: AppText(
-          '${appName()} ${ui(appPurpose)}',
+          order[tab] == 'Social'
+              ? 'VIMO People'
+              : order[tab] == 'Chat'
+              ? ui('Chat')
+              : '${appName()} ${ui(order[tab])}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          IconButton(
-            tooltip: ui('Search'),
-            icon: const Icon(CupertinoIcons.search),
-            onPressed: () => push(context, const CommunitySearchScreen()),
-          ),
+          if (order[tab] == 'Social' || order[tab] == 'Chat')
+            IconButton(
+              tooltip: ui('Search'),
+              icon: const Icon(CupertinoIcons.search),
+              onPressed: () => push(context, const CommunitySearchScreen()),
+            ),
           const RanchNotificationButton(),
         ],
       ),
@@ -8724,7 +8706,9 @@ class _MainShellState extends State<MainShell> {
         },
         child: pages[tab],
       ),
-      floatingActionButton:
+      floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+          ? null
+          :
           order[tab] == 'Chat' || (order[tab] != 'Social' && !canRecordEntries)
           ? null
           : FloatingActionButton(
@@ -8737,10 +8721,14 @@ class _MainShellState extends State<MainShell> {
               highlightElevation: 0,
               foregroundColor: Ink.violetDeep,
               onPressed: () => showWorkspaceAdd(context, order[tab]),
-              child: const Glass(
-                radius: 30,
-                padding: EdgeInsets.all(16),
-                child: Icon(CupertinoIcons.plus),
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Ink.violetDeep,
+                ),
+                child: const Icon(CupertinoIcons.plus, color: Colors.white),
               ),
             ),
       bottomNavigationBar: SafeArea(
@@ -8955,7 +8943,7 @@ class DashboardScreen extends StatelessWidget {
     final tiles = <Widget>[
       _StatTile(
         type: 'cows',
-        label: 'Total Cows',
+        label: 'Cows',
         value: '${animalsBy('cow').length}',
         icon: const CowMark(size: 25),
         ghost: const CowMark(size: Gold.s89),
@@ -8963,12 +8951,16 @@ class DashboardScreen extends StatelessWidget {
         onTap: onOpenCard,
       ),
       _StatTile(
-        type: 'milk',
-        label: "Today's Milk",
-        value: '${milkTotal('Today').toStringAsFixed(1)} L',
-        icon: const RanchIcon(type: 'bottle', size: 25, color: Ink.blue),
-        ghost: const RanchIcon(type: 'milk', size: Gold.s89, color: Ink.blue),
-        accent: Ink.blue,
+        type: 'sell',
+        label: "Today's Sale",
+        value: money(saleIncome('Today')),
+        icon: const Icon(Icons.sell_outlined, size: 25, color: Ink.green),
+        ghost: const Icon(
+          Icons.sell_outlined,
+          size: Gold.s89,
+          color: Ink.green,
+        ),
+        accent: Ink.green,
         onTap: onOpenCard,
       ),
       _StatTile(
@@ -8981,26 +8973,18 @@ class DashboardScreen extends StatelessWidget {
         onTap: onOpenCard,
       ),
       _StatTile(
-        type: 'expenses',
-        label: 'Expense',
-        value: money(totalExpense('Today')),
-        icon: const Icon(
-          Icons.account_balance_wallet_outlined,
-          size: 25,
-          color: Ink.amber,
-        ),
-        ghost: const Icon(
-          Icons.account_balance_wallet_outlined,
-          size: Gold.s89,
-          color: Ink.amber,
-        ),
-        accent: Ink.amber,
+        type: 'milk',
+        label: "Today's Milk",
+        value: '${milkTotal('Today').toStringAsFixed(1)} L',
+        icon: const RanchIcon(type: 'bottle', size: 25, color: Ink.blue),
+        ghost: const RanchIcon(type: 'milk', size: Gold.s89, color: Ink.blue),
+        accent: Ink.blue,
         onTap: onOpenCard,
       ),
       _StatTile(
-        type: 'cows',
+        type: pregnantCowCount() == 0 ? '' : 'cows',
         label: 'Pregnant Cows',
-        value: '${pregnantCowCount()}',
+        value: pregnantCowCount() == 0 ? 'None' : '${pregnantCowCount()}',
         icon: const Icon(
           Icons.favorite_border_rounded,
           size: 25,
@@ -9016,15 +9000,19 @@ class DashboardScreen extends StatelessWidget {
       ),
       _StatTile(
         type: 'expenses',
-        label: 'Today Sales',
-        value: money(saleIncome('Today')),
-        icon: const Icon(Icons.sell_outlined, size: 25, color: Ink.green),
-        ghost: const Icon(
-          Icons.sell_outlined,
-          size: Gold.s89,
-          color: Ink.green,
+        label: 'Expenses',
+        value: money(totalExpense('Today')),
+        icon: const Icon(
+          Icons.account_balance_wallet_outlined,
+          size: 25,
+          color: Ink.amber,
         ),
-        accent: Ink.green,
+        ghost: const Icon(
+          Icons.account_balance_wallet_outlined,
+          size: Gold.s89,
+          color: Ink.amber,
+        ),
+        accent: Ink.amber,
         onTap: onOpenCard,
       ),
     ];
@@ -9040,39 +9028,12 @@ class DashboardScreen extends StatelessWidget {
           _MainShellState.bottomInset,
         ),
         children: [
-          Reveal(
-            index: 0,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const AppText(
-                        'Dashboard',
-                        style: TextStyle(
-                          fontSize: Gold.t34,
-                          height: 1.05,
-                          fontWeight: FontWeight.w700,
-                          color: Ink.navy,
-                          letterSpacing: -1,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: Gold.s13),
-              ],
-            ),
-          ),
-          const SizedBox(height: Gold.s21),
           if (canManageRanch) ...[
             const PendingJoinRequestsBanner(),
             const SizedBox(height: Gold.s13),
           ],
           Reveal(
-            index: 1,
+            index: 0,
             child: birthday == null
                 ? const _RanchHero()
                 : _BirthdayHero(animal: birthday),
@@ -9091,18 +9052,18 @@ class DashboardScreen extends StatelessWidget {
                   crossAxisSpacing: Gold.s13,
                   mainAxisExtent: 142,
                 ),
-                itemBuilder: (_, i) => Reveal(index: 2 + i, child: tiles[i]),
+                itemBuilder: (_, i) => Reveal(index: 1 + i, child: tiles[i]),
               );
             },
           ),
           if (activity.isNotEmpty) ...[
             const SizedBox(height: Gold.s34),
             Reveal(
-              index: 8,
+              index: 7,
               child: const SectionTitle(title: 'Recent Activity'),
             ),
             Reveal(
-              index: 9,
+              index: 8,
               child: Glass(
                 radius: Gold.r27,
                 padding: const EdgeInsets.symmetric(
@@ -9286,6 +9247,11 @@ class _ActivityRow extends StatelessWidget {
           PopupMenuButton<String>(
             tooltip: tamilUi ? 'பதிவு options' : 'Entry options',
             enabled: canNote,
+            padding: EdgeInsets.zero,
+            splashRadius: 20,
+            elevation: 6,
+            color: const Color(0xF2FFFFFF),
+            shape: const SquircleBorder(radius: Gold.r21),
             icon: Icon(
               CupertinoIcons.ellipsis,
               size: 26,
@@ -9447,7 +9413,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
   void initState() {
     super.initState();
     _c = AnimationController(vsync: this, duration: const Duration(seconds: 7))
-      ..repeat();
+      ..value = .18;
   }
 
   @override
@@ -9679,7 +9645,7 @@ class _StatTile extends StatelessWidget {
       blur: Gold.s21,
       opacity: 0.66,
       padding: EdgeInsets.zero,
-      onTap: () => onTap(type),
+      onTap: type.isEmpty ? null : () => onTap(type),
       child: Stack(
         children: [
           // Watermark illustration, clipped and anchored to the low corner.
@@ -9785,12 +9751,24 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
       backgroundColor: Ink.canvasTop,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
+        centerTitle: true,
         title: AppText(
-          tamilUi
-              ? (_tab == 0 ? 'மாடுகள்' : 'கன்றுக்குட்டிகள்')
-              : (_tab == 0 ? 'All Cows' : 'All Calves'),
+          tamilUi ? 'மாடுகள் மற்றும் கன்றுகள்' : 'Cows & Calves',
         ),
         leading: const _BackButton(),
+        actions: [
+          if (canEditAnimals)
+            IconButton(
+              tooltip: ui('Add'),
+              icon: const Icon(CupertinoIcons.plus, color: Ink.violetDeep),
+              onPressed: () => guardedPush(
+                context,
+                allowed: canEditAnimals,
+                message: 'Only admins and editors can add cows or calves',
+                page: AddAnimalScreen(type: _tab == 0 ? 'cow' : 'calf'),
+              ),
+            ),
+        ],
       ),
       body: body,
     );
@@ -9833,51 +9811,55 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
           _MainShellState.bottomInset,
         ),
         children: [
-          Reveal(
-            index: reveal++,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppText(
-                        tamilUi ? 'மாடுகள் மற்றும் கன்றுகள்' : 'Cows & Calves',
-                        style: const TextStyle(
-                          fontSize: Gold.t27,
-                          fontWeight: FontWeight.w700,
-                          color: Ink.navy,
-                          height: 1.1,
-                          letterSpacing: -0.6,
+          if (!widget.standalone)
+            Reveal(
+              index: reveal++,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppText(
+                          tamilUi
+                              ? 'மாடுகள் மற்றும் கன்றுகள்'
+                              : 'Cows & Calves',
+                          style: const TextStyle(
+                            fontSize: Gold.t27,
+                            fontWeight: FontWeight.w700,
+                            color: Ink.navy,
+                            height: 1.1,
+                            letterSpacing: -0.6,
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: Gold.s13),
+                  if (canEditAnimals)
+                    Glass(
+                      radius: Gold.r21,
+                      blur: Gold.s13,
+                      padding: const EdgeInsets.all(Gold.s13),
+                      elevation: 0.8,
+                      onTap: () => guardedPush(
+                        context,
+                        allowed: canEditAnimals,
+                        message:
+                            'Only admins and editors can add cows or calves',
+                        page: AddAnimalScreen(type: type),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: Gold.s13),
-                if (canEditAnimals)
-                  Glass(
-                    radius: Gold.r21,
-                    blur: Gold.s13,
-                    padding: const EdgeInsets.all(Gold.s13),
-                    elevation: 0.8,
-                    onTap: () => guardedPush(
-                      context,
-                      allowed: canEditAnimals,
-                      message: 'Only admins and editors can add cows or calves',
-                      page: AddAnimalScreen(type: type),
+                      child: const Icon(
+                        Icons.add_rounded,
+                        color: Ink.violetDeep,
+                        size: Gold.t21,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.add_rounded,
-                      color: Ink.violetDeep,
-                      size: Gold.t21,
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: Gold.s21),
+          if (!widget.standalone) const SizedBox(height: Gold.s21),
           Reveal(
             index: reveal++,
             child: Glass(
@@ -10007,7 +9989,7 @@ class _RankedCowCardState extends State<RankedCowCard>
   void initState() {
     super.initState();
     _c = AnimationController(vsync: this, duration: const Duration(seconds: 9))
-      ..repeat();
+      ..value = .22;
   }
 
   @override
@@ -11427,6 +11409,7 @@ class SuggestionField extends StatefulWidget {
   final String label;
   final IconData icon;
   final ValueChanged<String>? onSelected;
+  final VoidCallback? onTap;
 
   const SuggestionField({
     super.key,
@@ -11435,6 +11418,7 @@ class SuggestionField extends StatefulWidget {
     required this.label,
     required this.icon,
     this.onSelected,
+    this.onTap,
   });
 
   @override
@@ -11472,6 +11456,7 @@ class _SuggestionFieldState extends State<SuggestionField> {
       fieldViewBuilder: (_, controller, focusNode, onSubmitted) => TextField(
         controller: controller,
         focusNode: focusNode,
+        onTap: widget.onTap,
         textCapitalization: TextCapitalization.words,
         onSubmitted: (_) => onSubmitted(),
         decoration: fieldStyle(widget.label, icon: widget.icon),
@@ -13018,6 +13003,49 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
 //  Sell an animal
 // -----------------------------------------------------------------------------
 
+List<Map<String, dynamic>> ranchCustomers() {
+  if (!Hive.isBoxOpen('ranch_customers')) return const [];
+  final rows = Hive.box('ranch_customers').values
+      .whereType<Map>()
+      .map(asMap)
+      .where((row) => txt(row, 'name').isNotEmpty)
+      .toList();
+  rows.sort((a, b) => txt(a, 'name').compareTo(txt(b, 'name')));
+  return rows;
+}
+
+Map<String, dynamic>? ranchCustomerNamed(String name) {
+  final folded = name.trim().toLowerCase();
+  for (final customer in ranchCustomers()) {
+    if (txt(customer, 'name').toLowerCase() == folded) return customer;
+  }
+  return null;
+}
+
+Future<Map<String, dynamic>> saveRanchCustomer({
+  required String name,
+  String place = '',
+  String contact = '',
+}) async {
+  final cleanName = name.trim();
+  final existing = ranchCustomerNamed(cleanName);
+  final id = txt(existing ?? {}, 'customerId', cloudSafeId(cleanName));
+  final row = <String, dynamic>{
+    ...?existing,
+    'customerId': id,
+    'name': cleanName,
+    'place': place.trim(),
+    'contact': contact.trim(),
+    'updatedAtMillis': DateTime.now().millisecondsSinceEpoch,
+    'updatedAtText': DateTime.now().toIso8601String(),
+    'pendingUpload': true,
+    'addedBy': currentUserName(),
+  };
+  await Hive.box('ranch_customers').put(id, row);
+  AutoSyncService.markDirty(reason: 'ranch customer');
+  return row;
+}
+
 class SellAnimalScreen extends StatefulWidget {
   final dynamic animalKey;
   const SellAnimalScreen({super.key, required this.animalKey});
@@ -13029,6 +13057,9 @@ class SellAnimalScreen extends StatefulWidget {
 class _SellAnimalScreenState extends State<SellAnimalScreen> {
   final _amount = TextEditingController();
   final _notes = TextEditingController();
+  final _customer = TextEditingController();
+  final _customerPlace = TextEditingController();
+  final _customerContact = TextEditingController();
   bool _withCalves = false;
   bool _saving = false;
 
@@ -13036,6 +13067,9 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
   void dispose() {
     _amount.dispose();
     _notes.dispose();
+    _customer.dispose();
+    _customerPlace.dispose();
+    _customerContact.dispose();
     super.dispose();
   }
 
@@ -13056,6 +13090,16 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       snack(context, 'Please enter the sale amount');
       return;
     }
+    if (_customer.text.trim().isEmpty) {
+      snack(context, 'Please enter the customer name');
+      return;
+    }
+
+    final customer = await saveRanchCustomer(
+      name: _customer.text,
+      place: _customerPlace.text,
+      contact: _customerContact.text,
+    );
 
     setState(() => _saving = true);
     final isCow = txt(animal, 'type') == 'cow';
@@ -13070,6 +13114,10 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       'unit': 'Animal',
       'pricePerUnit': price,
       'amount': price,
+      'customerId': txt(customer, 'customerId'),
+      'customerName': txt(customer, 'name'),
+      'customerPlace': txt(customer, 'place'),
+      'customerContact': txt(customer, 'contact'),
       'date': todayDate(),
       'time': currentTime(),
       'notes': _notes.text.trim(),
@@ -13134,6 +13182,38 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: Gold.s13),
+        SuggestionField(
+          controller: _customer,
+          suggestions: ranchCustomers().map((e) => txt(e, 'name')).toList(),
+          label: 'Customer Name',
+          icon: Icons.person_outline_rounded,
+          onSelected: (name) {
+            final customer = ranchCustomerNamed(name);
+            _customerPlace.text = txt(customer ?? {}, 'place');
+            _customerContact.text = txt(customer ?? {}, 'contact');
+          },
+        ),
+        const SizedBox(height: Gold.s13),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _customerPlace,
+                textCapitalization: TextCapitalization.words,
+                decoration: fieldStyle('Place (optional)', icon: Icons.place_outlined),
+              ),
+            ),
+            const SizedBox(width: Gold.s13),
+            Expanded(
+              child: TextField(
+                controller: _customerContact,
+                keyboardType: TextInputType.phone,
+                decoration: fieldStyle('Contact (optional)', icon: Icons.phone_outlined),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: Gold.s13),
         TextField(
@@ -13392,6 +13472,8 @@ class _SellScreenState extends State<SellScreen> {
   String _lastSalePrice = '';
 
   final _customer = TextEditingController();
+  final _customerPlace = TextEditingController();
+  final _customerContact = TextEditingController();
   final _qty = TextEditingController();
   final _price = TextEditingController();
   final _notes = TextEditingController();
@@ -13434,6 +13516,8 @@ class _SellScreenState extends State<SellScreen> {
     _price.removeListener(_refresh);
     _customer.removeListener(_customerChanged);
     _customer.dispose();
+    _customerPlace.dispose();
+    _customerContact.dispose();
     _qty.dispose();
     _price.dispose();
     _notes.dispose();
@@ -13484,11 +13568,13 @@ class _SellScreenState extends State<SellScreen> {
         return;
       }
 
-      if (_type == 0) {
+      if (!_ownUse) {
         if (_customer.text.trim().isEmpty) {
           snack(context, 'Please enter the customer name');
           return;
         }
+      }
+      if (_type == 0) {
         if (!quantity.isFinite || quantity <= 0) {
           snack(context, 'Please enter the milk quantity');
           return;
@@ -13520,11 +13606,24 @@ class _SellScreenState extends State<SellScreen> {
 
       setState(() => _saving = true);
 
+      final customer = _ownUse
+          ? <String, dynamic>{}
+          : await saveRanchCustomer(
+              name: _customer.text,
+              place: _customerPlace.text,
+              contact: _customerContact.text,
+            );
+
       await Hive.box('sale_records').add({
         'category': _ownUse ? 'Milk Own Use' : '${_types[_type]} Sale',
         'ownUse': _ownUse,
         'animal': item,
-        'customerName': _type == 0 ? _customer.text.trim() : '',
+        'customerId': txt(customer, 'customerId'),
+        'customerName': _ownUse
+            ? ownUseDisplayName
+            : txt(customer, 'name', _customer.text.trim()),
+        'customerPlace': txt(customer, 'place'),
+        'customerContact': txt(customer, 'contact'),
         'type': _types[_type],
         'quantity': quantity,
         'unit': _unit,
@@ -13550,6 +13649,8 @@ class _SellScreenState extends State<SellScreen> {
         _saving = false;
         _qty.clear();
         _customer.clear();
+        _customerPlace.clear();
+        _customerContact.clear();
         _notes.clear();
         _animal = '';
         _price.text = _type == 0 ? defaultMilkPrice().toStringAsFixed(0) : '';
@@ -13566,6 +13667,104 @@ class _SellScreenState extends State<SellScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Widget _customerFields() {
+    final names = <String>{
+      ...ranchCustomers().map((e) => txt(e, 'name')),
+      ...frequentNameSuggestions(
+        saleRows(),
+        'customerName',
+        where: (record) => !isOwnUseMilk(record),
+      ),
+    }.where((name) => name.isNotEmpty).toList();
+    return Column(
+      children: [
+        SuggestionField(
+          controller: _customer,
+          suggestions: _type == 0 ? [ownUseCustomerName, ...names] : names,
+          label: tamilUi ? 'வாங்குபவர் பெயர்' : 'Customer Name',
+          icon: Icons.person_outline_rounded,
+          onTap: () {
+            if (_ownUse) {
+              _customer.clear();
+              _customerPlace.clear();
+              _customerContact.clear();
+            }
+          },
+          onSelected: (name) {
+            if (isOwnUseCustomer(name)) {
+              final previous = lastMilkQuantityForCustomer(name);
+              if (previous != null) _qty.text = previous.toStringAsFixed(1);
+              return;
+            }
+            final customer = ranchCustomerNamed(name);
+            _customerPlace.text = txt(customer ?? {}, 'place');
+            _customerContact.text = txt(customer ?? {}, 'contact');
+            if (_type == 0) {
+              final previous = lastMilkQuantityForCustomer(name);
+              if (previous != null) _qty.text = previous.toStringAsFixed(1);
+            }
+          },
+        ),
+        if (_type == 0)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ChoiceChip(
+              key: const ValueKey('own-use-customer'),
+              label: const AppText(ownUseCustomerName),
+              selected: _ownUse,
+              showCheckmark: false,
+              selectedColor: Ink.violetDeep,
+              labelStyle: TextStyle(
+                color: _ownUse ? Colors.white : Ink.violetDeep,
+                fontWeight: FontWeight.w700,
+              ),
+              onSelected: (selected) {
+                _customer.text = selected ? ownUseDisplayName : '';
+                if (!selected) {
+                  _customerPlace.clear();
+                  _customerContact.clear();
+                }
+                if (selected) {
+                  final previous = lastMilkQuantityForCustomer(
+                    ownUseCustomerName,
+                  );
+                  if (previous != null) _qty.text = previous.toStringAsFixed(1);
+                }
+              },
+            ),
+          ),
+        if (!_ownUse) ...[
+          const SizedBox(height: Gold.s13),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _customerPlace,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: fieldStyle(
+                    'Place (optional)',
+                    icon: Icons.place_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: Gold.s13),
+              Expanded(
+                child: TextField(
+                  controller: _customerContact,
+                  keyboardType: TextInputType.phone,
+                  decoration: fieldStyle(
+                    'Contact (optional)',
+                    icon: Icons.phone_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 
   Widget _milkBalance() {
@@ -13974,6 +14173,8 @@ class _SellScreenState extends State<SellScreen> {
                             _type = value;
                             _animal = '';
                             _customer.clear();
+                            _customerPlace.clear();
+                            _customerContact.clear();
                             _qty.clear();
                             _price.text = value == 0
                                 ? defaultMilkPrice().toStringAsFixed(0)
@@ -13988,6 +14189,8 @@ class _SellScreenState extends State<SellScreen> {
                   Reveal(index: 3, child: _milkBalance()),
                   const SizedBox(height: Gold.s13),
                 ],
+                Reveal(index: 4, child: _customerFields()),
+                const SizedBox(height: Gold.s13),
                 if (_isAnimalSale) ...[
                   Reveal(
                     index: 4,
@@ -14041,55 +14244,6 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                   ),
                 ] else ...[
-                  if (_type == 0) ...[
-                    Reveal(
-                      index: 4,
-                      child: SuggestionField(
-                        controller: _customer,
-                        suggestions: [
-                          ownUseCustomerName,
-                          ...frequentNameSuggestions(
-                            saleRows(),
-                            'customerName',
-                            where: (record) =>
-                                txt(record, 'type') == 'Milk' &&
-                                !isOwnUseMilk(record),
-                          ),
-                        ],
-                        label: tamilUi ? 'வாங்குபவர் பெயர்' : 'Customer Name',
-                        icon: Icons.person_outline_rounded,
-                        onSelected: (name) {
-                          final previous = lastMilkQuantityForCustomer(name);
-                          if (previous == null) return;
-                          _qty.text = previous.toStringAsFixed(1);
-                          snack(
-                            context,
-                            'Last quantity ${previous.toStringAsFixed(1)} L added',
-                          );
-                        },
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: ChoiceChip(
-                        key: const ValueKey('own-use-customer'),
-                        label: const AppText(ownUseCustomerName),
-                        selected: _ownUse,
-                        onSelected: (selected) {
-                          _customer.text = selected ? ownUseDisplayName : '';
-                          if (selected) {
-                            final previous = lastMilkQuantityForCustomer(
-                              ownUseCustomerName,
-                            );
-                            if (previous != null) {
-                              _qty.text = previous.toStringAsFixed(1);
-                            }
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: Gold.s13),
-                  ],
                   Reveal(
                     index: 5,
                     child: TextField(

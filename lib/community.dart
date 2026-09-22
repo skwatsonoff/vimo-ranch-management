@@ -3,6 +3,174 @@ part of 'main.dart';
 String get signedInUid =>
     firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? '' : '';
 
+final Expando<List<Map<String, dynamic>>> mentionSelections =
+    Expando<List<Map<String, dynamic>>>('vimoMentions');
+
+class MentionInput extends StatefulWidget {
+  final TextEditingController controller;
+  final String hint;
+  final bool ranchOnly;
+  final int minLines;
+  final int maxLines;
+  final int? maxLength;
+  const MentionInput({
+    super.key,
+    required this.controller,
+    required this.hint,
+    this.ranchOnly = false,
+    this.minLines = 1,
+    this.maxLines = 5,
+    this.maxLength,
+  });
+  @override
+  State<MentionInput> createState() => _MentionInputState();
+}
+
+class _MentionInputState extends State<MentionInput> {
+  Timer? _timer;
+  List<Map<String, dynamic>> _people = const [];
+  int _start = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    widget.controller.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    _timer?.cancel();
+    final selection = widget.controller.selection;
+    final cursor = selection.isValid ? selection.baseOffset : widget.controller.text.length;
+    final before = widget.controller.text.substring(0, cursor.clamp(0, widget.controller.text.length));
+    final match = RegExp(r'(?:^|\s)@([a-zA-Z0-9_]*)$').firstMatch(before);
+    if (match == null) {
+      if (_people.isNotEmpty) setState(() => _people = const []);
+      return;
+    }
+    _start = match.start + (match.group(0)!.startsWith(' ') ? 1 : 0);
+    final query = (match.group(1) ?? '').toLowerCase();
+    _timer = Timer(const Duration(milliseconds: 220), () => _search(query));
+  }
+
+  Future<void> _search(String query) async {
+    if (!firebaseReady || signedInUid.isEmpty) return;
+    try {
+      final db = FirebaseFirestore.instance;
+      final ids = <String>{};
+      if (widget.ranchOnly && CloudSyncService.ready) {
+        final members = await CloudSyncService.ranch.collection('members').limit(40).get();
+        ids.addAll(members.docs.where((d) => d.data()['active'] != false).map((d) => d.id));
+      } else {
+        final following = await db.collection('profiles').doc(signedInUid).collection('following').limit(40).get();
+        final followers = await db.collection('profiles').doc(signedInUid).collection('followers').limit(40).get();
+        ids.addAll([...following.docs, ...followers.docs].map((d) => d.id));
+        final search = await db.collection('profiles').orderBy('username').startAt([query]).endAt(['$query\uf8ff']).limit(12).get();
+        ids.addAll(search.docs.map((d) => d.id));
+      }
+      ids.remove(signedInUid);
+      final docs = await Future.wait(ids.take(40).map((id) => db.collection('profiles').doc(id).get()));
+      final people = <Map<String, dynamic>>[
+        for (final doc in docs)
+          if (doc.exists && (query.isEmpty || txt(doc.data()!, 'username').toLowerCase().contains(query)))
+            {...doc.data()!, 'uid': doc.id},
+      ]..sort((a, b) => txt(a, 'username').compareTo(txt(b, 'username')));
+      if (mounted) setState(() => _people = people.take(5).toList());
+    } catch (_) {
+      if (mounted) setState(() => _people = const []);
+    }
+  }
+
+  void _select(Map<String, dynamic> person) {
+    final username = txt(person, 'username');
+    if (username.isEmpty || _start < 0) return;
+    final value = widget.controller.value;
+    final cursor = value.selection.isValid ? value.selection.baseOffset : value.text.length;
+    final text = value.text.replaceRange(_start, cursor, '$username ');
+    widget.controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: _start + username.length + 1),
+    );
+    final selected = [...?mentionSelections[widget.controller]];
+    if (!selected.any((item) => txt(item, 'uid') == txt(person, 'uid'))) {
+      selected.add({'uid': txt(person, 'uid'), 'username': username});
+    }
+    mentionSelections[widget.controller] = selected;
+    setState(() => _people = const []);
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      TextField(
+        controller: widget.controller,
+        minLines: widget.minLines,
+        maxLines: widget.maxLines,
+        maxLength: widget.maxLength,
+        buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: InputDecoration(hintText: widget.hint),
+      ),
+      if (_people.isNotEmpty)
+        Glass(
+          radius: Gold.r21,
+          opacity: .96,
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (final person in _people)
+                ListTile(
+                  dense: true,
+                  leading: profileAvatar(txt(person, 'photo'), radius: 18),
+                  title: Text(txt(person, 'displayName', txt(person, 'username'))),
+                  subtitle: Text(txt(person, 'username'), style: const TextStyle(color: Ink.violetDeep)),
+                  onTap: () => _select(person),
+                ),
+            ],
+          ),
+        ),
+    ],
+  );
+}
+
+class MentionText extends StatelessWidget {
+  final String text;
+  final List<dynamic> mentions;
+  final TextStyle? style;
+  const MentionText(this.text, {super.key, this.mentions = const [], this.style});
+  @override
+  Widget build(BuildContext context) {
+    final byName = <String, String>{
+      for (final raw in mentions.whereType<Map>())
+        if (txt(asMap(raw), 'username').isNotEmpty)
+          txt(asMap(raw), 'username'): txt(asMap(raw), 'uid'),
+    };
+    if (byName.isEmpty) return Text(text, style: style);
+    final names = byName.keys.toList()..sort((a, b) => b.length.compareTo(a.length));
+    final pattern = RegExp('\\b(${names.map(RegExp.escape).join('|')})\\b');
+    final spans = <TextSpan>[];
+    var end = 0;
+    for (final match in pattern.allMatches(text)) {
+      if (match.start > end) spans.add(TextSpan(text: text.substring(end, match.start)));
+      final name = match.group(0)!;
+      spans.add(TextSpan(
+        text: name,
+        style: const TextStyle(color: Ink.violetDeep, fontWeight: FontWeight.w700),
+        recognizer: TapGestureRecognizer()..onTap = () => push(context, SocialProfileScreen(uid: byName[name]!)),
+      ));
+      end = match.end;
+    }
+    if (end < text.length) spans.add(TextSpan(text: text.substring(end)));
+    return RichText(text: TextSpan(style: DefaultTextStyle.of(context).style.merge(style), children: spans));
+  }
+}
+
 class CurrentProfileAvatar extends StatelessWidget {
   final double radius;
   const CurrentProfileAvatar({super.key, this.radius = 22});
@@ -102,13 +270,30 @@ class PublicRanchView extends StatelessWidget {
         child: Text(bi('This ranch is private.', 'இந்தப் பண்ணை தனிப்பட்டது.')),
       );
     }
+    final grid = txt(profile, 'ranchLayout', 'grid') == 'grid';
+    final own = uid == signedInUid;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ListTile(
           leading: const CowMark(size: 32),
           title: Text(txt(profile, 'ranchName')),
-          subtitle: Text(txt(profile, 'ranchId')),
+          trailing: own
+              ? SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, icon: Icon(CupertinoIcons.list_bullet)),
+                    ButtonSegment(value: true, icon: Icon(CupertinoIcons.square_grid_2x2)),
+                  ],
+                  selected: {grid},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (value) async {
+                    await FirebaseFirestore.instance.collection('profiles').doc(uid).set({
+                      'ranchLayout': value.first ? 'grid' : 'list',
+                      'updatedAt': FieldValue.serverTimestamp(),
+                    }, SetOptions(merge: true));
+                  },
+                )
+              : null,
         ),
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
@@ -129,54 +314,68 @@ class PublicRanchView extends StatelessWidget {
                 ),
               );
             }
-            return Column(
-              children: [
-                for (final cow in snapshot.data!.docs)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Glass(
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: txt(cow.data(), 'photo').isEmpty
-                                ? const SizedBox(
-                                    width: 90,
-                                    height: 90,
-                                    child: CowMark(size: 50),
-                                  )
-                                : Image.memory(
-                                    socialPhotoBytes(txt(cow.data(), 'photo')),
-                                    width: 90,
-                                    height: 90,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) =>
-                                        const CowMark(size: 50),
-                                  ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  txt(cow.data(), 'name'),
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                Text(txt(cow.data(), 'cowId')),
-                                Text(txt(cow.data(), 'breed')),
-                              ],
-                            ),
-                          ),
-                        ],
+            Widget cowCard(QueryDocumentSnapshot<Map<String, dynamic>> cow) {
+              final photo = txt(cow.data(), 'photo');
+              final portrait = ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: photo.isEmpty
+                    ? const ColoredBox(
+                        color: Color(0x0D6C4ED4),
+                        child: Center(child: CowMark(size: 50)),
+                      )
+                    : Image.memory(
+                        socialPhotoBytes(photo),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => const Center(child: CowMark(size: 50)),
                       ),
-                    ),
+              );
+              if (grid) {
+                return Glass(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: SizedBox(width: double.infinity, child: portrait)),
+                      const SizedBox(height: 8),
+                      Text(txt(cow.data(), 'name'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(txt(cow.data(), 'breed'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Ink.muted, fontSize: 12)),
+                    ],
                   ),
-              ],
-            );
+                );
+              }
+              return Glass(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    SizedBox(width: 76, height: 76, child: portrait),
+                    const SizedBox(width: 14),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(txt(cow.data(), 'name'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      Text(txt(cow.data(), 'breed'), style: const TextStyle(color: Ink.muted)),
+                    ])),
+                  ],
+                ),
+              );
+            }
+            if (grid) {
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: .78,
+                ),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (_, index) => cowCard(snapshot.data!.docs[index]),
+              );
+            }
+            return Column(children: [
+              for (final cow in snapshot.data!.docs)
+                Padding(padding: const EdgeInsets.only(bottom: 12), child: cowCard(cow)),
+            ]);
           },
         ),
       ],
@@ -324,7 +523,10 @@ class _CommunitySearchScreenState extends State<CommunitySearchScreen> {
                   txt(person.data(), 'username'),
                 ),
               ),
-              subtitle: Text('@${txt(person.data(), 'username')}'),
+              subtitle: Text(
+                txt(person.data(), 'username'),
+                style: const TextStyle(color: Ink.violetDeep),
+              ),
               trailing: widget.addPersonal && person.id != signedInUid
                   ? IconButton(
                       icon: const Icon(CupertinoIcons.person_add),
@@ -456,27 +658,29 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
     }
   }
 
-  Widget _person(String uid) =>
+  Widget _person(String uid, {bool ranchMember = false}) =>
       StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('profiles')
             .doc(uid)
             .snapshots(),
-        builder: (context, snap) => ListTile(
+        builder: (context, snap) {
+          final data = snap.data?.data() ?? const <String, dynamic>{};
+          final displayName = txt(data, 'displayName', txt(data, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')));
+          return ListTile(
           leading: profileAvatar(
-            txt(snap.data?.data() ?? {}, 'photo'),
+            txt(data, 'photo'),
             radius: 23,
           ),
-          title: Text(
-            txt(
-              snap.data?.data() ?? {},
-              'displayName',
-              txt(snap.data?.data() ?? {}, 'username', 'Ranch member'),
-            ),
+          title: Text(displayName),
+          subtitle: Text(
+            ranchMember ? bi('Ranch member', 'பண்ணை உறுப்பினர்') : txt(data, 'username'),
+            style: const TextStyle(color: Ink.violetDeep, fontWeight: FontWeight.w600),
           ),
           trailing: const Icon(CupertinoIcons.chat_bubble),
           onTap: () => _open(uid),
-        ),
+        );
+        },
       );
   @override
   Widget build(BuildContext context) {
@@ -527,6 +731,14 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                               .snapshots()
                         : null,
                     builder: (context, members) {
+                      final memberIds = <String>{
+                        for (final d
+                            in members.data?.docs ??
+                                <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+                          if (d.data()['active'] != false &&
+                              txt(d.data(), 'status', 'active') == 'active')
+                            d.id,
+                      };
                       final personal = <String>{
                         for (final d
                             in contacts.data?.docs ??
@@ -559,12 +771,21 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                                 onTap: () => push(
                                   context,
                                   Scaffold(
-                                    appBar: AppBar(title: Text(farmName())),
+                                    appBar: AppBar(
+                                      title: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(bi('Chat', 'அரட்டை'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                                          Text(farmName(), style: const TextStyle(fontSize: 11, color: Ink.violetDeep)),
+                                        ],
+                                      ),
+                                    ),
                                     body: const RanchChatScreen(),
                                   ),
                                 ),
                               ),
-                            for (final uid in personal) _person(uid),
+                            for (final uid in personal)
+                              _person(uid, ranchMember: memberIds.contains(uid)),
                             if (personal.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.all(24),
@@ -672,29 +893,38 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(bi('Chat', 'அரட்டை')),
-      actions: [
-        IconButton(
-          tooltip: bi('Add to personal', 'தனிப்பட்ட அரட்டையில் சேர்'),
-          icon: const Icon(CupertinoIcons.person_add),
-          onPressed: () async {
-            try {
-              await DirectChatService.addPersonal(widget.peer);
-              if (context.mounted) {
-                snack(
-                  context,
-                  bi(
-                    'Added to personal chat',
-                    'தனிப்பட்ட அரட்டையில் சேர்க்கப்பட்டது',
+      titleSpacing: 0,
+      title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance.collection('profiles').doc(widget.peer).snapshots(),
+        builder: (context, profile) {
+          final data = profile.data?.data() ?? const <String, dynamic>{};
+          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: CloudSyncService.ready
+                ? CloudSyncService.ranch.collection('members').doc(widget.peer).snapshots()
+                : null,
+            builder: (context, member) => Row(
+              children: [
+                profileAvatar(txt(data, 'photo'), radius: 19),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(txt(data, 'displayName', txt(data, 'username', bi('Chat', 'அரட்டை'))), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      Text(
+                        member.data?.exists == true ? bi('Ranch member', 'பண்ணை உறுப்பினர்') : txt(data, 'username'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Ink.violetDeep),
+                      ),
+                    ],
                   ),
-                );
-              }
-            } catch (e) {
-              if (context.mounted) snack(context, accountError(e));
-            }
-          },
-        ),
-      ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     ),
     body: Shell(
       child: Column(
@@ -778,12 +1008,14 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                       controller: _text,
                       enabled: !_busy,
                       maxLength: 2000,
+                      buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                       minLines: 1,
                       maxLines: 4,
                       decoration: fieldStyle(bi('Message', 'செய்தி')),
                     ),
                   ),
-                  IconButton(
+                  const SizedBox(width: 8),
+                  IconButton.filled(
                     onPressed: _busy ? null : _send,
                     icon: _busy
                         ? const SizedBox(
@@ -791,7 +1023,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                             height: 22,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(CupertinoIcons.arrow_up_circle_fill),
+                        : const Icon(CupertinoIcons.arrow_up),
                   ),
                 ],
               ),

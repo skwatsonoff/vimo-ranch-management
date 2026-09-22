@@ -59,6 +59,8 @@ Widget profileAvatar(String photo, {double radius = 38}) => CircleAvatar(
             width: radius * 2,
             height: radius * 2,
             fit: BoxFit.cover,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
             errorBuilder: (_, _, _) => Icon(
               CupertinoIcons.person_fill,
               size: radius,
@@ -169,14 +171,29 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                               'Choose a username',
                                               'பயனர்பெயரைத் தேர்ந்தெடு',
                                             )
-                                          : '@$name',
-                                      style: const TextStyle(color: Ink.muted),
+                                          : name,
+                                      style: const TextStyle(
+                                        color: Ink.violetDeep,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                     if (txt(data, 'place').isNotEmpty)
                                       Text(txt(data, 'place')),
                                   ],
                                 ),
                               ),
+                              if (own)
+                                IconButton(
+                                  tooltip: bi(
+                                    'Edit profile',
+                                    'சுயவிவரத்தைத் திருத்து',
+                                  ),
+                                  icon: const Icon(CupertinoIcons.pencil),
+                                  onPressed: () => push(
+                                    context,
+                                    EditSocialProfileScreen(data: data),
+                                  ),
+                                ),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -188,8 +205,11 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                             ],
                           ),
                           if (txt(data, 'bio').isNotEmpty)
-                            Text(
+                            MentionText(
                               txt(data, 'bio'),
+                              mentions: data['bioMentions'] is List
+                                  ? List.from(data['bioMentions'])
+                                  : const [],
                               style: const TextStyle(fontSize: 16),
                             ),
                           const SizedBox(height: 14),
@@ -211,18 +231,6 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                   icon: const Icon(CupertinoIcons.link),
                                   label: Text(bi('My link', 'என் இணைப்பு')),
                                   onPressed: () => _link(txt(data, 'link')),
-                                ),
-                              if (own)
-                                IconButton(
-                                  tooltip: bi(
-                                    'Edit profile',
-                                    'சுயவிவரத்தைத் திருத்து',
-                                  ),
-                                  icon: const Icon(CupertinoIcons.ellipsis),
-                                  onPressed: () => push(
-                                    context,
-                                    EditSocialProfileScreen(data: data),
-                                  ),
                                 ),
                               if (!own)
                                 OutlinedButton.icon(
@@ -361,12 +369,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     if (item.$1 == 1)
-                                      CustomPaint(
-                                        size: const Size(25, 23),
-                                        painter: _ProfileCowPainter(
-                                          _tab == 1 ? Ink.violet : Ink.muted,
-                                        ),
-                                      )
+                                      const CowMark(size: 25)
                                     else
                                       Icon(item.$3, size: 21),
                                     const SizedBox(width: 6),
@@ -495,21 +498,11 @@ class ProfilePostList extends StatefulWidget {
 }
 
 class _ProfilePostListState extends State<ProfilePostList> {
-  Timer? _clock;
   late Future<List<SocialPostRecord>> _posts;
   @override
   void initState() {
     super.initState();
     _refresh();
-    _clock = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(_refresh);
-    });
-  }
-
-  @override
-  void dispose() {
-    _clock?.cancel();
-    super.dispose();
   }
 
   @override
@@ -535,14 +528,6 @@ class _ProfilePostListState extends State<ProfilePostList> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if ((post.data()['createdAt'] as Timestamp?)
-                            ?.toDate()
-                            .isAfter(DateTime.now()) ==
-                        true)
-                      Text(
-                        '${bi('Scheduled', 'திட்டமிடப்பட்டது')}: ${(post.data()['createdAt'] as Timestamp).toDate().toLocal()}',
-                        style: const TextStyle(color: Ink.violet),
-                      ),
                     _SocialPost(key: ValueKey(post.id), post: post),
                   ],
                 ),
@@ -623,7 +608,7 @@ class ProfilePeopleScreen extends StatelessWidget {
                       radius: 22,
                     ),
                     title: Text(
-                      '@${txt(profile.data?.data() ?? {}, 'username', '…')}',
+                      txt(profile.data?.data() ?? {}, 'username', '…'),
                     ),
                     onTap: () =>
                         push(context, SocialProfileScreen(uid: person.id)),
@@ -646,6 +631,7 @@ class EditSocialProfileScreen extends StatefulWidget {
 }
 
 class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
+  late final _username = TextEditingController(text: accountUsername);
   late final _name = TextEditingController(
     text: txt(widget.data, 'displayName', currentUserName()),
   );
@@ -664,7 +650,18 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
   late String _photo = txt(widget.data, 'photo');
   bool _busy = false, _picking = false;
   @override
+  void initState() {
+    super.initState();
+    if (widget.data['bioMentions'] is List) {
+      mentionSelections[_bio] = [
+        for (final item in List.from(widget.data['bioMentions']))
+          if (item is Map) asMap(item),
+      ];
+    }
+  }
+  @override
   void dispose() {
+    _username.dispose();
     _name.dispose();
     _place.dispose();
     _whatsapp.dispose();
@@ -675,11 +672,79 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
     super.dispose();
   }
 
+  Future<void> _pickPhoto() async {
+    if (_picking || _busy) return;
+    setState(() => _picking = true);
+    try {
+      final selected = await pickImageDataUrl();
+      if (selected == null) return;
+      final photo = await compressSocialPhoto(selected);
+      if (photo == null) throw StateError(bi('Could not load this photo.', 'புகைப்படத்தை ஏற்ற முடியவில்லை.'));
+      if (mounted) setState(() => _photo = photo);
+    } catch (e) {
+      if (mounted) snack(context, accountError(e));
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<void> _photoMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Glass(
+        radius: Gold.r34,
+        opacity: .96,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(CupertinoIcons.photo),
+                title: Text(bi('Change photo', 'புகைப்படத்தை மாற்று')),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickPhoto();
+                },
+              ),
+              if (_photo.isNotEmpty)
+                ListTile(
+                  leading: const Icon(CupertinoIcons.trash, color: Ink.red),
+                  title: Text(bi('Remove photo', 'புகைப்படத்தை நீக்கு')),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _photo = '');
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => FormPage(
     title: bi('Edit profile', 'சுயவிவரத்தைத் திருத்து'),
     children: [
-      Center(child: profileAvatar(_photo)),
+      Center(
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            profileAvatar(_photo, radius: 62),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: IconButton.filled(
+                tooltip: bi('Edit photo', 'புகைப்படத்தைத் திருத்து'),
+                onPressed: _picking || _busy ? null : _photoMenu,
+                icon: const Icon(CupertinoIcons.pencil, size: 19),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 22),
       TextField(
         controller: _name,
         maxLength: 80,
@@ -690,54 +755,15 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
         maxLength: 120,
         decoration: fieldStyle(bi('Location', 'இடம்')),
       ),
-      TextButton(
-        onPressed: _picking || _busy
-            ? null
-            : () async {
-                setState(() => _picking = true);
-                try {
-                  final selected = await pickImageDataUrl();
-                  if (selected == null) return;
-                  final photo = await compressSocialPhoto(selected);
-                  if (photo == null) {
-                    throw StateError(
-                      bi(
-                        'Could not load this photo.',
-                        'புகைப்படத்தை ஏற்ற முடியவில்லை.',
-                      ),
-                    );
-                  }
-                  if (mounted) setState(() => _photo = photo);
-                } catch (e) {
-                  if (context.mounted) snack(context, accountError(e));
-                } finally {
-                  if (mounted) setState(() => _picking = false);
-                }
-              },
-        child: Text(bi('Change photo', 'புகைப்படத்தை மாற்று')),
-      ),
-      if (_photo.isNotEmpty)
-        TextButton(
-          onPressed: () => setState(() => _photo = ''),
-          child: Text(bi('Remove photo', 'புகைப்படத்தை நீக்கு')),
-        ),
-      _ActionRow(
-        icon: CupertinoIcons.at,
-        label: accountUsername.isEmpty
-            ? bi('Choose username', 'பயனர்பெயரைத் தேர்ந்தெடு')
-            : '@$accountUsername',
-        onTap: () async {
-          await push(context, const UsernameScreen());
-          if (mounted) setState(() {});
-        },
-      ),
+      const SizedBox(height: 12),
+      UsernameField(controller: _username),
       const SizedBox(height: 16),
-      TextField(
+      MentionInput(
         controller: _bio,
         maxLength: 160,
         minLines: 3,
         maxLines: 5,
-        decoration: fieldStyle(bi('Bio', 'சுய அறிமுகம்')),
+        hint: bi('Bio', 'சுய அறிமுகம்'),
       ),
       const SizedBox(height: 16),
       TextField(
@@ -819,10 +845,16 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
             );
             return;
           }
-          if (accountUsername.isEmpty) {
-            await push(context, const UsernameScreen());
-            if (!mounted || accountUsername.isEmpty) return;
+          final requestedUsername = normalizeUsername(_username.text);
+          if (requestedUsername != accountUsername) {
+            try {
+              await UsernameService.save(requestedUsername);
+            } catch (e) {
+              if (mounted) snack(context, accountError(e));
+              return;
+            }
           }
+          if (accountUsername.isEmpty) return;
           setState(() => _busy = true);
           try {
             final uid = FirebaseAuth.instance.currentUser!.uid;
@@ -843,6 +875,10 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
                   'shopDetails': _shopDetails.text.trim(),
                   'photo': _photo,
                   'bio': _bio.text.trim(),
+                  'bioMentions': mentionSelections[_bio] ??
+                      (widget.data['bioMentions'] is List
+                          ? List.from(widget.data['bioMentions'])
+                          : const []),
                   'link': _link.text.trim(),
                   'updatedAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true))
