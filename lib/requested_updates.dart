@@ -179,6 +179,13 @@ class ReportDetailsScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Glass(
                   padding: const EdgeInsets.all(18),
+                  onTap: () => push(
+                    context,
+                    RecordFullDetailsScreen(
+                      record: row,
+                      title: '${reportTitle(kind)} details',
+                    ),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -197,6 +204,11 @@ class ReportDetailsScreen extends StatelessWidget {
                                 ? '${numv(row, '_value').toStringAsFixed(1)} L'
                                 : money(numv(row, '_value')),
                           ),
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Ink.faint,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -210,6 +222,127 @@ class ReportDetailsScreen extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+Map<String, int> cowRankStreak(String cowName) {
+  final totals = <String, Map<String, double>>{};
+  for (final row in milkRows()) {
+    final date = DateTime.tryParse(txt(row, 'date'));
+    final cow = txt(row, 'cow');
+    if (date == null || cow.isEmpty) continue;
+    final month = '${date.year}-${date.month.toString().padLeft(2, '0')}-01';
+    totals.putIfAbsent(month, () => <String, double>{});
+    totals[month]![cow] = (totals[month]![cow] ?? 0) + numv(row, 'quantity');
+  }
+  final months = totals.keys.toList()..sort((a, b) => b.compareTo(a));
+  int maintainedRank = 0;
+  int streak = 0;
+  for (final month in months) {
+    final ranked = totals[month]!.entries.toList()
+      ..sort((a, b) {
+        final quantity = b.value.compareTo(a.value);
+        return quantity != 0 ? quantity : a.key.compareTo(b.key);
+      });
+    final index = ranked.indexWhere((entry) => entry.key == cowName);
+    final rank = index >= 0 && index < 3 ? index + 1 : 0;
+    if (streak == 0) {
+      if (rank == 0) continue;
+      maintainedRank = rank;
+      streak = 1;
+    } else if (rank == maintainedRank) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  return {'rank': maintainedRank, 'months': streak};
+}
+
+class RecordFullDetailsScreen extends StatelessWidget {
+  final Map<String, dynamic> record;
+  final String title;
+  const RecordFullDetailsScreen({
+    super.key,
+    required this.record,
+    this.title = 'Entry details',
+  });
+
+  static const _hidden = {
+    '_sort',
+    '_value',
+    '_type',
+    'pendingUpload',
+    'updatedAtMillis',
+    'photo',
+    'voice',
+  };
+
+  String _label(String key) => key
+      .replaceAllMapped(RegExp(r'([A-Z])'), (match) => ' ${match.group(1)}')
+      .replaceAll('_', ' ')
+      .trim()
+      .split(' ')
+      .map(
+        (word) => word.isEmpty
+            ? word
+            : '${word[0].toUpperCase()}${word.substring(1)}',
+      )
+      .join(' ');
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = record.entries
+        .where(
+          (entry) =>
+              !_hidden.contains(entry.key) &&
+              '${entry.value}'.trim().isNotEmpty,
+        )
+        .toList();
+    return Scaffold(
+      appBar: AppBar(title: AppText(title), leading: const _BackButton()),
+      body: Shell(
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(21, 21, 21, 55),
+          itemCount: entries.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (_, index) {
+            final entry = entries[index];
+            return Glass(
+              radius: Gold.r21,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 4,
+                    child: AppText(
+                      _label(entry.key),
+                      style: const TextStyle(
+                        color: Ink.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 6,
+                    child: Text(
+                      '${entry.value}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: Ink.navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

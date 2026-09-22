@@ -159,6 +159,19 @@
   </style>
 </head>
 <body>
+  <script>
+    // Keep the ranch workspace awake while it is visible. Mobile browsers may
+    // require a user gesture, so retry on focus and the first interaction.
+    let vimoScreenWakeLock = null;
+    async function keepVimoAwake() {
+      if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+      try { vimoScreenWakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+    }
+    document.addEventListener('visibilitychange', keepVimoAwake);
+    window.addEventListener('focus', keepVimoAwake);
+    window.addEventListener('pointerdown', keepVimoAwake, { passive: true });
+    keepVimoAwake();
+  </script>
   <div id="loading">
     <div class="splash-card">
       <div class="logo-orbit">

@@ -527,9 +527,7 @@ class _ProfilePostListState extends State<ProfilePostList> {
                 padding: const EdgeInsets.only(bottom: 18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _SocialPost(key: ValueKey(post.id), post: post),
-                  ],
+                  children: [_SocialPost(key: ValueKey(post.id), post: post)],
                 ),
               ),
           ],
@@ -659,6 +657,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
       ];
     }
   }
+
   @override
   void dispose() {
     _username.dispose();
@@ -679,7 +678,10 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
       final selected = await pickImageDataUrl();
       if (selected == null) return;
       final photo = await compressSocialPhoto(selected);
-      if (photo == null) throw StateError(bi('Could not load this photo.', 'புகைப்படத்தை ஏற்ற முடியவில்லை.'));
+      if (photo == null)
+        throw StateError(
+          bi('Could not load this photo.', 'புகைப்படத்தை ஏற்ற முடியவில்லை.'),
+        );
       if (mounted) setState(() => _photo = photo);
     } catch (e) {
       if (mounted) snack(context, accountError(e));
@@ -733,12 +735,42 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
           children: [
             profileAvatar(_photo, radius: 62),
             Positioned(
-              right: -2,
-              bottom: -2,
-              child: IconButton.filled(
-                tooltip: bi('Edit photo', 'புகைப்படத்தைத் திருத்து'),
-                onPressed: _picking || _busy ? null : _photoMenu,
-                icon: const Icon(CupertinoIcons.pencil, size: 19),
+              right: -4,
+              bottom: -4,
+              child: Semantics(
+                button: true,
+                label: bi('Edit photo', 'புகைப்படத்தைத் திருத்து'),
+                child: GestureDetector(
+                  onTap: _picking || _busy ? null : _photoMenu,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withValues(alpha: .96),
+                          Ink.violet.withValues(alpha: .28),
+                        ],
+                      ),
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Ink.violetDeep.withValues(alpha: .28),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.pencil,
+                      size: 22,
+                      color: Ink.violetDeep,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -875,7 +907,8 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
                   'shopDetails': _shopDetails.text.trim(),
                   'photo': _photo,
                   'bio': _bio.text.trim(),
-                  'bioMentions': mentionSelections[_bio] ??
+                  'bioMentions':
+                      mentionSelections[_bio] ??
                       (widget.data['bioMentions'] is List
                           ? List.from(widget.data['bioMentions'])
                           : const []),

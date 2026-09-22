@@ -57,6 +57,7 @@ part 'vendor_stock_separation.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -1263,31 +1264,31 @@ class Glass extends StatelessWidget {
     Widget surface = ClipPath(
       clipper: SquircleClipper(radius),
       child: CustomPaint(
-          foregroundPainter: _GlassSkinPainter(
-            radius: radius,
-            strength: specular,
-            sheen: sheen,
+        foregroundPainter: _GlassSkinPainter(
+          radius: radius,
+          strength: specular,
+          sheen: sheen,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient:
+                (accessible ? null : gradient) ??
+                LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    base.withValues(alpha: effectiveOpacity),
+                    base.withValues(
+                      alpha: effectiveOpacity * (accessible ? 1 : .48),
+                    ),
+                    base.withValues(
+                      alpha: effectiveOpacity * (accessible ? 1 : .82),
+                    ),
+                  ],
+                ),
           ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient:
-                  (accessible ? null : gradient) ??
-                  LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      base.withValues(alpha: effectiveOpacity),
-                      base.withValues(
-                        alpha: effectiveOpacity * (accessible ? 1 : .48),
-                      ),
-                      base.withValues(
-                        alpha: effectiveOpacity * (accessible ? 1 : .82),
-                      ),
-                    ],
-                  ),
-            ),
-            child: Padding(padding: padding, child: child),
-          ),
+          child: Padding(padding: padding, child: child),
+        ),
       ),
     );
 
@@ -6199,23 +6200,26 @@ class VimoApp extends StatelessWidget {
       ).listenable(keys: const ['languageMode']),
       builder: (_, _, _) => MaterialApp(
         scaffoldMessengerKey: rootMessengerKey,
+        navigatorKey: rootNavigatorKey,
         locale: Locale(tamilUi ? 'ta' : 'en'),
         supportedLocales: const [Locale('en'), Locale('ta')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         title: 'VIMO',
         debugShowCheckedModeBanner: false,
-        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-          value: const SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness: Brightness.dark,
-            statusBarBrightness: Brightness.light,
-            systemNavigationBarColor: Ink.canvasLow,
-            systemNavigationBarIconBrightness: Brightness.dark,
-            systemNavigationBarDividerColor: Colors.transparent,
-          ),
-          child: ColoredBox(
-            color: Ink.canvasTop,
-            child: child ?? const SizedBox.shrink(),
+        builder: (context, child) => _GlobalSwipeBack(
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: const SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: Brightness.dark,
+              statusBarBrightness: Brightness.light,
+              systemNavigationBarColor: Ink.canvasLow,
+              systemNavigationBarIconBrightness: Brightness.dark,
+              systemNavigationBarDividerColor: Colors.transparent,
+            ),
+            child: ColoredBox(
+              color: Ink.canvasTop,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
         scrollBehavior: const _SmoothScroll(),
@@ -7811,7 +7815,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
       'sender': currentUserName(),
       'date': todayDate(),
       'time': currentTime(),
-      'createdAt': DateTime.now().toIso8601String(),
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
     });
     AutoSyncService.scheduleSync(reason: 'chat message');
     await addRanchNotification(
@@ -7861,7 +7865,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
       'sender': currentUserName(),
       'date': todayDate(),
       'time': currentTime(),
-      'createdAt': DateTime.now().toIso8601String(),
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
     });
     AutoSyncService.scheduleSync(reason: 'voice message');
     await addRanchNotification(
@@ -7890,7 +7894,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
         'eventType': 'completed',
         'date': todayDate(),
         'time': currentTime(),
-        'createdAt': DateTime.now().toIso8601String(),
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
       });
       await addRanchNotification(
         title: 'Task completed',
@@ -8573,17 +8577,6 @@ class _MainShellState extends State<MainShell> {
     super.dispose();
   }
 
-  Offset? _swipeStart;
-  bool _openingSettings = false;
-  Future<void> _openSettings() async {
-    if (_openingSettings) return;
-    _openingSettings = true;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
-    _openingSettings = false;
-  }
-
   /// Height reserved under every scroll view so the floating bar and the action
   /// button never sit on top of content.
   static const double bottomInset = Gold.s89 + Gold.s34;
@@ -8604,6 +8597,15 @@ class _MainShellState extends State<MainShell> {
         break;
       case 'sell':
         push(context, const SellScreen());
+        break;
+      case 'stock':
+        push(context, const SellScreen(initialSection: 1));
+        break;
+      case 'reports':
+        push(context, const SellScreen(initialSection: 2));
+        break;
+      case 'pregnant':
+        push(context, const PregnantCowsScreen());
         break;
       default:
         push(
@@ -8652,8 +8654,8 @@ class _MainShellState extends State<MainShell> {
       extendBody: false,
       backgroundColor: Ink.canvasTop,
       appBar: AppBar(
-        toolbarHeight: 52,
-        leadingWidth: 58,
+        toolbarHeight: 60,
+        leadingWidth: 64,
         leading: Semantics(
           button: true,
           label: bi('Profile', 'சுயவிவரம்'),
@@ -8661,10 +8663,10 @@ class _MainShellState extends State<MainShell> {
             behavior: HitTestBehavior.opaque,
             onTap: () => push(context, const SocialProfileScreen()),
             child: const Padding(
-              padding: EdgeInsets.only(left: 12),
+              padding: EdgeInsets.only(left: 10),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: CurrentProfileAvatar(radius: 20),
+                child: CurrentProfileAvatar(radius: 23),
               ),
             ),
           ),
@@ -8677,39 +8679,27 @@ class _MainShellState extends State<MainShell> {
               : '${appName()} ${ui(order[tab])}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
         ),
         actions: [
           if (order[tab] == 'Social' || order[tab] == 'Chat')
             IconButton(
               tooltip: ui('Search'),
-              icon: const Icon(CupertinoIcons.search),
+              icon: const Icon(CupertinoIcons.search, size: 26),
               onPressed: () => push(context, const CommunitySearchScreen()),
             ),
           const RanchNotificationButton(),
         ],
       ),
-      body: Listener(
-        onPointerDown: (event) => _swipeStart = event.localPosition,
-        onPointerCancel: (_) => _swipeStart = null,
-        onPointerUp: (event) {
-          final start = _swipeStart;
-          _swipeStart = null;
-          if (start == null) return;
-          final delta = event.localPosition - start;
-          final width = MediaQuery.sizeOf(context).width;
-          if (delta.dy.abs() > 60) return;
-          if (start.dx < 28 && delta.dx > 80) _openSettings();
-          if (start.dx > width - 28 && delta.dx < -80) {
-            FocusScope.of(context).unfocus();
-            setState(() => _tab = order.indexOf('Chat'));
-          }
-        },
-        child: pages[tab],
-      ),
+      body: pages[tab],
       floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
           ? null
-          :
-          order[tab] == 'Chat' || (order[tab] != 'Social' && !canRecordEntries)
+          : order[tab] == 'Chat' ||
+                (order[tab] != 'Social' && !canRecordEntries)
           ? null
           : FloatingActionButton(
               heroTag: 'workspace-add',
@@ -8945,16 +8935,16 @@ class DashboardScreen extends StatelessWidget {
         type: 'cows',
         label: 'Cows',
         value: '${animalsBy('cow').length}',
-        icon: const CowMark(size: 25),
+        icon: const CowMark(size: 29),
         ghost: const CowMark(size: Gold.s89),
         accent: Ink.violet,
         onTap: onOpenCard,
       ),
       _StatTile(
         type: 'sell',
-        label: "Today's Sale",
-        value: money(saleIncome('Today')),
-        icon: const Icon(Icons.sell_outlined, size: 25, color: Ink.green),
+        label: 'Sell',
+        value: '${saleRows().length}',
+        icon: const Icon(Icons.sell_outlined, size: 29, color: Ink.green),
         ghost: const Icon(
           Icons.sell_outlined,
           size: Gold.s89,
@@ -8967,27 +8957,27 @@ class DashboardScreen extends StatelessWidget {
         type: 'calves',
         label: 'Calves',
         value: '${animalsBy('calf').length}',
-        icon: const CowMark(size: 25),
+        icon: const CowMark(size: 29),
         ghost: const CowMark(size: Gold.s89),
         accent: Ink.amber,
         onTap: onOpenCard,
       ),
       _StatTile(
-        type: 'milk',
-        label: "Today's Milk",
-        value: '${milkTotal('Today').toStringAsFixed(1)} L',
-        icon: const RanchIcon(type: 'bottle', size: 25, color: Ink.blue),
+        type: 'stock',
+        label: 'Stock',
+        value: '${stockRows().length}',
+        icon: const RanchIcon(type: 'bottle', size: 29, color: Ink.blue),
         ghost: const RanchIcon(type: 'milk', size: Gold.s89, color: Ink.blue),
         accent: Ink.blue,
         onTap: onOpenCard,
       ),
       _StatTile(
-        type: pregnantCowCount() == 0 ? '' : 'cows',
+        type: 'pregnant',
         label: 'Pregnant Cows',
-        value: pregnantCowCount() == 0 ? 'None' : '${pregnantCowCount()}',
+        value: '${pregnantCowCount()}',
         icon: const Icon(
           Icons.favorite_border_rounded,
-          size: 25,
+          size: 29,
           color: Ink.violetDeep,
         ),
         ghost: const Icon(
@@ -8999,12 +8989,12 @@ class DashboardScreen extends StatelessWidget {
         onTap: onOpenCard,
       ),
       _StatTile(
-        type: 'expenses',
-        label: 'Expenses',
-        value: money(totalExpense('Today')),
+        type: 'reports',
+        label: 'Reports',
+        value: '${reportDetailRows('income', 'This Month').length}',
         icon: const Icon(
           Icons.account_balance_wallet_outlined,
-          size: 25,
+          size: 29,
           color: Ink.amber,
         ),
         ghost: const Icon(
@@ -9655,13 +9645,13 @@ class _StatTile extends StatelessWidget {
             child: Opacity(opacity: 0.07, child: ghost),
           ),
           Padding(
-            padding: const EdgeInsets.all(Gold.s16),
+            padding: const EdgeInsets.all(Gold.s13),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: Gold.s34,
-                  height: Gold.s34,
+                  width: 44,
+                  height: 44,
                   decoration: ShapeDecoration(
                     shape: SquircleBorder(
                       radius: Gold.concentric(Gold.r27, Gold.s16),
@@ -9677,13 +9667,13 @@ class _StatTile extends StatelessWidget {
                   ),
                   child: Center(child: icon),
                 ),
-                const Spacer(),
+                const SizedBox(height: Gold.s13),
                 AppText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: Gold.t11,
+                    fontSize: Gold.t13,
                     color: Ink.muted,
                     fontWeight: FontWeight.w700,
                   ),
@@ -9692,7 +9682,7 @@ class _StatTile extends StatelessWidget {
                 FlowText(
                   value,
                   style: const TextStyle(
-                    fontSize: Gold.t27,
+                    fontSize: 29,
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     height: 1,
@@ -9752,9 +9742,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         centerTitle: true,
-        title: AppText(
-          tamilUi ? 'மாடுகள் மற்றும் கன்றுகள்' : 'Cows & Calves',
-        ),
+        title: AppText(tamilUi ? 'மாடுகள் மற்றும் கன்றுகள்' : 'Cows & Calves'),
         leading: const _BackButton(),
         actions: [
           if (canEditAnimals)
@@ -10395,6 +10383,8 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
     IconData icon,
     Color color, {
     String time = '',
+    String trailing = '',
+    String displayDate = '',
   }) {
     if (date.isEmpty) return;
     final parsed =
@@ -10408,6 +10398,8 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       'detail': detail,
       'icon': icon,
       'color': color,
+      'trailing': trailing,
+      'displayDate': displayDate,
       '_sort': parsed,
     });
   }
@@ -10473,9 +10465,28 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
     add(
       txt(month, 'date'),
       ui('Milk'),
-      '${monthLabel(txt(month, 'date'))} · ${numv(month, 'quantity').toStringAsFixed(1)} ${bi('litres', 'லிட்டர்')}',
+      bi('Monthly milk total', 'மாத பால் மொத்தம்'),
       Icons.water_drop_rounded,
       Ink.violet,
+      trailing: '${numv(month, 'quantity').toStringAsFixed(1)} L',
+      displayDate: monthLabel(txt(month, 'date')),
+    );
+  }
+  final streak = cowRankStreak(name);
+  if ((streak['rank'] ?? 0) > 0) {
+    final rank = streak['rank']!;
+    final months = streak['months']!;
+    final now = DateTime.now();
+    add(
+      '${now.year}-${now.month.toString().padLeft(2, '0')}-01',
+      'Rank #$rank · ${rankLabel(rank)}',
+      months == 1 ? 'Maintained for 1 month' : 'Maintained for $months months',
+      Icons.workspace_premium_rounded,
+      rankColor(rank),
+      trailing: '$months ${months == 1 ? 'month' : 'months'}',
+      displayDate: monthLabel(
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-01',
+      ),
     );
   }
   for (final r in expenseRows().where(
@@ -10593,12 +10604,40 @@ class _TimelineEvent extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  AppText(
-                    txt(event, 'title'),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Ink.navy,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppText(
+                          txt(event, 'title'),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: txt(event, 'title').startsWith('Rank #')
+                                ? color
+                                : Ink.navy,
+                          ),
+                        ),
+                      ),
+                      if (txt(event, 'trailing').isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: .13),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: AppText(
+                            txt(event, 'trailing'),
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: Gold.s3),
                   AppText(
@@ -10607,7 +10646,7 @@ class _TimelineEvent extends StatelessWidget {
                   ),
                   const SizedBox(height: Gold.s5),
                   AppText(
-                    '${txt(event, 'date')}${txt(event, 'time').isEmpty ? '' : ' • ${txt(event, 'time')}'}',
+                    '${txt(event, 'displayDate', txt(event, 'date'))}${txt(event, 'time').isEmpty ? '' : ' • ${txt(event, 'time')}'}',
                     style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.w600,
@@ -10758,7 +10797,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
 
     return Glass(
       radius: Gold.r34,
-      padding: const EdgeInsets.all(Gold.s16),
+      padding: const EdgeInsets.all(Gold.s21),
       elevation: 1.1,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -10775,7 +10814,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: Gold.t21,
+                          fontSize: Gold.t27,
                           fontWeight: FontWeight.w700,
                           color: Ink.navy,
                           letterSpacing: -0.4,
@@ -10796,7 +10835,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         style: const TextStyle(
                           color: Ink.violetDeep,
                           fontWeight: FontWeight.w700,
-                          fontSize: Gold.t10,
+                          fontSize: Gold.t13,
                         ),
                       ),
                     ),
@@ -10810,7 +10849,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   style: const TextStyle(
                     color: Ink.muted,
                     fontWeight: FontWeight.w600,
-                    fontSize: Gold.t11,
+                    fontSize: 14,
                   ),
                 ),
                 AppText(
@@ -10819,7 +10858,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
-                    fontSize: Gold.t11,
+                    fontSize: 14,
                     color: Ink.body,
                   ),
                 ),
@@ -10863,21 +10902,21 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   Widget _metric(String title, String value, IconData icon, Color color) {
     return Glass(
       radius: Gold.r21,
-      padding: const EdgeInsets.all(Gold.s13),
+      padding: const EdgeInsets.all(Gold.s16),
       elevation: 0.62,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: Gold.s27,
-            height: Gold.s27,
+            width: Gold.s34,
+            height: Gold.s34,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
                 radius: Gold.concentric(Gold.r21, Gold.s13),
               ),
               color: color.withValues(alpha: 0.13),
             ),
-            child: Icon(icon, color: color, size: Gold.t13),
+            child: Icon(icon, color: color, size: 18),
           ),
           const Spacer(),
           AppText(
@@ -10886,7 +10925,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Ink.muted,
-              fontSize: Gold.t10,
+              fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -10896,7 +10935,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: Gold.t16,
+              fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Ink.navy,
             ),
@@ -11135,44 +11174,76 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   }
 
   Widget _milk(String name) {
-    final milk = milkRows()
-        .where((r) => txt(r, 'cow') == name)
-        .take(30)
-        .toList();
+    final unique = <String, Map<String, dynamic>>{};
+    for (final row in milkRows().where((r) => txt(r, 'cow') == name)) {
+      final signature = [
+        txt(row, 'date'),
+        txt(row, 'time'),
+        txt(row, 'session'),
+        numv(row, 'quantity').toStringAsFixed(3),
+        txt(row, 'addedBy'),
+      ].join('|');
+      unique.putIfAbsent(signature, () => row);
+    }
+    final milk = unique.values.take(30).toList();
 
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: InfoRow(
-                title: 'Today',
-                value: '${cowMilkToday(name).toStringAsFixed(1)} L',
-                icon: Icons.water_drop_rounded,
-                color: Ink.violet,
-              ),
-            ),
-            const SizedBox(width: Gold.s13),
-            Expanded(
-              child: InfoRow(
-                title: 'Month',
-                value:
-                    '${cowMilkForPeriod(name, 'This Month').toStringAsFixed(1)} L',
-                icon: Icons.calendar_month_rounded,
-                color: Ink.green,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: Gold.s16),
         panel('Milk History', 'No milk records yet.', [
           for (final r in milk)
-            _RecordLine(
-              icon: Icons.water_drop_rounded,
-              color: Ink.violet,
-              title:
-                  '${numv(r, 'quantity').toStringAsFixed(1)} L \u2022 ${txt(r, 'session')}',
-              subtitle: '${txt(r, 'date')} \u2022 ${txt(r, 'time')}',
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Glass(
+                radius: Gold.r21,
+                padding: const EdgeInsets.all(16),
+                onTap: () => push(
+                  context,
+                  RecordFullDetailsScreen(
+                    record: r,
+                    title: 'Milk entry details',
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.water_drop_rounded,
+                      color: Ink.violet,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AppText(
+                            txt(r, 'session', 'Milk entry'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          AppText(
+                            '${txt(r, 'date')} \u2022 ${txt(r, 'time')} \u2022 ${txt(r, 'addedBy')}',
+                            style: const TextStyle(
+                              color: Ink.muted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    AppText(
+                      '${numv(r, 'quantity').toStringAsFixed(1)} L',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Ink.violetDeep,
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, color: Ink.faint),
+                  ],
+                ),
+              ),
             ),
         ]),
       ],
@@ -13014,6 +13085,80 @@ List<Map<String, dynamic>> ranchCustomers() {
   return rows;
 }
 
+class PregnantCowsScreen extends StatelessWidget {
+  const PregnantCowsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Ink.canvasTop,
+    appBar: AppBar(
+      centerTitle: true,
+      leading: const _BackButton(),
+      title: AppText(tamilUi ? 'சினை மாடுகள்' : 'Pregnant Cows'),
+    ),
+    body: ValueListenableBuilder<Box<dynamic>>(
+      valueListenable: Hive.box('animals').listenable(),
+      builder: (_, _, _) {
+        final cows = animals()
+            .where(
+              (animal) =>
+                  txt(animal, 'gender', 'Female') == 'Female' &&
+                  txt(animal, 'pregnancyStartDate').isNotEmpty &&
+                  txt(animal, 'status', 'Active') == 'Active',
+            )
+            .toList();
+        return Shell(
+          child: cows.isEmpty
+              ? Center(
+                  child: EmptyNote(
+                    icon: Icons.favorite_border_rounded,
+                    title: tamilUi ? 'இல்லை' : 'None',
+                    message: tamilUi
+                        ? 'இப்போது சினை மாடுகள் இல்லை.'
+                        : 'There are no pregnant cows right now.',
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(21, 21, 21, 55),
+                  itemCount: cows.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, index) =>
+                      PlainAnimalCard(animal: cows[index]),
+                ),
+        );
+      },
+    ),
+  );
+}
+
+class _GlobalSwipeBack extends StatefulWidget {
+  final Widget child;
+  const _GlobalSwipeBack({required this.child});
+  @override
+  State<_GlobalSwipeBack> createState() => _GlobalSwipeBackState();
+}
+
+class _GlobalSwipeBackState extends State<_GlobalSwipeBack> {
+  Offset? _start;
+  @override
+  Widget build(BuildContext context) => Listener(
+    behavior: HitTestBehavior.translucent,
+    onPointerDown: (event) => _start = event.position,
+    onPointerCancel: (_) => _start = null,
+    onPointerUp: (event) {
+      final start = _start;
+      _start = null;
+      if (start == null || start.dx > 32) return;
+      final delta = event.position - start;
+      if (delta.dx > 78 && delta.dy.abs() < 56) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        rootNavigatorKey.currentState?.maybePop();
+      }
+    },
+    child: widget.child,
+  );
+}
+
 Map<String, dynamic>? ranchCustomerNamed(String name) {
   final folded = name.trim().toLowerCase();
   for (final customer in ranchCustomers()) {
@@ -13044,6 +13189,187 @@ Future<Map<String, dynamic>> saveRanchCustomer({
   await Hive.box('ranch_customers').put(id, row);
   AutoSyncService.markDirty(reason: 'ranch customer');
   return row;
+}
+
+Future<Map<String, dynamic>?> showAddRanchCustomer(BuildContext context) async {
+  final name = TextEditingController();
+  final place = TextEditingController();
+  final contact = TextEditingController();
+  String? error;
+  final result = await showDialog<Map<String, dynamic>>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (context, update) => AlertDialog(
+        shape: const SquircleBorder(radius: Gold.r27),
+        backgroundColor: const Color(0xF7FFFFFF),
+        title: AppText(tamilUi ? 'வாடிக்கையாளரை சேர்' : 'Add customer'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: name,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: fieldStyle(tamilUi ? 'பெயர்' : 'Customer name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: place,
+                textCapitalization: TextCapitalization.words,
+                decoration: fieldStyle(
+                  tamilUi ? 'இடம் (விருப்பம்)' : 'Place (optional)',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: contact,
+                keyboardType: TextInputType.phone,
+                decoration: fieldStyle(
+                  tamilUi ? 'தொடர்பு (விருப்பம்)' : 'Contact (optional)',
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                AppText(error!, style: const TextStyle(color: Ink.red)),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const AppText('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (name.text.trim().isEmpty) {
+                update(
+                  () => error = tamilUi
+                      ? 'பெயரை உள்ளிடவும்'
+                      : 'Enter a customer name',
+                );
+                return;
+              }
+              final saved = await saveRanchCustomer(
+                name: name.text,
+                place: place.text,
+                contact: contact.text,
+              );
+              if (dialogContext.mounted) Navigator.pop(dialogContext, saved);
+            },
+            child: const AppText('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
+  name.dispose();
+  place.dispose();
+  contact.dispose();
+  return result;
+}
+
+Widget customerPicker({
+  required BuildContext context,
+  required TextEditingController customer,
+  required TextEditingController place,
+  required TextEditingController contact,
+  required VoidCallback refresh,
+  bool allowOwnUse = false,
+}) {
+  final customers = ranchCustomers();
+  final selected = ranchCustomerNamed(customer.text) == null
+      ? null
+      : customer.text;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('customer-${customer.text}-${customers.length}'),
+              initialValue: selected,
+              isExpanded: true,
+              decoration: fieldStyle(
+                tamilUi ? 'வாடிக்கையாளரை தேர்வு செய்' : 'Select customer',
+                icon: Icons.person_outline_rounded,
+              ),
+              items: [
+                for (final item in customers)
+                  DropdownMenuItem(
+                    value: txt(item, 'name'),
+                    child: AppText(txt(item, 'name')),
+                  ),
+              ],
+              onChanged: (value) {
+                customer.text = value ?? '';
+                final saved = ranchCustomerNamed(customer.text);
+                place.text = txt(saved ?? {}, 'place');
+                contact.text = txt(saved ?? {}, 'contact');
+                refresh();
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: () async {
+              final saved = await showAddRanchCustomer(context);
+              if (saved == null) return;
+              customer.text = txt(saved, 'name');
+              place.text = txt(saved, 'place');
+              contact.text = txt(saved, 'contact');
+              refresh();
+            },
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            label: AppText(tamilUi ? 'சேர்' : 'Add customer'),
+          ),
+        ],
+      ),
+      if (allowOwnUse) ...[
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ChoiceChip(
+            label: const AppText(ownUseCustomerName),
+            selected: isOwnUseCustomer(customer.text),
+            showCheckmark: false,
+            selectedColor: Ink.violetDeep,
+            labelStyle: TextStyle(
+              color: isOwnUseCustomer(customer.text)
+                  ? Colors.white
+                  : Ink.violetDeep,
+              fontWeight: FontWeight.w700,
+            ),
+            onSelected: (enabled) {
+              customer.text = enabled ? ownUseDisplayName : '';
+              if (!enabled) {
+                place.clear();
+                contact.clear();
+              }
+              refresh();
+            },
+          ),
+        ),
+      ],
+      if (customer.text.isNotEmpty && !isOwnUseCustomer(customer.text)) ...[
+        const SizedBox(height: 8),
+        AppText(
+          [
+                place.text,
+                contact.text,
+              ].where((value) => value.trim().isNotEmpty).join(' · ').isEmpty
+              ? (tamilUi ? 'விவரம் இல்லை' : 'No additional details')
+              : [
+                  place.text,
+                  contact.text,
+                ].where((value) => value.trim().isNotEmpty).join(' · '),
+          style: const TextStyle(color: Ink.muted, fontSize: 12),
+        ),
+      ],
+    ],
+  );
 }
 
 class SellAnimalScreen extends StatefulWidget {
@@ -13091,7 +13417,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       return;
     }
     if (_customer.text.trim().isEmpty) {
-      snack(context, 'Please enter the customer name');
+      snack(context, 'Please select a customer');
       return;
     }
 
@@ -13184,36 +13510,12 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
           ),
         ),
         const SizedBox(height: Gold.s13),
-        SuggestionField(
-          controller: _customer,
-          suggestions: ranchCustomers().map((e) => txt(e, 'name')).toList(),
-          label: 'Customer Name',
-          icon: Icons.person_outline_rounded,
-          onSelected: (name) {
-            final customer = ranchCustomerNamed(name);
-            _customerPlace.text = txt(customer ?? {}, 'place');
-            _customerContact.text = txt(customer ?? {}, 'contact');
-          },
-        ),
-        const SizedBox(height: Gold.s13),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _customerPlace,
-                textCapitalization: TextCapitalization.words,
-                decoration: fieldStyle('Place (optional)', icon: Icons.place_outlined),
-              ),
-            ),
-            const SizedBox(width: Gold.s13),
-            Expanded(
-              child: TextField(
-                controller: _customerContact,
-                keyboardType: TextInputType.phone,
-                decoration: fieldStyle('Contact (optional)', icon: Icons.phone_outlined),
-              ),
-            ),
-          ],
+        customerPicker(
+          context: context,
+          customer: _customer,
+          place: _customerPlace,
+          contact: _customerContact,
+          refresh: () => setState(() {}),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
@@ -13480,6 +13782,9 @@ class _SellScreenState extends State<SellScreen> {
   final _stockQty = TextEditingController();
   final _stockAmount = TextEditingController();
   final _stockNotes = TextEditingController();
+  final _stockSupplier = TextEditingController();
+  final _stockSupplierPlace = TextEditingController();
+  final _stockSupplierContact = TextEditingController();
 
   @override
   void initState() {
@@ -13524,6 +13829,9 @@ class _SellScreenState extends State<SellScreen> {
     _stockQty.dispose();
     _stockAmount.dispose();
     _stockNotes.dispose();
+    _stockSupplier.dispose();
+    _stockSupplierPlace.dispose();
+    _stockSupplierContact.dispose();
     super.dispose();
   }
 
@@ -13670,100 +13978,19 @@ class _SellScreenState extends State<SellScreen> {
   }
 
   Widget _customerFields() {
-    final names = <String>{
-      ...ranchCustomers().map((e) => txt(e, 'name')),
-      ...frequentNameSuggestions(
-        saleRows(),
-        'customerName',
-        where: (record) => !isOwnUseMilk(record),
-      ),
-    }.where((name) => name.isNotEmpty).toList();
-    return Column(
-      children: [
-        SuggestionField(
-          controller: _customer,
-          suggestions: _type == 0 ? [ownUseCustomerName, ...names] : names,
-          label: tamilUi ? 'வாங்குபவர் பெயர்' : 'Customer Name',
-          icon: Icons.person_outline_rounded,
-          onTap: () {
-            if (_ownUse) {
-              _customer.clear();
-              _customerPlace.clear();
-              _customerContact.clear();
-            }
-          },
-          onSelected: (name) {
-            if (isOwnUseCustomer(name)) {
-              final previous = lastMilkQuantityForCustomer(name);
-              if (previous != null) _qty.text = previous.toStringAsFixed(1);
-              return;
-            }
-            final customer = ranchCustomerNamed(name);
-            _customerPlace.text = txt(customer ?? {}, 'place');
-            _customerContact.text = txt(customer ?? {}, 'contact');
-            if (_type == 0) {
-              final previous = lastMilkQuantityForCustomer(name);
-              if (previous != null) _qty.text = previous.toStringAsFixed(1);
-            }
-          },
-        ),
-        if (_type == 0)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ChoiceChip(
-              key: const ValueKey('own-use-customer'),
-              label: const AppText(ownUseCustomerName),
-              selected: _ownUse,
-              showCheckmark: false,
-              selectedColor: Ink.violetDeep,
-              labelStyle: TextStyle(
-                color: _ownUse ? Colors.white : Ink.violetDeep,
-                fontWeight: FontWeight.w700,
-              ),
-              onSelected: (selected) {
-                _customer.text = selected ? ownUseDisplayName : '';
-                if (!selected) {
-                  _customerPlace.clear();
-                  _customerContact.clear();
-                }
-                if (selected) {
-                  final previous = lastMilkQuantityForCustomer(
-                    ownUseCustomerName,
-                  );
-                  if (previous != null) _qty.text = previous.toStringAsFixed(1);
-                }
-              },
-            ),
-          ),
-        if (!_ownUse) ...[
-          const SizedBox(height: Gold.s13),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _customerPlace,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: fieldStyle(
-                    'Place (optional)',
-                    icon: Icons.place_outlined,
-                  ),
-                ),
-              ),
-              const SizedBox(width: Gold.s13),
-              Expanded(
-                child: TextField(
-                  controller: _customerContact,
-                  keyboardType: TextInputType.phone,
-                  decoration: fieldStyle(
-                    'Contact (optional)',
-                    icon: Icons.phone_outlined,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
+    return customerPicker(
+      context: context,
+      customer: _customer,
+      place: _customerPlace,
+      contact: _customerContact,
+      allowOwnUse: _type == 0,
+      refresh: () {
+        if (_type == 0 && _customer.text.isNotEmpty) {
+          final previous = lastMilkQuantityForCustomer(_customer.text);
+          if (previous != null) _qty.text = previous.toStringAsFixed(1);
+        }
+        setState(() {});
+      },
     );
   }
 
@@ -13861,6 +14088,10 @@ class _SellScreenState extends State<SellScreen> {
     }
     final quantity = toDouble(_stockQty.text);
     final amount = toDouble(_stockAmount.text);
+    if (_stockSupplier.text.trim().isEmpty) {
+      snack(context, 'Please select a customer or supplier');
+      return;
+    }
     if (quantity <= 0) {
       snack(context, 'Please enter the purchased quantity');
       return;
@@ -13870,6 +14101,11 @@ class _SellScreenState extends State<SellScreen> {
       return;
     }
     setState(() => _saving = true);
+    final supplier = await saveRanchCustomer(
+      name: _stockSupplier.text,
+      place: _stockSupplierPlace.text,
+      contact: _stockSupplierContact.text,
+    );
     await Hive.box('stock_records').add({
       'movement': 'Purchase',
       'item': _stockItems[_stockItem],
@@ -13879,6 +14115,10 @@ class _SellScreenState extends State<SellScreen> {
       'date': todayDate(),
       'time': currentTime(),
       'notes': _stockNotes.text.trim(),
+      'supplierId': txt(supplier, 'customerId'),
+      'supplierName': txt(supplier, 'name'),
+      'supplierPlace': txt(supplier, 'place'),
+      'supplierContact': txt(supplier, 'contact'),
       'addedBy': currentUserName(),
       'createdAt': DateTime.now().toIso8601String(),
     });
@@ -13889,6 +14129,9 @@ class _SellScreenState extends State<SellScreen> {
       _stockQty.clear();
       _stockAmount.clear();
       _stockNotes.clear();
+      _stockSupplier.clear();
+      _stockSupplierPlace.clear();
+      _stockSupplierContact.clear();
     });
   }
 
@@ -13956,7 +14199,7 @@ class _SellScreenState extends State<SellScreen> {
                             '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])}',
                             style: const TextStyle(
                               color: Ink.navy,
-                              fontSize: Gold.t21,
+                              fontSize: Gold.t27,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -13980,6 +14223,14 @@ class _SellScreenState extends State<SellScreen> {
                     labels: tamilUi ? const ['வைக்கோல்', 'தவிடு'] : _stockItems,
                     index: _stockItem,
                     onChanged: (value) => setState(() => _stockItem = value),
+                  ),
+                  const SizedBox(height: Gold.s13),
+                  customerPicker(
+                    context: context,
+                    customer: _stockSupplier,
+                    place: _stockSupplierPlace,
+                    contact: _stockSupplierContact,
+                    refresh: () => setState(() {}),
                   ),
                   const SizedBox(height: Gold.s13),
                   TextField(
@@ -14569,7 +14820,7 @@ class _MiniStat extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: Gold.t10,
+              fontSize: Gold.t13,
               color: Ink.muted,
               fontWeight: FontWeight.w700,
             ),
@@ -14796,7 +15047,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         : 'Loss for ${_period.toLowerCase()}',
                     style: const TextStyle(
                       color: Ink.muted,
-                      fontSize: Gold.t11,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -14890,7 +15141,7 @@ class _SummaryTile extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: Gold.t11,
+              fontSize: 14,
               color: Ink.muted,
               fontWeight: FontWeight.w700,
             ),

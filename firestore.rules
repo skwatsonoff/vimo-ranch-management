@@ -204,12 +204,28 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create: if validAuthor(request.resource.data)
           && exists(/databases/$(database)/documents/social_posts/$(postId))
-          && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'text', 'mentions', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['authorUid', 'ranchId', 'authorName', 'authorUsername', 'text', 'mentions', 'createdAt'])
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000
           && request.resource.data.get('mentions', []) is list && request.resource.data.get('mentions', []).size() <= 20
           && request.resource.data.createdAt == request.time;
         allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
         allow update: if false;
+        match /likes/{userId} {
+          allow read: if signedIn();
+          allow create: if signedIn() && request.auth.uid == userId
+            && request.resource.data.keys().hasOnly(['createdAt'])
+            && request.resource.data.createdAt == request.time;
+          allow delete: if signedIn() && request.auth.uid == userId;
+          allow update: if false;
+        }
+        match /reports/{reporterId} {
+          allow create: if signedIn() && request.auth.uid == reporterId
+            && request.resource.data.reporterUid == request.auth.uid
+            && request.resource.data.reason is string
+            && request.resource.data.reason.size() <= 200
+            && request.resource.data.createdAt == request.time;
+          allow read, update, delete: if false;
+        }
       }
       match /reports/{reporterId} {
         allow create: if signedIn() && request.auth.uid == reporterId
