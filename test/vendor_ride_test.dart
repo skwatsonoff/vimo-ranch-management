@@ -244,7 +244,6 @@ void main() {
   testWidgets(
     'Completed ride deducts milk once and collects the previous balance',
     (tester) async {
-      if (!vimoPreviewMode) return;
       await tester.runAsync(() async {
         await Hive.box('vendor_entries').putAll({
           'supply': {
@@ -276,7 +275,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 80));
       });
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('Completed'), findsOneWidget);
+      expect(find.text('Received'), findsOneWidget);
       expect(vendorMilkBalance(vendorRows('vendor_entries')), 7);
       expect(vendorPersonDue('Kumar', vendorRows('vendor_entries')), 0);
       await tester.runAsync(() async {

@@ -10,19 +10,30 @@ Uint8List? _socialPhotoEncode(Uint8List bytes) {
   if (decoded == null) return null;
   final oriented = image_lib.bakeOrientation(decoded);
   var resized = oriented.width >= oriented.height
-      ? image_lib.copyResize(oriented, width: math.min(oriented.width, 1200))
-      : image_lib.copyResize(oriented, height: math.min(oriented.height, 1200));
-  for (final quality in const [90, 84, 78, 72, 66]) {
+      ? image_lib.copyResize(oriented, width: math.min(oriented.width, 1600))
+      : image_lib.copyResize(oriented, height: math.min(oriented.height, 1600));
+  for (final quality in const [92, 88, 84, 80]) {
     final encoded = Uint8List.fromList(
       image_lib.encodeJpg(resized, quality: quality),
     );
     if (encoded.length <= 440000) return encoded;
   }
-  resized = oriented.width >= oriented.height
-      ? image_lib.copyResize(oriented, width: math.min(oriented.width, 960))
-      : image_lib.copyResize(oriented, height: math.min(oriented.height, 960));
-  final encoded = Uint8List.fromList(image_lib.encodeJpg(resized, quality: 68));
-  return encoded.length <= 440000 ? encoded : null;
+  for (final dimension in [1280, 1080, 960]) {
+    resized = oriented.width >= oriented.height
+        ? image_lib.copyResize(
+            oriented,
+            width: math.min(oriented.width, dimension),
+          )
+        : image_lib.copyResize(
+            oriented,
+            height: math.min(oriented.height, dimension),
+          );
+    final encoded = Uint8List.fromList(
+      image_lib.encodeJpg(resized, quality: 84),
+    );
+    if (encoded.length <= 440000) return encoded;
+  }
+  return null;
 }
 
 Uint8List socialPhotoBytes(String source) {
@@ -343,7 +354,7 @@ class _SocialComposerState extends State<SocialComposer> {
                     : () async {
                         try {
                           setState(() => _pickingPhoto = true);
-                          final picked = await pickImageDataUrl();
+                          final picked = await pickImageDataUrl(social: true);
                           final photo = picked == null
                               ? null
                               : await compressSocialPhoto(picked);

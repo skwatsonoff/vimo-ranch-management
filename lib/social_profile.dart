@@ -611,7 +611,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
     if (_picking || _busy) return;
     setState(() => _picking = true);
     try {
-      final selected = await pickImageDataUrl();
+      final selected = await pickImageDataUrl(social: true);
       if (selected == null) return;
       final photo = await compressSocialPhoto(selected);
       if (photo == null)

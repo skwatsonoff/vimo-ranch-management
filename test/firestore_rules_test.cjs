@@ -60,6 +60,22 @@ const assert = require('node:assert/strict');
     await assertFails(updateDoc(doc(db, 'ranches/test/vendor_entries/buy1'), { quantity: 100 })); checks++;
     await env.withSecurityRulesDisabled(async (ctx) => updateDoc(doc(ctx.firestore(), 'ranches/test/vendor_entries/buy1'), { serverCreatedAt: Timestamp.fromMillis(Date.now() - 360000) }));
     await assertFails(updateDoc(doc(db, 'ranches/test/vendor_entries/buy1'), { notes: 'Too late' })); checks++;
+    // New clients save to the device first; optional ranch sharing sends an
+    // immutable ledger without changing the legacy server stock counters.
+    const relay = { cloudId: 'local-receipt', syncMode: 'local_v3', stockScope: 'vendor_v2', kind: 'sale', personId: 'customer', personKind: 'customer', personName: 'Kumar', quantity: 1, price: 60, amount: 60, paid: 60, notes: '', createdByUid: 'owner', createdAt: new Date().toISOString(), updatedAtMillis: Date.now(), serverCreatedAt: serverTimestamp() };
+    const relayRef = doc(db, 'ranches/test/vendor_entries/local-receipt');
+    await assertSucceeds(setDoc(relayRef, relay)); checks++;
+    await assertSucceeds(getDoc(doc(helper, 'ranches/test/vendor_entries/local-receipt'))); checks++;
+    await assertFails(getDoc(doc(outsider, 'ranches/test/vendor_entries/local-receipt'))); checks++;
+    await assertFails(setDoc(doc(outsider, 'ranches/test/vendor_entries/local-spoof'), {...relay, cloudId: 'local-spoof', createdByUid: 'outsider'})); checks++;
+    await assertFails(setDoc(doc(db, 'ranches/test/vendor_entries/local-math'), {...relay, cloudId: 'local-math', amount: 100})); checks++;
+    await assertFails(setDoc(doc(db, 'ranches/test/vendor_entries/local-negative'), {...relay, cloudId: 'local-negative', quantity: -1})); checks++;
+    await assertFails(setDoc(doc(db, 'ranches/test/vendor_entries/local-provider'), {...relay, cloudId: 'local-provider', personKind: 'supplier'})); checks++;
+    await assertFails(updateDoc(relayRef, {amount: 120, quantity: 2})); checks++;
+    await assertFails(updateDoc(doc(helper, 'ranches/test/vendor_entries/local-receipt'), {notes: 'other author'})); checks++;
+    await assertSucceeds(updateDoc(relayRef, {notes: 'Received cash', updatedAtMillis: Date.now(), updatedAtText: new Date().toISOString(), updatedBy: 'Owner'})); checks++;
+    await assertFails(deleteDoc(relayRef)); checks++;
+    assert.equal((await getDoc(doc(db, 'ranches/test/vendor_stock/vendor_milk'))).data().quantity, 12); checks++;
     const raced = await Promise.allSettled([save(db, 'owner', 'race1', 'sale', 8, 60), save(helper, 'helper', 'race2', 'sale', 8, 60)]);
     assert.equal(raced.filter(r => r.status === 'fulfilled').length, 1); checks++;
     assert.equal((await getDoc(doc(db, 'ranches/test/vendor_stock/vendor_milk'))).data().quantity, 4); checks++;

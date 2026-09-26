@@ -6,12 +6,13 @@ members through Firebase.
 
 ## Ranch, vendor and market workspaces
 
-- New workspaces ask for their purpose. Existing users choose on their first
-  visit after this update. Settings → Preferences changes purpose and the order
-  of Ranch, Vendor, Social and Chat by long-press dragging. Preferences are per account on this
-  device. The first destination opens at launch; changing purpose preserves data.
-- Cows and calves remain accessible inside Ranch. Vendor contains Milk, Sales,
-  Stock and Reports. Stock includes both milk inventory and feed inventory.
+- Workspaces open only their chosen purpose. Ranch uses Ranch, Social, Chat and
+  Profile; Vendor uses Vendor, Reports, Social and Chat. Settings → Preferences
+  enables the other workspace and custom tab order. Vendor with Ranch enabled
+  uses Vendor, Ranch, Reports and Social, with Chat at the top of Social.
+  Preferences are per account on this device; changing purpose preserves data.
+- Cows, calves, sales, stock and ranch reports remain inside Ranch. Vendor opens
+  the milk delivery ride; its Reports destination contains the vendor ledger.
 - Vendor opens a milk balance and a customer delivery ride. Provider circles are
   ranked separately for morning and evening. Start enables swipes: right completes,
   left opens a quick quantity/payment edit, and a second edit swipe skips today.
@@ -24,19 +25,26 @@ members through Firebase.
   order by long-press dragging. Volume up completes and volume down skips only in
   the Android app during an active ride; edit mode is disabled. Web browsers keep
   swipe controls because phone volume buttons are not exposed to websites.
-- Purchases add vendor milk; deliveries deduct it. Paid amounts and later payments
-  update each person's outstanding balance. Synced ranch milk and existing ranch
-  milk sales reconcile into vendor stock using per-record transaction checkpoints.
-  The ledger and customer list appear in backups and the Excel workbook.
-- Vendor financial entries require a connection. Firestore transactions update
-  the ledger, milk balance and person's balance atomically, with retry IDs and
-  server rules preventing negative stock, overpayments and arbitrary edits.
-  The original author may update notes for five minutes, enforced by server time.
-  Vendor data streams live to approved workspace members. Financial records are
-  cloud-authoritative and are not re-uploaded by bulk backup sync.
+- Purchases add vendor milk; deliveries deduct it. Ranch milk stays separate.
+  Received amounts and later payments update outstanding balances. The vendor
+  ledger and people appear in backups and the Excel workbook.
+- Ranch and Vendor save to Hive on the device first, including offline vendor
+  sales and payments. Local validation checks stock and outstanding balances;
+  retry IDs prevent duplicate entries. Account/ranch switching archives private
+  entries on the device and restores them when returning. Existing cloud data
+  imports once without discarding pending local changes.
+- Member sharing is opt-in under Settings → Preferences. Firebase then relays
+  records to approved members of the same ranch; acknowledged IDs are not
+  uploaded repeatedly. Ledger financial fields are immutable in server rules.
+  Device stock validation uses the entries currently available on that device;
+  offline devices can receive each other's new entries after reconnecting.
+- Selections use purple fill with white text and no check marks. Numeric entry
+  fields keep their headings after typing; transaction sessions are inferred
+  automatically. Payment frequency shows one relevant day/date selector.
 - Social posts use a unique account username and are visible to signed-in VIMO
   users across workspaces. Posts support text, colored text tiles, one compressed
-  photo and a voice clip up to 20 seconds. Members can like and comment. Authors
+  photo and a voice clip up to 20 seconds. Photos resize once to up to 1600px at
+  high JPEG quality within the media size limit. Members can like and comment. Authors
   can delete their own posts/comments. The feed shows the latest 60 posts, with
   up to 100 comments per post. Private ranch records are never part of the feed.
 - Offline and sync explanations now live in Settings → Info. Existing ranch

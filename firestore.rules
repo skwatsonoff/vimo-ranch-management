@@ -416,12 +416,15 @@ service cloud.firestore {
           && request.resource.data.paid is number && request.resource.data.paid >= 0 && request.resource.data.paid <= request.resource.data.amount
           && request.resource.data.notes is string && request.resource.data.notes.size() <= 500
           && (request.resource.data.kind == 'payment' || (request.resource.data.quantity > 0 && request.resource.data.price > 0 && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011))
-          && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_stock/vendor_milk).data.entryId == entryId
-          && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_accounts/$(request.resource.data.personId)).data.entryId == entryId;
+          // Optional member sharing relays the device's immutable ledger.
+          // Local v3 entries derive stock and balances from ledger rows.
+          && (request.resource.data.get('syncMode', '') == 'local_v3'
+            || (getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_stock/vendor_milk).data.entryId == entryId
+              && getAfter(/databases/$(database)/documents/ranches/$(ranchId)/vendor_accounts/$(request.resource.data.personId)).data.entryId == entryId));
         allow update: if canRecordEntries(ranchId)
           && resource.data.createdByUid == request.auth.uid
           && request.time < resource.data.serverCreatedAt + duration.value(5, 'm')
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notes', 'updatedAtMillis'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notes', 'updatedAtMillis', 'updatedAtText', 'updatedBy'])
           && request.resource.data.notes is string && request.resource.data.notes.size() <= 500;
         allow delete: if false;
       }

@@ -35,8 +35,8 @@ void main() {
       await savePurpose('Vendor', defaultNavigation('Vendor'));
       expect(navigationOrder().first, 'Vendor');
       expect(purposeChosen, true);
-      await savePurpose('Market', ['Social', 'Chat', 'Vendor', 'Ranch']);
-      expect(navigationOrder(), ['Social', 'Chat', 'Vendor', 'Ranch']);
+      await savePurpose('Market', ['Social', 'Chat', 'Vendor', 'Reports']);
+      expect(navigationOrder(), ['Social', 'Chat', 'Vendor', 'Reports']);
       await expectLater(savePurpose('Ranch', ['Ranch']), throwsArgumentError);
       expect(navigationOrder().first, 'Social');
       expect(defaultNavigation('Market').first, 'Vendor');
@@ -217,7 +217,7 @@ void main() {
     },
   );
   test(
-    'legacy tab order removes Sell while preserving custom positions',
+    'legacy tab order does not implicitly enable a secondary workspace',
     () async {
       await Hive.box('settings').put('purposeProfiles', {
         'local': {
@@ -225,7 +225,7 @@ void main() {
           'order': ['Social', 'Sell', 'Ranch', 'Vendor', 'Chat'],
         },
       });
-      expect(navigationOrder(), ['Social', 'Ranch', 'Vendor', 'Chat']);
+      expect(navigationOrder(), ['Ranch', 'Social', 'Chat', 'Profile']);
     },
   );
   test('ranch milk credits and corrections never enter vendor inventory', () {

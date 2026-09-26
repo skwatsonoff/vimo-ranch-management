@@ -1,7 +1,14 @@
 part of 'main.dart';
 
 String bi(String en, String ta) => tamilUi ? ta : en;
-const businessTabs = ['Ranch', 'Vendor', 'Social', 'Chat'];
+const businessTabs = [
+  'Ranch',
+  'Vendor',
+  'Reports',
+  'Social',
+  'Chat',
+  'Profile',
+];
 String get _profileKey =>
     firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? 'local' : 'local';
 Map<String, dynamic> get purposeProfile =>
@@ -9,33 +16,59 @@ Map<String, dynamic> get purposeProfile =>
 bool get purposeChosen =>
     ['Ranch', 'Vendor', 'Market'].contains(purposeProfile['purpose']);
 String get appPurpose => txt(purposeProfile, 'purpose', 'Ranch');
-List<String> defaultNavigation(String purpose) => switch (purpose) {
-  'Vendor' => ['Vendor', 'Ranch', 'Social', 'Chat'],
-  'Market' => ['Vendor', 'Social', 'Ranch', 'Chat'],
-  _ => [...businessTabs],
+bool get secondaryWorkspaceEnabled =>
+    purposeProfile['secondaryEnabled'] == true;
+List<String> defaultNavigation(
+  String purpose, {
+  bool secondaryEnabled = false,
+}) => switch (purpose) {
+  'Vendor' || 'Market' =>
+    secondaryEnabled
+        ? ['Vendor', 'Ranch', 'Reports', 'Social']
+        : ['Vendor', 'Reports', 'Social', 'Chat'],
+  _ =>
+    secondaryEnabled
+        ? ['Ranch', 'Vendor', 'Social', 'Chat']
+        : ['Ranch', 'Social', 'Chat', 'Profile'],
 };
 List<String> navigationOrder() {
+  final allowed = defaultNavigation(
+    appPurpose,
+    secondaryEnabled: secondaryWorkspaceEnabled,
+  );
   final raw = purposeProfile['order'];
   final saved = raw is List
       ? raw.where((id) => businessTabs.contains(id)).toList()
       : null;
   if (saved is List &&
-      saved.length == businessTabs.length &&
-      saved.toSet().containsAll(businessTabs)) {
+      saved.length == allowed.length &&
+      saved.toSet().containsAll(allowed)) {
     return saved.cast<String>();
   }
-  return defaultNavigation(appPurpose);
+  return allowed;
 }
 
-Future<void> savePurpose(String purpose, List<String> order) async {
+Future<void> savePurpose(
+  String purpose,
+  List<String> order, {
+  bool secondaryEnabled = false,
+}) async {
+  final allowed = defaultNavigation(
+    purpose,
+    secondaryEnabled: secondaryEnabled,
+  );
   if (!['Ranch', 'Vendor', 'Market'].contains(purpose) ||
-      order.length != businessTabs.length ||
-      !order.toSet().containsAll(businessTabs)) {
+      order.length != allowed.length ||
+      !order.toSet().containsAll(allowed)) {
     throw ArgumentError('Invalid preferences');
   }
   await setSetting('purposeProfiles', {
     ...asMap(settingValue('purposeProfiles', {})),
-    _profileKey: {'purpose': purpose, 'order': order},
+    _profileKey: {
+      'purpose': purpose,
+      'order': order,
+      'secondaryEnabled': secondaryEnabled,
+    },
   });
 }
 
@@ -49,6 +82,7 @@ class PreferencesScreen extends StatefulWidget {
 class _PreferencesScreenState extends State<PreferencesScreen> {
   late String _purpose = appPurpose;
   late List<String> _order = navigationOrder();
+  late bool _secondary = secondaryWorkspaceEnabled;
   bool _saving = false;
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -108,24 +142,79 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               ])
                 ListTile(
                   leading: item.$1 == 'Vendor'
-                      ? const MilkVendorIcon(size: 34)
-                      : Icon(item.$3, color: _blue),
+                      ? MilkVendorIcon(
+                          size: 34,
+                          color: _purpose == item.$1 ? Colors.white : _blue,
+                        )
+                      : Icon(
+                          item.$3,
+                          color: _purpose == item.$1 ? Colors.white : _blue,
+                        ),
                   title: AppText(item.$1),
                   subtitle: Text(item.$2),
-                  trailing: Icon(
-                    _purpose == item.$1
-                        ? CupertinoIcons.checkmark_circle_fill
-                        : CupertinoIcons.circle,
-                    color: _blue,
-                  ),
+                  selected: _purpose == item.$1,
+                  selectedTileColor: Ink.violetDeep,
+                  selectedColor: Colors.white,
                   onTap: () => setState(() {
                     _purpose = item.$1;
+                    _secondary = false;
                     _order = defaultNavigation(_purpose);
                   }),
                 ),
             ],
           ),
+          const SizedBox(height: 16),
+          Text(
+            bi(
+              'You can enable the other workspace later in Settings → Preferences.',
+              'மற்ற பணிப்பகுதியை பின்னர் அமைப்புகள் → விருப்பங்களில் இயக்கலாம்.',
+            ),
+            style: const TextStyle(color: Ink.muted),
+          ),
           if (!widget.onboarding) ...[
+            const SizedBox(height: 18),
+            SwitchListTile.adaptive(
+              title: Text(
+                _purpose == 'Ranch'
+                    ? bi(
+                        'I also sell milk · Enable Vendor',
+                        'பாலும் விற்கிறேன் · விற்பனையாளர் பகுதி',
+                      )
+                    : bi(
+                        'I have cows too · Enable Ranch',
+                        'மாடுகளும் உள்ளன · தொழுவம் பகுதி',
+                      ),
+              ),
+              value: _secondary,
+              onChanged: (value) => setState(() {
+                _secondary = value;
+                _order = defaultNavigation(_purpose, secondaryEnabled: value);
+              }),
+            ),
+            SwitchListTile.adaptive(
+              title: Text(
+                bi(
+                  'Sync with my ranch members',
+                  'என் தொழுவ உறுப்பினர்களுடன் ஒத்திசைவு',
+                ),
+              ),
+              subtitle: Text(
+                bi(
+                  'Entries stay on this device. Enable to share with the same ranch through Firebase.',
+                  'பதிவுகள் இந்த சாதனத்தில் சேமிக்கப்படும். அதே தொழுவத்துடன் Firebase மூலம் பகிர இயக்கவும்.',
+                ),
+              ),
+              value: CloudSyncService.sharedDataEnabled,
+              onChanged: (value) async {
+                await setSetting('workspaceSyncEnabled', value);
+                await CollaborationRealtimeSyncService.stop();
+                if (value) {
+                  AutoSyncService.markDirty(reason: 'enable ranch sharing');
+                }
+                await CollaborationRealtimeSyncService.ensureStarted();
+                if (mounted) setState(() {});
+              },
+            ),
             const SizedBox(height: 28),
             Text(
               bi('Tab order', 'பக்க வரிசை'),
@@ -162,7 +251,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 : () async {
                     setState(() => _saving = true);
                     try {
-                      await savePurpose(_purpose, _order);
+                      await savePurpose(
+                        _purpose,
+                        _order,
+                        secondaryEnabled: _secondary,
+                      );
                       if (context.mounted && !widget.onboarding) {
                         Navigator.pop(context);
                       }
@@ -252,7 +345,10 @@ class VendorLedger {
       );
     }
     if (!canRecordEntries) throw StateError(ui('Permission denied'));
-    if (!['collection', 'purchase', 'sale', 'payment'].contains(kind) ||
+    if (id.isEmpty ||
+        txt(person, 'id').isEmpty ||
+        notes.length > 500 ||
+        !['collection', 'purchase', 'sale', 'payment'].contains(kind) ||
         (['collection', 'purchase'].contains(kind) &&
             person['kind'] != 'supplier') ||
         (kind == 'sale' && person['kind'] != 'customer') ||
@@ -275,15 +371,16 @@ class VendorLedger {
           ? payment
           : double.parse((quantity * price).toStringAsFixed(2));
       final entry = <String, dynamic>{
-        'pendingUpload': false,
+        'pendingUpload': true,
         'cloudId': id,
         'kind': kind,
         'stockScope': 'vendor_v2',
+        'syncMode': 'local_v3',
         'personId': personId,
         'personName': txt(person, 'name'),
         'personKind': txt(person, 'kind'),
-        'quantity': quantity,
-        'price': price,
+        'quantity': kind == 'payment' ? 0.0 : quantity,
+        'price': kind == 'payment' ? 0.0 : price,
         'amount': amount,
         'paid': paid,
         'session': session,
@@ -297,95 +394,31 @@ class VendorLedger {
         'addedBy': currentUserName(),
         'updatedAtMillis': now.millisecondsSinceEpoch,
       };
-      if (CloudSyncService.ready) {
-        await CloudSyncService.uploadBox('vendor_people');
-        await SeparateVendorStock.ensureInitialized();
-        final db = FirebaseFirestore.instance;
-        final stockRef = CloudSyncService.ranch
-            .collection('vendor_stock')
-            .doc('vendor_milk');
-        final accountRef = CloudSyncService.ranch
-            .collection('vendor_accounts')
-            .doc(personId);
-        final entryRef = CloudSyncService.ranch
-            .collection('vendor_entries')
-            .doc(id);
-        await db.runTransaction((tx) async {
-          final existing = await tx.get(entryRef);
-          if (existing.exists) return;
-          final stock = await tx.get(stockRef);
-          final account = await tx.get(accountRef);
-          final balance = numv(stock.data() ?? {}, 'quantity');
-          final due = numv(account.data() ?? {}, 'due');
-          if (kind == 'sale' && quantity > balance + 0.000001) {
-            throw StateError(
-              bi(
-                'Not enough vendor milk in stock.',
-                'விற்பனையாளரின் பால் இருப்பு போதவில்லை.',
-              ),
-            );
-          }
-          if (kind == 'payment' && amount > due + 0.001) {
-            throw StateError(
-              bi(
-                'Payment exceeds the outstanding balance.',
-                'செலுத்தும் தொகை நிலுவையை விட அதிகமாக உள்ளது.',
-              ),
-            );
-          }
-          tx.set(entryRef, {
-            ...entry,
-            'serverCreatedAt': FieldValue.serverTimestamp(),
-          });
-          tx.set(stockRef, {
-            'quantity':
-                balance +
-                (['collection', 'purchase'].contains(kind)
-                    ? quantity
-                    : kind == 'sale'
-                    ? -quantity
-                    : 0),
-            'entryId': id,
-          });
-          tx.set(accountRef, {
-            'due': double.parse(
-              (due + (kind == 'payment' ? -amount : amount - paid))
-                  .toStringAsFixed(2),
-            ),
-            'entryId': id,
-          });
-        });
-        // Server transaction is authoritative; refreshing also includes other devices.
-        try {
-          await CloudSyncService.downloadBox('vendor_entries');
-        } catch (_) {
-          AutoSyncService.beginRemoteWrite();
-          try {
-            await Hive.box('vendor_entries').put(id, entry);
-          } finally {
-            AutoSyncService.endRemoteWrite();
-          }
-        }
-      } else {
-        if (!vimoPreviewMode) {
-          throw StateError(
-            bi(
-              'Connect to your account to save vendor entries.',
-              'விற்பனையாளர் பதிவைச் சேமிக்க உங்கள் கணக்கில் இணையவும்.',
-            ),
-          );
-        }
-        final rows = vendorRows('vendor_entries');
-        if (kind == 'sale' && quantity > vendorMilkBalance(rows)) {
-          throw StateError('Not enough vendor milk in stock.');
-        }
-        if (kind == 'payment' && amount > vendorPersonDue(personId, rows)) {
-          throw StateError('Payment exceeds the outstanding balance.');
-        }
-        if (!Hive.box('vendor_entries').containsKey(id)) {
-          await Hive.box('vendor_entries').put(id, entry);
-        }
+      final box = Hive.box('vendor_entries');
+      // Stable IDs make a retry after an interrupted save a no-op.
+      if (box.containsKey(id)) return;
+      final rows = vendorRows('vendor_entries');
+      if (kind == 'sale' && quantity > vendorMilkBalance(rows) + 0.000001) {
+        throw StateError(
+          bi(
+            'Not enough milk. Add the milk collected from a provider first.',
+            'பால் இருப்பு போதவில்லை. முதலில் வழங்குநரிடமிருந்து பெற்ற பாலைப் பதிவு செய்யவும்.',
+          ),
+        );
       }
+      if (kind == 'payment' &&
+          amount > vendorPersonDue(personId, rows) + 0.001) {
+        throw StateError(
+          bi(
+            'Payment exceeds the outstanding balance.',
+            'செலுத்தும் தொகை நிலுவையை விட அதிகமாக உள்ளது.',
+          ),
+        );
+      }
+      entry['pendingUpload'] = true;
+      await box.put(id, entry);
+      await box.flush();
+      AutoSyncService.markDirty(reason: 'vendor entry');
     } finally {
       _busy = false;
     }
@@ -959,15 +992,10 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                     txt(p, 'place'),
                     style: const TextStyle(color: Ink.muted),
                   ),
-                  if (!supplier)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        '${(p['days'] as List? ?? []).map((d) => tamilUi ? _dayTamil[d as int] : _dayNames[d as int].substring(0, 3)).join(' · ')}\n${(p['sessions'] as List? ?? []).map((s) => ui('$s')).join(' & ')}',
-                      ),
-                    ),
+                  const SizedBox(height: 8),
                   Text(
-                    '${bi('Payment', 'பணம் செலுத்துவது')}: ${ui(txt(p, 'paymentCycle', 'Daily'))}',
+                    vendorPaymentScheduleLabel(p),
+                    style: const TextStyle(color: Ink.muted),
                   ),
                   const SizedBox(height: 20),
                   Glass(
@@ -997,6 +1025,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                   const SizedBox(height: 24),
                   if (canRecordEntries) ...[
                     SegmentedButton<bool>(
+                      showSelectedIcon: false,
                       segments: [
                         ButtonSegment(
                           value: false,
@@ -1043,18 +1072,6 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (!supplier || widget.intakeKind == 'collection')
-                        Wrap(
-                          spacing: 12,
-                          children: [
-                            for (final s in ['Morning', 'Evening'])
-                              ChoiceChip(
-                                label: AppText(s),
-                                selected: _session == s,
-                                onSelected: (_) => setState(() => _session = s),
-                              ),
-                          ],
-                        ),
                     ],
                     TextField(
                       controller: _paid,
@@ -1063,10 +1080,16 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                       ),
                       decoration: fieldStyle(
                         _payment
-                            ? bi('Payment amount', 'செலுத்தும் தொகை')
+                            ? supplier
+                                  ? bi('Amount paid', 'செலுத்திய தொகை')
+                                  : bi('Amount received', 'பெற்ற தொகை')
                             : bi(
-                                'Paid now (0 for credit)',
-                                'இப்போது செலுத்தியது (கடனுக்கு 0)',
+                                supplier
+                                    ? 'Amount paid now (0 for later)'
+                                    : 'Amount received now (0 for later)',
+                                supplier
+                                    ? 'இப்போது செலுத்தியது (பிறகு என்றால் 0)'
+                                    : 'இப்போது பெற்றது (பிறகு என்றால் 0)',
                               ),
                       ),
                     ),
@@ -1097,7 +1120,9 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                                   payment: _payment
                                       ? double.tryParse(_paid.text) ?? 0
                                       : 0,
-                                  session: _session,
+                                  session: DateTime.now().hour < 12
+                                      ? 'Morning'
+                                      : 'Evening',
                                 );
                                 _entryId = '';
                                 _qty.clear();
@@ -1218,21 +1243,10 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
         'notes': note,
         'updatedAtMillis': DateTime.now().millisecondsSinceEpoch,
       }..remove('_key');
-      if (CloudSyncService.ready) {
-        await CloudSyncService.ranch
-            .collection('vendor_entries')
-            .doc(txt(row, 'cloudId'))
-            .update({
-              'notes': note,
-              'updatedAtMillis': update['updatedAtMillis'],
-            });
-      }
-      AutoSyncService.beginRemoteWrite();
-      try {
-        await Hive.box('vendor_entries').put(row['_key'], update);
-      } finally {
-        AutoSyncService.endRemoteWrite();
-      }
+      update['pendingUpload'] = true;
+      await Hive.box('vendor_entries').put(row['_key'], update);
+      await Hive.box('vendor_entries').flush();
+      AutoSyncService.markDirty(reason: 'vendor note');
     } catch (e) {
       if (mounted) snack(context, '$e'.replaceFirst('Bad state: ', ''));
     }

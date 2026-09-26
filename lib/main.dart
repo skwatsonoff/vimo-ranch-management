@@ -55,6 +55,7 @@ part 'ranch_inventory.dart';
 part 'community.dart';
 part 'vendor_stock_separation.dart';
 part 'vendor_ride.dart';
+part 'device_workspaces.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -797,14 +798,14 @@ Future<void> restoreBackupData(BuildContext context) async {
   }
 }
 
-Future<String?> pickImageDataUrl() async {
+Future<String?> pickImageDataUrl({bool social = false}) async {
   // iOS home-screen PWAs are much more reliable when the native HTML file
   // input is opened directly from the tap event. BrowserRuntime provides that
   // path on web; desktop/mobile Flutter keeps FilePicker as the fallback.
   if (kIsWeb) {
     final image = await _browserRuntime.pickImageDataUrl();
     if (image == null) return null;
-    final compressed = await compressAnimalPhotoDataUrl(image);
+    final compressed = social ? image : await compressAnimalPhotoDataUrl(image);
     if (compressed == null) throw StateError('Could not load this photo');
     return compressed;
   }
@@ -831,9 +832,8 @@ Future<String?> pickImageDataUrl() async {
   // offline Hive database and every Firebase sync unnecessarily huge.
   if (bytes.lengthInBytes > 8 * 1024 * 1024) return null;
 
-  return compressAnimalPhotoDataUrl(
-    'data:image/jpeg;base64,${base64Encode(bytes)}',
-  );
+  final source = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+  return social ? source : compressAnimalPhotoDataUrl(source);
 }
 
 /// Phone camera images are often several megabytes, while a Firestore document
@@ -1950,11 +1950,7 @@ class LiquidSegmentBar extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.74),
-                        Ink.violet.withValues(alpha: 0.22),
-                        Ink.violetDeep.withValues(alpha: 0.15),
-                      ],
+                      colors: [Ink.violetDeep, Ink.violetDeep, Ink.violetDeep],
                     ),
                     child: const SizedBox.expand(),
                   ),
@@ -1986,7 +1982,7 @@ class LiquidSegmentBar extends StatelessWidget {
                                       key: ValueKey<bool>(selected == i),
                                       size: Gold.t21,
                                       color: selected == i
-                                          ? Ink.violetDeep
+                                          ? Colors.white
                                           : Ink.faint,
                                     ),
                                   ),
@@ -1998,7 +1994,7 @@ class LiquidSegmentBar extends StatelessWidget {
                                     curve: Gold.ease,
                                     style: TextStyle(
                                       color: selected == i
-                                          ? Ink.violetDeep
+                                          ? Colors.white
                                           : Ink.body,
                                       fontWeight: selected == i
                                           ? FontWeight.w700
@@ -2042,7 +2038,13 @@ InputDecoration fieldStyle(
   );
 
   return InputDecoration(
-    hintText: ui(label),
+    labelText: ui(label),
+    floatingLabelBehavior: FloatingLabelBehavior.always,
+    floatingLabelStyle: const TextStyle(
+      color: Ink.muted,
+      fontSize: 17,
+      fontWeight: FontWeight.w600,
+    ),
     prefixIcon:
         prefix ??
         (icon == null
@@ -3532,6 +3534,7 @@ class RanchAccessService {
 
   static Future<void> clearLocalRanchData() async {
     await CollaborationRealtimeSyncService.stop();
+    await DeviceWorkspaces.preserve();
     AutoSyncService.beginRemoteWrite();
     try {
       for (final boxName in backupBoxNames) {
@@ -3661,6 +3664,7 @@ class RanchAccessService {
       await clearLocalRanchData();
     }
     await setSetting('ranchId', normalized);
+    await DeviceWorkspaces.restore();
     await setSetting('pendingRanchId', '');
     await setSetting(
       'currentRole',
@@ -4043,6 +4047,8 @@ class CloudSyncService {
     'settingsQueueInitialized',
     'autoSyncEnabled',
     'socialDrafts',
+    'workspaceSyncEnabled',
+    'activeDeviceWorkspace',
   };
 
   static FirebaseFirestore get db => FirebaseFirestore.instance;
@@ -4056,12 +4062,24 @@ class CloudSyncService {
       ranchId().isNotEmpty;
 
   static bool isLocalSetting(String key) =>
-      key.startsWith('vendorRide_') || localOnlySettings.contains(key);
+      key.startsWith('vendorRide_') ||
+      key.startsWith('localImport_') ||
+      localOnlySettings.contains(key);
+
+  static bool get sharedDataEnabled =>
+      settingValue('workspaceSyncEnabled', false) == true;
+  static bool sharesBox(String name) =>
+      sharedDataEnabled ||
+      const {
+        'family_users',
+        'ranch_messages',
+        'ranch_tasks',
+        'notifications',
+      }.contains(name);
 
   static const networkTimeout = Duration(seconds: 12);
 
   static bool mayUpload(String boxName, Map<String, dynamic> data) {
-    if (boxName == 'vendor_entries') return false;
     if (boxName == 'settings' || boxName == 'family_users') {
       return canManageRanch;
     }
@@ -4112,10 +4130,11 @@ class CloudSyncService {
         'notifications',
         'ranch_customers',
         'vendor_people',
+        'vendor_entries',
         'settings',
       ])
         name: () => uploadBox(name),
-      if (canManageRanch)
+      if (canManageRanch && sharedDataEnabled)
         'ranch settings': () => ranch
             .set({
               'appName': appName(),
@@ -4133,8 +4152,7 @@ class CloudSyncService {
   }
 
   static Future<void> uploadBox(String boxName) async {
-    if (boxName == 'vendor_entries') return;
-    if (!ready || !Hive.isBoxOpen(boxName)) return;
+    if (!ready || !Hive.isBoxOpen(boxName) || !sharesBox(boxName)) return;
     final box = Hive.box(boxName);
     final targetRanch = ranchId();
     final col = ranch.collection(boxName);
@@ -4200,6 +4218,11 @@ class CloudSyncService {
             ..remove('key')
             ..remove('pendingUpload');
           sent['updatedBy'] = currentUserName();
+          if (boxName == 'vendor_entries') sent.remove('serverCreatedAt');
+          if (boxName == 'vendor_entries' &&
+              txt(sent, 'createdByUid').isEmpty) {
+            sent['createdByUid'] = FirebaseAuth.instance.currentUser!.uid;
+          }
           if (boxName == 'sale_records' && isOwnUseMilk(sent)) {
             applyMilkSaleUsage(sent);
           }
@@ -4225,7 +4248,11 @@ class CloudSyncService {
                       toInt(sent['updatedAtMillis'])) {
                 return localCloudData(remote)..['cloudId'] = docId;
               }
-              transaction.set(ref, sent, SetOptions(merge: true));
+              transaction.set(ref, {
+                ...sent,
+                if (boxName == 'vendor_entries' && remote == null)
+                  'serverCreatedAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
               return sent;
             },
             timeout: networkTimeout,
@@ -4265,6 +4292,8 @@ class CloudSyncService {
   static Future<void> downloadBox(String boxName) async {
     if (!ready || !Hive.isBoxOpen(boxName)) return;
     final targetRanch = ranchId();
+    final importKey = 'localImport_${_profileKey}_${targetRanch}_$boxName';
+    if (!sharesBox(boxName) && settingValue(importKey, false) == true) return;
     final snap = await ranch
         .collection(boxName)
         .get(const GetOptions(source: Source.server))
@@ -4282,6 +4311,7 @@ class CloudSyncService {
           await AutoSyncService.putRemote(box, doc.id, data['value']);
         }
       }
+      await Hive.box('settings').put(importKey, true);
       return;
     }
     final keyByCloudId = <String, dynamic>{
@@ -4294,10 +4324,6 @@ class CloudSyncService {
       final data = localCloudData(doc.data())
         ..['cloudId'] = doc.id
         ..['pendingUpload'] = false;
-      if (boxName == 'vendor_entries') {
-        await AutoSyncService.putRemote(box, doc.id, data);
-        continue;
-      }
       final key = keyByCloudId[doc.id] ?? doc.id;
       final raw = box.get(key);
       if (raw is Map) {
@@ -4318,6 +4344,7 @@ class CloudSyncService {
       }
       await AutoSyncService.putRemote(box, key, data);
     }
+    await Hive.box('settings').put(importKey, true);
   }
 
   static Future<Map<String, int>> cloudCounts() async {
@@ -4699,7 +4726,10 @@ class CollaborationRealtimeSyncService {
     _listeningUid = RanchAccessService.uid;
     final desiredUid = _listeningUid;
     for (final box in backupBoxNames.where(
-      (name) => name != 'ranch_messages' && name != 'ranch_tasks',
+      (name) =>
+          name != 'ranch_messages' &&
+          name != 'ranch_tasks' &&
+          CloudSyncService.sharesBox(name),
     )) {
       _vendorSubscriptions.add(
         CloudSyncService.ranch
@@ -4802,10 +4832,6 @@ class CollaborationRealtimeSyncService {
         final remote = localCloudData(change.doc.data() ?? {});
         remote['cloudId'] = cloudId;
         remote['pendingUpload'] = false;
-        if (boxName == 'vendor_entries') {
-          await AutoSyncService.putRemote(box, cloudId, remote);
-          continue;
-        }
         if (localKey == null) {
           await AutoSyncService.putRemote(box, cloudId, remote);
           localKeyByCloudId[cloudId] = cloudId;
@@ -4893,7 +4919,11 @@ class AutoSyncService {
         : 0;
     final pendingAnimals = <String>{};
     for (final name in backupBoxNames) {
-      if (name == 'settings' || !Hive.isBoxOpen(name)) continue;
+      if (name == 'settings' ||
+          !Hive.isBoxOpen(name) ||
+          !CloudSyncService.sharesBox(name)) {
+        continue;
+      }
       for (final value in Hive.box(name).values) {
         if (value is! Map || value['pendingUpload'] != true) continue;
         total++;
@@ -4904,8 +4934,12 @@ class AutoSyncService {
       settingValue('pendingAnimalEntryUpdates', <String, dynamic>{}),
     );
     return total +
-        asMap(settingValue('pendingSettingKeys', {})).length +
-        health.keys.where((id) => !pendingAnimals.contains(id)).length;
+        (CloudSyncService.sharedDataEnabled
+            ? asMap(settingValue('pendingSettingKeys', {})).length
+            : 0) +
+        (CloudSyncService.sharedDataEnabled
+            ? health.keys.where((id) => !pendingAnimals.contains(id)).length
+            : 0);
   }
 
   static Future<void> refreshPendingCount() async {
@@ -4937,7 +4971,6 @@ class AutoSyncService {
       if (!Hive.isBoxOpen(boxName)) continue;
       _subscriptions.add(
         Hive.box(boxName).watch().listen((event) {
-          if (boxName == 'vendor_entries') return;
           if (boxName == 'settings') {
             if (_consumeRemoteEcho(boxName, event.key, event.value)) return;
             if (!canManageRanch) return;
@@ -5153,13 +5186,18 @@ class AutoSyncService {
       await runSyncSteps({
         'private messages': DirectChatService.flush,
         'records': CloudSyncService.uploadAll,
-        'animal health': flushPendingAnimalEntryUpdates,
+        if (CloudSyncService.sharedDataEnabled)
+          'animal health': flushPendingAnimalEntryUpdates,
         'download': CloudSyncService.downloadAll,
         'public ranch': PublicRanchService.refresh,
       });
       final blocked = <String>{};
       for (final name in backupBoxNames) {
-        if (name == 'settings' || !Hive.isBoxOpen(name)) continue;
+        if (name == 'settings' ||
+            !Hive.isBoxOpen(name) ||
+            !CloudSyncService.sharesBox(name)) {
+          continue;
+        }
         for (final raw in Hive.box(name).values.whereType<Map>()) {
           if (raw['pendingUpload'] == true &&
               !CloudSyncService.mayUpload(name, asMap(raw))) {
@@ -6300,7 +6338,11 @@ class VimoApp extends StatelessWidget {
           chipTheme: ChipThemeData(
             showCheckmark: false,
             backgroundColor: Colors.white.withValues(alpha: .44),
-            selectedColor: Ink.violet.withValues(alpha: .15),
+            selectedColor: Ink.violetDeep,
+            secondaryLabelStyle: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
             side: const BorderSide(color: Color(0xCFFFFFFF)),
             shape: const SquircleBorder(radius: 15),
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
@@ -6314,8 +6356,13 @@ class VimoApp extends StatelessWidget {
             style: ButtonStyle(
               backgroundColor: WidgetStateProperty.resolveWith(
                 (states) => states.contains(WidgetState.selected)
-                    ? Ink.violet.withValues(alpha: .13)
+                    ? Ink.violetDeep
                     : Colors.white.withValues(alpha: .40),
+              ),
+              foregroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.selected)
+                    ? Colors.white
+                    : Ink.body,
               ),
               side: const WidgetStatePropertyAll(
                 BorderSide(color: Color(0xCFFFFFFF)),
@@ -7427,31 +7474,21 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: Gold.s5),
                             Row(
                               children: [
-                                SizedBox(
-                                  width: Gold.s21,
-                                  height: Gold.s21,
-                                  child: Checkbox(
-                                    value: _remember,
-                                    activeColor: Ink.violet,
-                                    shape: const SquircleBorder(
-                                      radius: Gold.r8,
+                                ChoiceChip(
+                                  showCheckmark: false,
+                                  label: AppText(
+                                    'Remember me',
+                                    style: TextStyle(
+                                      color: _remember
+                                          ? Colors.white
+                                          : Ink.body,
+                                      fontSize: Gold.t11,
                                     ),
-                                    side: BorderSide(
-                                      color: Ink.muted.withValues(alpha: 0.62),
-                                      width: 1.4,
-                                    ),
-                                    onChanged: (v) =>
-                                        setState(() => _remember = v ?? true),
                                   ),
-                                ),
-                                const SizedBox(width: Gold.s8),
-                                const AppText(
-                                  'Remember me',
-                                  style: TextStyle(
-                                    fontSize: Gold.t11,
-                                    color: Ink.body,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  selected: _remember,
+                                  selectedColor: Ink.violetDeep,
+                                  onSelected: (v) =>
+                                      setState(() => _remember = v),
                                 ),
                                 const Spacer(),
                                 GestureDetector(
@@ -8603,7 +8640,10 @@ class _MainShellState extends State<MainShell> {
             'ranchId',
           }.contains(event.key)) {
         setState(() {
-          if (event.key == 'purposeProfiles') _tab = 0;
+          if (event.key == 'purposeProfiles') {
+            _tab = 0;
+            _tabHistory.clear();
+          }
         });
       }
     });
@@ -8665,6 +8705,8 @@ class _MainShellState extends State<MainShell> {
       'Vendor': const VendorWorkspace(),
       'Social': const SocialScreen(),
       'Chat': const CommunityChatsScreen(),
+      'Reports': const VendorOnlyReports(),
+      'Profile': const SocialProfileScreen(),
     };
     const items = <String, _NavItem>{
       'Ranch': _NavItem(
@@ -8678,6 +8720,16 @@ class _MainShellState extends State<MainShell> {
         CupertinoIcons.drop,
       ),
       'Social': _NavItem('Social', CupertinoIcons.globe, CupertinoIcons.globe),
+      'Reports': _NavItem(
+        'Reports',
+        CupertinoIcons.chart_bar_fill,
+        CupertinoIcons.chart_bar,
+      ),
+      'Profile': _NavItem(
+        'Profile',
+        CupertinoIcons.person_fill,
+        CupertinoIcons.person,
+      ),
       'Chat': _NavItem(
         'Chat',
         CupertinoIcons.chat_bubble_2_fill,
@@ -8732,6 +8784,12 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
           actions: [
+            if (order[tab] == 'Social')
+              IconButton(
+                tooltip: ui('Chat'),
+                icon: const Icon(CupertinoIcons.chat_bubble_2),
+                onPressed: () => push(context, const CommunityChatsScreen()),
+              ),
             if (order[tab] == 'Social' || order[tab] == 'Chat')
               IconButton(
                 tooltip: ui('Search'),
@@ -8746,6 +8804,8 @@ class _MainShellState extends State<MainShell> {
             ? null
             : order[tab] == 'Chat' ||
                   order[tab] == 'Vendor' ||
+                  order[tab] == 'Reports' ||
+                  order[tab] == 'Profile' ||
                   (order[tab] != 'Social' && !canRecordEntries)
             ? null
             : FloatingActionButton(
@@ -8849,9 +8909,9 @@ class _NavBar extends StatelessWidget {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          Colors.white.withValues(alpha: 0.82),
-                          Ink.violet.withValues(alpha: 0.20),
-                          Colors.white.withValues(alpha: 0.44),
+                          Ink.violetDeep,
+                          Ink.violetDeep,
+                          Ink.violetDeep,
                         ],
                       ),
                       child: const SizedBox.expand(),
@@ -8899,7 +8959,7 @@ class _NavCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? Ink.violetDeep : Ink.faint;
+    final color = active ? Colors.white : Ink.faint;
     return TextButton(
       style: TextButton.styleFrom(
         padding: EdgeInsets.zero,
@@ -8920,10 +8980,7 @@ class _NavCell extends StatelessWidget {
               child: item.label == 'Vendor'
                   ? MilkVendorIcon(size: 31, color: color)
                   : item.active == null
-                  ? CowHoofIcon(
-                      size: 28,
-                      color: active ? Ink.violetDeep : Ink.faint,
-                    )
+                  ? CowHoofIcon(size: 28, color: color)
                   : Icon(
                       active ? item.active : item.idle,
                       size: 25,

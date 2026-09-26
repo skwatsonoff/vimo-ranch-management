@@ -48,6 +48,68 @@ DateTime vendorPaymentDate(Map<String, dynamic> p, DateTime date) {
   return day;
 }
 
+String vendorPaymentScheduleLabel(Map<String, dynamic> person) {
+  final cycle = txt(person, 'paymentCycle', 'Daily');
+  if (cycle == 'Daily') return bi('Payment · Daily', 'பணம் · தினமும்');
+  if (cycle == 'Monthly') {
+    return '${bi('Payment · Monthly on', 'பணம் · மாதந்தோறும்')} ${numv(person, 'paymentMonthDay', 1).toInt()}';
+  }
+  final days = (person['paymentDays'] as List? ?? []).whereType<int>().where(
+    (d) => d >= 0 && d < 7,
+  );
+  return '${bi('Payment', 'பணம்')} · ${cycle == 'Weekly' ? bi('Weekly', 'வாரந்தோறும்') : ui(cycle)}${days.isEmpty ? '' : ' · ${days.map((d) => tamilUi ? _dayTamil[d] : _dayNames[d]).join(', ')}'}';
+}
+
+({String label, Color color}) vendorPaymentTiming(
+  Map<String, dynamic> person,
+  Iterable<Map<String, dynamic>> rows,
+  DateTime date,
+) {
+  final today = DateTime(date.year, date.month, date.day);
+  final receipts =
+      rows
+          .where(
+            (r) =>
+                r['personId'] == person['id'] &&
+                (r['kind'] == 'payment' || numv(r, 'paid') > 0),
+          )
+          .toList()
+        ..sort(
+          (a, b) => txt(
+            b,
+            'createdAt',
+            txt(b, 'date'),
+          ).compareTo(txt(a, 'createdAt', txt(a, 'date'))),
+        );
+  if (receipts.isNotEmpty && vendorPersonDue(txt(person, 'id'), rows) <= .001) {
+    final paidDate = DateTime.tryParse(txt(receipts.first, 'date'));
+    if (paidDate != null) {
+      final age = today
+          .difference(DateTime(paidDate.year, paidDate.month, paidDate.day))
+          .inDays;
+      if (age >= 0 && age <= 7)
+        return (
+          label: age == 0
+              ? bi('Received today', 'இன்று பெற்றது')
+              : age == 1
+              ? bi('Received yesterday', 'நேற்று பெற்றது')
+              : '${bi('Received', 'பெற்றது')} ${paidDate.day}/${paidDate.month}',
+          color: Ink.green,
+        );
+    }
+  }
+  final due = vendorPaymentDate(person, today);
+  final days = due.difference(today).inDays;
+  return days <= 0
+      ? (label: bi('Receive now', 'இப்போது பெறவும்'), color: Ink.amber)
+      : (
+          label: days == 1
+              ? bi('Due tomorrow', 'நாளை பெறவும்')
+              : '${bi('Due', 'பெறுவது')} ${due.day}/${due.month}',
+          color: Ink.red,
+        );
+}
+
 double vendorUsualQuantity(
   Map<String, dynamic> p,
   String session,
@@ -119,23 +181,29 @@ class VendorWeekRow extends StatelessWidget {
   final Set<int> days;
   final ValueChanged<Set<int>> onChanged;
   final bool daily;
+  final bool showAll;
   const VendorWeekRow({
     super.key,
     required this.days,
     required this.onChanged,
     this.daily = false,
+    this.showAll = true,
   });
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Expanded(
-        flex: 2,
-        child: _VendorPill(
-          label: daily ? bi('Daily', 'தினமும்') : bi('All week', 'வாரம்'),
-          selected: days.length == 7,
-          onTap: () => onChanged(days.length == 7 ? {} : {0, 1, 2, 3, 4, 5, 6}),
+      if (showAll)
+        Expanded(
+          flex: 2,
+          child: _VendorPill(
+            label: daily
+                ? bi('Daily', 'தினமும்')
+                : bi('All days', 'எல்லா நாட்களும்'),
+            selected: days.length == 7,
+            onTap: () =>
+                onChanged(days.length == 7 ? {} : {0, 1, 2, 3, 4, 5, 6}),
+          ),
         ),
-      ),
       for (var i = 0; i < 7; i++)
         Expanded(
           child: Padding(
@@ -410,7 +478,13 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                 for (final s in ['Morning', 'Evening'])
                   FilterChip(
                     showCheckmark: false,
-                    label: AppText(s),
+                    label: AppText(
+                      s,
+                      style: TextStyle(
+                        color: _sessions.contains(s) ? Colors.white : Ink.body,
+                      ),
+                    ),
+                    selectedColor: Ink.violetDeep,
                     selected: _sessions.contains(s),
                     onSelected: (v) => setState(() {
                       v ? _sessions.add(s) : _sessions.remove(s);
@@ -424,52 +498,55 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
             _number(_price, bi('Price per litre', 'லிட்டருக்கான விலை')),
             const SizedBox(height: 24),
             Text(
-              bi('Payment days', 'பணம் செலுத்தும் நாட்கள்'),
+              bi('Payment frequency', 'பணம் பெறும் இடைவெளி'),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 10),
-            VendorWeekRow(
-              daily: true,
-              days: _cycle == 'Daily' ? {0, 1, 2, 3, 4, 5, 6} : _paymentDays,
-              onChanged: (d) => setState(() {
-                _paymentDays = d;
-                _cycle = d.length == 7 || d.isEmpty
-                    ? 'Daily'
-                    : d.length == 1
-                    ? 'Weekly'
-                    : 'Flexible';
-              }),
-            ),
-            const SizedBox(height: 10),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                for (final cycle in ['Weekly', 'Monthly'])
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(3),
-                      child: _VendorPill(
-                        label: cycle == 'Weekly'
-                            ? bi('Weekly once', 'வாரம் ஒருமுறை')
-                            : bi('Monthly once', 'மாதம் ஒருமுறை'),
-                        selected: _cycle == cycle,
-                        onTap: () => setState(() {
-                          _cycle = cycle;
-                          if (cycle == 'Weekly' && _paymentDays.length != 1) {
-                            _paymentDays = {DateTime.now().weekday % 7};
-                          }
-                        }),
-                      ),
-                    ),
+                for (final cycle in ['Daily', 'Weekly', 'Monthly', 'Flexible'])
+                  _VendorPill(
+                    label: switch (cycle) {
+                      'Daily' => bi('Daily', 'தினமும்'),
+                      'Weekly' => bi('Weekly once', 'வாரம் ஒருமுறை'),
+                      'Monthly' => bi('Monthly once', 'மாதம் ஒருமுறை'),
+                      _ => bi('Choose days', 'நாட்களைத் தேர்வு செய்'),
+                    },
+                    selected: _cycle == cycle,
+                    onTap: () => setState(() {
+                      _cycle = cycle;
+                      if (cycle == 'Weekly' && _paymentDays.length != 1) {
+                        _paymentDays = {DateTime.now().weekday % 7};
+                      }
+                      if (cycle == 'Daily') {
+                        _paymentDays = {0, 1, 2, 3, 4, 5, 6};
+                      }
+                      if (cycle == 'Flexible' && _paymentDays.isEmpty) {
+                        _paymentDays = {DateTime.now().weekday % 7};
+                      }
+                    }),
                   ),
               ],
             ),
-            if (_cycle == 'Weekly') ...[
-              const SizedBox(height: 10),
+            if (_cycle == 'Weekly' || _cycle == 'Flexible') ...[
+              const SizedBox(height: 12),
+              Text(
+                _cycle == 'Weekly'
+                    ? bi('Which day?', 'எந்த நாள்?')
+                    : bi('Receive payment on', 'பணம் பெறும் நாட்கள்'),
+                style: const TextStyle(color: Ink.muted),
+              ),
+              const SizedBox(height: 8),
               VendorWeekRow(
+                showAll: _cycle == 'Flexible',
                 days: _paymentDays,
                 onChanged: (d) => setState(() {
                   final added = d.difference(_paymentDays);
-                  _paymentDays = added.isEmpty ? {0} : {added.first};
+                  _paymentDays = _cycle == 'Weekly'
+                      ? (added.isEmpty ? _paymentDays : {added.first})
+                      : (d.isEmpty ? _paymentDays : d);
                 }),
               ),
             ],
@@ -827,7 +904,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       await _persist();
       _revealCurrent();
     } catch (e) {
-      if (mounted) snack(context, '$e');
+      if (mounted) snack(context, '$e'.replaceFirst('Bad state: ', ''));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1249,13 +1326,14 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     final now = payDate.isAtSameMomentAs(
       DateTime(today.year, today.month, today.day),
     );
+    final timing = vendorPaymentTiming(p, rows, today);
     final tone = skip
         ? Ink.red
         : done
         ? Ink.green
         : edit
         ? Ink.amber
-        : Ink.violet;
+        : timing.color;
     return _VendorSwipeCard(
       enabled: current && !_busy,
       editing: edit,
@@ -1270,36 +1348,13 @@ class _VendorRideScreenState extends State<VendorRideScreen>
           children: [
             Row(
               children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: tone.withValues(alpha: .12),
-                  ),
-                  alignment: Alignment.center,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      FittedBox(
-                        child: Text(
-                          '${qty.toStringAsFixed(qty % 1 == 0 ? 0 : 1)} L',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: tone,
-                          ),
-                        ),
-                      ),
-                      if (done || skip)
-                        Icon(
-                          done
-                              ? CupertinoIcons.check_mark
-                              : CupertinoIcons.forward,
-                          size: 14,
-                          color: tone,
-                        ),
-                    ],
+                _VendorAvatar(person: p),
+                const SizedBox(width: 10),
+                Text(
+                  '${qty.toStringAsFixed(qty % 1 == 0 ? 0 : 1)} L',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1319,20 +1374,6 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         txt(p, 'place'),
                         style: const TextStyle(color: Ink.muted, fontSize: 13),
                       ),
-                      if (current && !edit)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(
-                            bi(
-                              'Swipe → complete · ← change',
-                              '→ முடி · ← மாற்று',
-                            ),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Ink.green,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -1355,10 +1396,10 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         skip
                             ? bi('Skipped today', 'இன்று தவிர்க்கப்பட்டது')
                             : done
-                            ? bi('Completed', 'முடிந்தது')
-                            : now
-                            ? bi('Pay now', 'இப்போது பணம்')
-                            : '${bi('Pay', 'பணம்')} ${payDate.day}/${payDate.month}',
+                            ? (numv(p, 'ridePaid') > 0
+                                  ? bi('Received', 'பெற்றது')
+                                  : bi('Delivered', 'வழங்கியது'))
+                            : timing.label,
                         textAlign: TextAlign.end,
                         style: TextStyle(fontSize: 12, color: tone),
                       ),
@@ -1415,7 +1456,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                 children: [
                   Expanded(
                     child: _VendorPill(
-                      label: bi('Pay now', 'இப்போது'),
+                      label: bi('Received now', 'இப்போது பெற்றது'),
                       selected: toDouble(_paid.text) > 0,
                       onTap: () => setState(
                         () => _paid.text =
@@ -1426,7 +1467,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                   const SizedBox(width: 8),
                   Expanded(
                     child: _VendorPill(
-                      label: bi('Pay later', 'பிறகு'),
+                      label: bi('Receive later', 'பிறகு பெறுவது'),
                       selected: toDouble(_paid.text) == 0,
                       onTap: () => setState(() => _paid.text = '0'),
                     ),

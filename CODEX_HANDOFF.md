@@ -1,5 +1,30 @@
 # Continue VIMO on the laptop
 
+## Released — 2026-09-26, version 1.2.0+3
+
+- Vendor entries now validate and flush to Hive before any network work. Stock
+  shortages show a useful message instead of a boxed web transaction exception.
+  Purchases, deliveries and receipts work offline with stable retry IDs.
+- Ranch/Vendor records stay on the device by default. Preferences opts into
+  Firebase sharing with approved members of the same ranch. Existing cloud rows
+  import once; historical cloud records are retained, not deleted. Device-only
+  account/ranch archives preserve entries across workspace/account changes.
+- Ranch-only and Vendor-only navigation hide the secondary workspace until it
+  is enabled in Preferences. Chat also has a shortcut in Social. Customer cards
+  show profile, litres, name/place, amount and orange/green/red receipt timing.
+- Selected controls use purple with white text and no ticks. Number fields keep
+  labels; transaction session selection is automatic. Payment frequency has one
+  relevant day/date selector. Vendor uses the same milk bottle as its balance.
+- Social and profile photos use the original picker data, avoiding double
+  compression; social encoding preserves up to 1600px at high JPEG quality.
+- Validation: 75 Flutter checks passed without preview mode, plus 120 Firestore
+  security checks. Analysis has no errors/warnings (8 informational lints).
+  Local 390px browser flow saved 10L intake, completed 1L/₹60 delivery, and showed
+  9L stock, receipt, summary and reports without browser errors. Production web
+  and Android release builds passed; Firebase Hosting and rules deployed.
+- Production remains https://my-ranch-sync.web.app. No production browser check
+  was run, per the user's request. The APK retains existing package/signing.
+
 ## Released — 2026-09-26
 
 - Ranch uses sale terminal, inventory and report icons; the same cow artwork has
