@@ -6,6 +6,24 @@ implementation status and current continuation instructions. Read it first.
 The dated notes below are historical; older blocked/deployment/branch statements
 do not override the September 26 release checkpoint in the master handoff.
 
+## Released — 2026-09-26, version 1.2.1+4
+
+- Reviewed Claude's laptop edits and added calendar month-end/leap-year,
+  malformed nested Social data and weekday normalization corrections.
+- Duplicate animal sale saves and death confirmations are guarded early;
+  already-sold/died entries are rejected. Ranch chat has a handler send guard.
+- Following now precedes Followers; profile tabs use purple fill and white text.
+  Duration/age display is localized; Vendor edit numbers are formatted cleanly.
+- The 75 existing Flutter checks and seven new regression checks are verified.
+  A confirmation-test fixture timing failure was corrected and its seven-check
+  regression file passed. Final analysis has no errors/warnings (10 info lints).
+- Production web and Android release builds passed. Firebase Hosting deployed
+  successfully to https://my-ranch-sync.web.app; unchanged rules were not redeployed.
+  Production visual checking is left to the user. App source commit: `785a4a5`.
+- `_claude_backup_2026-09-26/` is preserved locally, ignored by Git and excluded
+  from Dart analysis. The reported Claude commit `8922234` was not present in
+  this checkout; reviewed working-file changes are recorded in the app commit.
+
 ## Released — 2026-09-26, version 1.2.0+3
 
 - Vendor entries now validate and flush to Hive before any network work. Stock

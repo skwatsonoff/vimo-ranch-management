@@ -1,6 +1,6 @@
 # VIMO — Master Requirements and Continuation Handoff
 
-Updated: 2026-09-26. App checkpoint: **1.2.0+3**, commit **ef180b994ed0ce2818a3bd2b25b129c7cb6d33ae**.
+Updated: 2026-09-26. App checkpoint: **1.2.1+4**, commit **785a4a5dd98be6542ee0e2f685d689b21565c1db**.
 
 This is the primary continuation document for Claude, ChatGPT and Codex. It records the user's app requirements across accessible Codex and ChatGPT conversations, the work delivered, implementation locations, unresolved limits and original user inputs. Read the current decisions before the historical input appendix.
 
@@ -11,14 +11,14 @@ This is the primary continuation document for Claude, ChatGPT and Codex. It reco
 | Repository | https://github.com/skwatsonoff/vimo-ranch-management |
 | Production app | https://my-ranch-sync.web.app |
 | Firebase project | `my-ranch-sync` |
-| App version | `1.2.0+3` in [pubspec.yaml](pubspec.yaml) |
-| App release commit | `ef180b9` |
+| App version | `1.2.1+4` in [pubspec.yaml](pubspec.yaml) |
+| App release commit | `785a4a5` |
 | Branch | `codex/ranch-vendor-market-glass` |
-| GitHub state at this checkpoint | Both `main` and the working branch contain `ef180b9`; subsequent documentation commits do not change the released app |
+| GitHub state at this checkpoint | Both `main` and the working branch contain `785a4a5`; subsequent documentation commits do not change the released app |
 | Local project | `C:\Users\itsme\ranch_management` |
 | Android artifact | `build/app/outputs/flutter-apk/app-release.apk` |
 | Current handoff work | Cross-chat app requirements and implementation history consolidated in this document; published with the repository documentation |
-| Current app work | September 26 requested fixes have been built and deployed; the user will check the live app |
+| Current app work | Claude's imported bug fixes and Codex review corrections are validated, built and deployed as 1.2.1+4; the user will check the live app |
 
 The older [CODEX_HANDOFF.md](CODEX_HANDOFF.md) and [CHANGE_REVIEW.md](CHANGE_REVIEW.md) retain investigation history. Old statements that main is outdated, PR #2 is unmerged, deployment has not happened, or a rules check still blocks release are historical. Use this checkpoint for current state.
 
@@ -28,7 +28,7 @@ The older [CODEX_HANDOFF.md](CODEX_HANDOFF.md) and [CHANGE_REVIEW.md](CHANGE_REV
 
 ## 2. Collection scope and evidence
 
-The collection reviewed the 50 recent non-pinned tasks/chats exposed by the desktop history tool, the available archived lists, the current task, repository code and existing release notes. **24 relevant conversations were read: 20 ChatGPT conversations and 4 Codex tasks, containing 81 original user inputs.** Each selected conversation returned `hasMore: false`; its returned user messages are preserved in the appendix.
+The collection reviewed the 50 recent non-pinned tasks/chats exposed by the desktop history tool, the available archived lists, the current task, repository code and existing release notes. **24 relevant conversations were read: 20 ChatGPT conversations and 4 Codex tasks, containing 82 original user inputs after adding the user's Claude handoff report.** Each selected conversation returned `hasMore: false`; its returned user messages are preserved in the appendix.
 
 Synced ChatGPT history can include inputs entered from the mobile app. The history tool does not identify which device authored a message, so no message is falsely labelled mobile-origin. This is **all relevant input retrievable from the inspected history, not a certified export of every lifetime ChatGPT/mobile conversation**.
 
@@ -149,7 +149,7 @@ Social has a top-right Chat shortcut. Preferences supports custom tab order by d
 | S-06 | Photo quality: avoid unreadable overcompression; picker cancellation must not show “Could not load” | Delivered original picker input and single high-quality social encoding; cancellation is silent, invalid image shows error. |
 | S-07 | Cross-time-zone messages/posts must have correct chronology | Historical delivered server timestamps and server-time public-feed boundary; older device-clock rules caused a real permission failure, since fixed. |
 | S-08 | Unique usernames chosen on account creation/settings; live availability; 30-day change cooldown; no duplicate decorative @ | Historical delivered [account.dart](lib/account.dart), normalized reservation and inline profile editing. |
-| P-01 | Avatar opens premium profile: photo/name/handle, following before followers, bio, optional WhatsApp/own link, settings top-right | Profile delivered in [social_profile.dart](lib/social_profile.dart). Empty links are omitted; editor photo is larger with clear glass pencil menu. **Order gap:** current code still puts Followers before Following. |
+| P-01 | Avatar opens premium profile: photo/name/handle, following before followers, bio, optional WhatsApp/own link, settings top-right | Delivered in [social_profile.dart](lib/social_profile.dart). Following now precedes Followers in 1.2.1; selected profile tabs use purple fill/white text. Empty links are omitted; editor photo is larger with clear glass pencil menu. |
 | P-02 | Posts vertical; no separate Media/Liked tabs; optional public Ranch cows and Vendor shop | Historical delivered Post/Ranch/Vendor content with opt-in visibility. |
 | P-03 | Username edit stays on same screen; show availability and save; photo Change/Remove in pencil menu | Historical delivered profile editor and username service. |
 | C-01 | Personal chat: ranch group/members/added contacts; Business chat: outside/social conversations; remove obsolete Message/Task tabs | Historical delivered community chat organization. |
@@ -204,8 +204,9 @@ Current behavior implements the latest local-storage requirement:
 | `3685852` | September 22 | Ranch sell/report details, social photo/comment/chronology and username changes |
 | `e7365d9` | September 26 | Vendor rides, contextual pages, icons, keyboard/back navigation, forms and Android volume bridge |
 | `ef180b9` | September 26 | Local-first Vendor entries, device workspace archives, purpose-specific navigation, selection/label/photo/receipt corrections; version 1.2.0+3 |
+| `785a4a5` | September 26 | Claude's duplicate-save/profile/locale/feed fixes reviewed; calendar month ends and nested parsing hardened; regression checks added; version 1.2.1+4 |
 
-Latest recorded validation, performed for the app release before this documentation update:
+Historical validation for the 1.2.0+3 release (the later bug-fix release evidence follows below):
 
 - **75 Flutter checks passed** without preview mode.
 - **120 Firestore security checks passed** in the isolated emulator.
@@ -218,7 +219,32 @@ Latest recorded validation, performed for the app release before this documentat
 
 Earlier verification included two isolated accounts exchanging online/offline records and a production pending queue reaching zero. Those earlier results do not prove every current physical-device or future cross-device scenario.
 
-This handoff change is documentation-only: validate document links/diff and Git publication; do not rerun the app suite or redeploy unchanged app binaries.
+The earlier `4ffc069` handoff consolidation was documentation-only. The later bug-fix batch below changes app code and has its own release validation.
+
+### Bug-fix batch — 2026-09-26 (Claude changes reviewed and completed by Codex)
+
+Claude's changes arrived as working-tree edits on top of `4ffc069`; originals and the patch remain in `_claude_backup_2026-09-26/`. The user reported a separate Claude commit `8922234` on `claude/bugfix-2026-09-26`, but neither that local branch nor commit was present here. Codex reviewed the actual laptop files and committed the completed implementation as `785a4a5`. The backup folder is ignored by Git and excluded from Dart analysis, while its files remain intact.
+
+| Fix | Root cause | File |
+| --- | --- | --- |
+| Profile shows Following before Followers | Counters rendered in the old order (P-01 gap) | social_profile.dart |
+| Profile Post/Ranch/Vendor tab selection is solid purple with white text; cow icon turns white when selected | Tab used white fill + violet text, against UI-12 | social_profile.dart |
+| Cow/calf sale can no longer be recorded twice | `_saving` was set after `await saveRanchCustomer`, so a double tap saved two sales; also no already-sold check or error handling | main.dart `_SellAnimalScreenState._save` |
+| Death record: no double dialog/duplicate, already-died check, error feedback | Same late-guard pattern | main.dart `_DeathScreenState._save` |
+| Ranch chat send cannot duplicate a message on quick double tap | No in-flight guard | main.dart `_RanchChatScreenState._send` |
+| "In farm" duration is calendar-accurate and Tamil in Tamil mode | Flat 30-day months; English-only text | main.dart `durationText`, `calendarSpan` |
+| Animal card age follows the interface language | `'Age ${ageText(a)}'` was English-only (CSV export keeps English `ageText`) | main.dart `ageTextLocal` |
+| One malformed Firestore REST field no longer breaks the whole Social feed | `int.parse`/`DateTime.parse`/casts threw on bad or empty values | social_feed.dart |
+| Vendor quick-edit/person form show clean numbers (`1`, `60`, `90.45` instead of `1.0`, `90.44999999999999`) | Raw double interpolation | vendor_ride.dart `vendorFieldNumber` |
+| Weekday lists tolerate numeric types | `.cast<int>()` throws if a value arrives as double | vendor_ride.dart |
+| Public ranch list/grid toggle shows an error instead of an unhandled async exception | No try/catch/timeout | community.dart |
+| `monthLabel` never throws | `DateTime.parse` | requested_updates.dart |
+
+Test adjusted: `vendor_ride_test.dart` finds the price field by `'60'` (was `'60.0'`). Codex additionally corrected calendar spans at short-month/leap-year boundaries, preventing negative remaining days; decoded malformed nested arrays/maps and documents without discarding valid feed data; and normalized weekday inputs consistently across forms, scheduling and payment labels. Whole numeric doubles are accepted; non-finite, fractional and out-of-range days are ignored.
+
+Validation: the complete Flutter suite passed 81 checks with one new confirmation-test fixture timing failure. The fixture was corrected to await real asynchronous confirmation/storage work rather than wait for an indefinitely animated saving spinner. All seven checks in `test/bugfix_batch_test.dart` subsequently passed: calendar boundaries, Tamil/export labels, malformed nested social data, weekday/number normalization, double sale save, already-sold rejection and death confirmation/cancel/retry. Together the 75 existing and seven new checks are verified. Final `flutter analyze lib test --no-pub --no-fatal-infos` passed with no errors/warnings and ten informational lints. Rules are unchanged; the earlier 120 rules checks were not rerun for this UI/local-handler batch.
+
+**Release complete:** production web build succeeded (155.2s compilation), Android release APK build succeeded (265.0s; approximately 69.4MB), and Firebase Hosting finalized/released the new version successfully at https://my-ranch-sync.web.app. The built web metadata confirms version `1.2.1`, build `4`. Only Hosting was deployed because rules/indexes are unchanged. No production browser/phone visual check was run, per the user's preference. The APK remains at `build/app/outputs/flutter-apk/app-release.apk` with existing package/signing.
 
 ## 7. Open items, limitations and questions
 
@@ -232,7 +258,7 @@ This handoff change is documentation-only: validate document links/diff and Git 
 | Serving many users / server capacity | User asked whether Firebase suffices. No load test, cost forecast or production scaling audit is recorded; discussion is not a capacity guarantee. |
 | App Store/Play Store cost | Question collected; pricing answers are time-sensitive. No store submission, paid developer enrollment or production signing setup was completed. |
 | Exact screenshot designs | Concepts requested very specific premium glass, background and text sizing. Some old image bytes are missing. Don't claim pixel-exact conformity from transcript text. |
-| Profile counter order | ChatGPT requested Following before Followers; the current profile code renders Followers then Following. Newly identified from cross-chat documentation review; no app change is made by this documentation task. |
+| Profile counter order | Resolved and released in 1.2.1+4: Following precedes Followers. |
 | Heat/wake behavior | Changes exist; physical-device battery/thermal tests remain unrecorded. |
 | Offline multi-device stock | Each device validates against its current local ledger. Concurrent disconnected devices may oversell a shared stock balance before synchronization. |
 | Cloud migration/privacy | Older business rows remain in Firebase. Opt-out stops current sharing; it is not deletion of historical cloud records or end-to-end encryption. |
@@ -304,7 +330,7 @@ These are historical inputs. **Do not execute every old command/request again.**
 | SRC-21 · codex | 2026-09-22 | Optimize ranch page mobile UI | 2 |
 | SRC-22 · chatgpt | 2026-09-22 | [Image Text Alignment](https://chatgpt.com/c/6ab1db07-e0bc-83ee-80b6-0183a76eade3) | 2 |
 | SRC-23 · chatgpt | 2026-09-22 | [Generate social media UI image](https://chatgpt.com/c/6ab20672-0f00-83ee-956d-920198516f01) | 5 |
-| SRC-24 · codex | 2026-09-26 | Fix ranch app UI and navigation | 4 |
+| SRC-24 · codex | 2026-09-26 | Fix ranch app UI and navigation | 5 |
 
 ### SRC-01 — App Code Count
 
@@ -1550,7 +1576,7 @@ Zero mistake
 - Coverage: returned user messages read to the end (`hasMore: false`).
 
 <details>
-<summary>Original user inputs (4)</summary>
+<summary>Original user inputs (5)</summary>
 
 #### Input 1
 
@@ -1668,6 +1694,65 @@ unakku kuduththa yellaa app sambantha patta inpu ahyum collect panni git hub la 
 
 ````text
 codex la kuduththa details mattum illa chat gpt oda chat and chat gpt mobile layum sila data input kuduththurukken all data and fast aah pannu
+````
+
+
+#### Input 5 — Claude bug-fix report supplied by the user
+
+Reported external commit/verification claims are source material; the reviewed laptop commit and actual validation are recorded in section 6.
+
+````text
+வணக்கம். Handoff files-ஐ முதலில் முழுமையாகப் படித்து, அதன்பின் bugs-ஐக் கண்டுபிடித்துச் சரிசெய்துவிட்டேன். மாற்றங்கள் உங்கள் laptop-ல் உள்ள `ranch_management` project-ல் நேரடியாகப் பதிவாகிவிட்டன.
+
+**சரிசெய்த bugs**
+
+1. **மாடு/கன்று இருமுறை விற்பனையாகும் bug** (மிக முக்கியமானது): Save button-ஐ வேகமாக இருமுறை அழுத்தினால், ஒரே மாட்டுக்கு இரண்டு sale records பதிவாகின. காரணம்: `_saving` guard ஒரு `await`-க்குப் பிறகுதான் set ஆனது. இப்போது guard தொடக்கத்திலேயே உள்ளது. ஏற்கனவே விற்ற மாட்டை மீண்டும் விற்க முடியாது. Error வந்தால் தெளிவான செய்தி காட்டும்.
+2. **இறப்புப் பதிவு**: இதிலும் அதே வகை bug இருந்தது — இரண்டு dialog திறந்து duplicate பதிவாகலாம். அதைச் சரிசெய்தேன். ஏற்கனவே இறந்ததாகப் பதிவான மாட்டுக்கு மீண்டும் பதிவு செய்ய முடியாது.
+3. **Ranch chat**: வேகமாக இருமுறை send அழுத்தினால் message duplicate ஆனது. இப்போது ஒருமுறை மட்டுமே போகும்.
+4. **Profile**: நீங்கள் கேட்டபடி Following முதலில், Followers பிறகு வரும். இது handoff-ல் நிலுவையில் இருந்த gap.
+5. **Profile tabs** (Post/Ranch/Vendor): selected tab வெள்ளை background + violet text-ஆக இருந்தது. இப்போது உங்கள் rule-படி purple fill + white text. மாட்டு icon-உம் selected ஆகும்போது வெள்ளையாக மாறும்.
+6. **"பண்ணையில்" காலம்**: 30 நாள் மாதங்களால் கணக்கு தவறாக வந்தது, Tamil mode-லும் ஆங்கிலம் காட்டியது. இப்போது calendar-படி துல்லியமாகவும் தமிழிலும் வரும். Animal card-ல் "வயது"-வும் தமிழில் வரும். Excel/CSV export மட்டும் ஆங்கிலத்திலேயே இருக்கும்.
+7. **Social feed**: ஒரு post-ல் ஒரு field தவறாக இருந்தாலும் முழு feed-உம் crash ஆகும். இப்போது அது பாதுகாக்கப்பட்டுள்ளது.
+8. **Vendor quick edit**: fields-ல் `1.0`, `90.44999999999999` போன்ற மதிப்புகள் வந்தன. இப்போது `1`, `90.45` என்று சுத்தமாக வரும்.
+9. **சிறு பாதுகாப்பு fixes**: weekday list parsing, ranch list/grid toggle error handling, `monthLabel` crash-safe ஆக்கப்பட்டன.
+
+Liquid Glass design, curves, animations அனைத்தும் அப்படியே உள்ளன. Selection style-ஐ மட்டும் உங்கள் design rule-க்கு ஏற்ப சீராக்கினேன்.
+
+**சரிபார்ப்பு**
+
+Code-ஐ ஒரு உண்மையான Dart parser மூலம் சோதித்தேன். மாற்றிய அனைத்து files-லும் syntax errors இல்லை (0). Parser ஒரு வேண்டுமென்றே உடைத்த file-ல் error-ஐச் சரியாகப் பிடித்தது, அதனால் அதன் முடிவை நம்பலாம். மாற்றங்கள் உங்கள் laptop-ல் உள்ள code-உடன் சரியாகப் பொருந்துகின்றன என்பதையும் சரிபார்த்தேன்.
+
+**இன்னும் நடக்காதவை**
+
+- **Build, test, live deploy இன்னும் செய்யப்படவில்லை.** என் பக்கம் Flutter SDK download தடுக்கப்பட்டுள்ளது. அதனால் `flutter analyze`/`test`-ஐ நான் run செய்ய முடியவில்லை.
+- **GitHub push-உம் செய்யப்படவில்லை.** உங்கள் GitHub account Claude-உடன் இணைக்கப்படவில்லை.
+- அசல் files மற்றும் patch இரண்டும் `_claude_backup_2026-09-26/` folder-ல் பாதுகாப்பாக உள்ளன. Handoff file-லும் இந்த மாற்றங்களைப் பதிவு செய்துள்ளேன்.
+
+நீங்கள் laptop-ல் இவற்றை run செய்யுங்கள்:
+
+powershell
+```powershell
+C:/src/flutter/bin/flutter.bat analyze --no-pub --no-fatal-infos
+C:/src/flutter/bin/flutter.bat test --no-pub
+```
+
+இரண்டும் pass ஆனால், build செய்து `firebase deploy --only hosting --project my-ranch-sync` மற்றும் git push செய்யலாம். ஏதாவது error வந்தால் அதை இங்கே paste செய்யுங்கள், நான் உடனே சரிசெய்கிறேன்.
+
+மாற்றங்களை `claude/bugfix-2026-09-26` branch-ல் commit செய்துவிட்டேன் (commit `8922234`). ஆனால் GitHub-க்கு push ஆகவில்லை. காரணம்: இந்த repo-வை அணுக உங்கள் GitHub account Claude-உடன் இணைக்கப்படவில்லை, அதனால் push 403 error-உடன் நிராகரிக்கப்பட்டது.
+
+இதைச் சரிசெய்ய இரண்டு வழிகள் உள்ளன:
+
+1. **GitHub-ஐ இணைத்தல்:** claude.ai → Settings → Connectors-ல் GitHub-ஐ இணைத்துவிட்டுச் சொல்லுங்கள். நான் உடனே push செய்கிறேன்.
+2. **நீங்களே laptop-லிருந்து push செய்தல்:** இதுவும் சாத்தியம். அதே மாற்றங்கள் ஏற்கனவே உங்கள் laptop project-ல் உள்ளன. Tests pass ஆன பிறகு இவற்றை run செய்யுங்கள்:
+
+powershell
+```powershell
+git add lib test VIMO_MASTER_HANDOFF.md
+git commit -m "Fix duplicate saves, profile order, locale and feed crashes"
+git push
+```
+
+`_claude_backup_2026-09-26/` folder-ஐ commit செய்ய வேண்டாம். அது உங்கள் பாதுகாப்புக்கான backup மட்டுமே.
 ````
 
 </details>
