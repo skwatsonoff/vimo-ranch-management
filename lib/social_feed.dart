@@ -10,15 +10,18 @@ class SocialPostRecord {
 }
 
 dynamic decodeSocialField(Map<String, dynamic> field) {
+  // One malformed field must not break the whole feed.
   if (field.containsKey('timestampValue')) {
-    return Timestamp.fromDate(
-      DateTime.parse(field['timestampValue'] as String),
-    );
+    final time = DateTime.tryParse('${field['timestampValue']}');
+    return time == null ? null : Timestamp.fromDate(time);
   }
   if (field.containsKey('integerValue')) {
-    return int.parse('${field['integerValue']}');
+    return int.tryParse('${field['integerValue']}');
   }
-  if (field.containsKey('doubleValue')) return field['doubleValue'];
+  if (field.containsKey('doubleValue')) {
+    final value = field['doubleValue'];
+    return value is num ? value.toDouble() : double.tryParse('$value');
+  }
   if (field.containsKey('booleanValue')) return field['booleanValue'];
   if (field.containsKey('stringValue')) return field['stringValue'];
   if (field.containsKey('arrayValue')) {
@@ -79,7 +82,12 @@ class SocialFeed {
         throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
       }
       final clockRows = jsonDecode(clockResponse.body) as List<dynamic>;
-      publishedThrough = clockRows.first['readTime'] as String;
+      publishedThrough = clockRows.isEmpty
+          ? null
+          : clockRows.first['readTime'] as String?;
+      if (publishedThrough == null) {
+        throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+      }
     }
     final filters = <Map<String, dynamic>>[
       if (authorUid != null)
@@ -147,7 +155,8 @@ class SocialFeed {
             (row['document']['name'] as String).split('/').last,
             {
               for (final entry
-                  in (row['document']['fields'] as Map<String, dynamic>)
+                  in ((row['document']['fields'] as Map<String, dynamic>?) ??
+                          const <String, dynamic>{})
                       .entries)
                 entry.key: decodeSocialField(
                   entry.value as Map<String, dynamic>,

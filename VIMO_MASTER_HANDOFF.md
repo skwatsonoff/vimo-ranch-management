@@ -220,6 +220,27 @@ Earlier verification included two isolated accounts exchanging online/offline re
 
 This handoff change is documentation-only: validate document links/diff and Git publication; do not rerun the app suite or redeploy unchanged app binaries.
 
+### Local bug-fix batch — 2026-09-26 (Claude, not yet built or deployed)
+
+Applied to the laptop working tree on top of `4ffc069`; originals and the patch are in `_claude_backup_2026-09-26/`. Flutter was unavailable to Claude, so verification was a tree-sitter Dart syntax parse (0 errors in every changed file, same as baseline) plus manual review. **Run `flutter analyze` and `flutter test` before release.**
+
+| Fix | Root cause | File |
+| --- | --- | --- |
+| Profile shows Following before Followers | Counters rendered in the old order (P-01 gap) | social_profile.dart |
+| Profile Post/Ranch/Vendor tab selection is solid purple with white text; cow icon turns white when selected | Tab used white fill + violet text, against UI-12 | social_profile.dart |
+| Cow/calf sale can no longer be recorded twice | `_saving` was set after `await saveRanchCustomer`, so a double tap saved two sales; also no already-sold check or error handling | main.dart `_SellAnimalScreenState._save` |
+| Death record: no double dialog/duplicate, already-died check, error feedback | Same late-guard pattern | main.dart `_DeathScreenState._save` |
+| Ranch chat send cannot duplicate a message on quick double tap | No in-flight guard | main.dart `_RanchChatScreenState._send` |
+| "In farm" duration is calendar-accurate and Tamil in Tamil mode | Flat 30-day months; English-only text | main.dart `durationText`, `calendarSpan` |
+| Animal card age follows the interface language | `'Age ${ageText(a)}'` was English-only (CSV export keeps English `ageText`) | main.dart `ageTextLocal` |
+| One malformed Firestore REST field no longer breaks the whole Social feed | `int.parse`/`DateTime.parse`/casts threw on bad or empty values | social_feed.dart |
+| Vendor quick-edit/person form show clean numbers (`1`, `60`, `90.45` instead of `1.0`, `90.44999999999999`) | Raw double interpolation | vendor_ride.dart `vendorFieldNumber` |
+| Weekday lists tolerate numeric types | `.cast<int>()` throws if a value arrives as double | vendor_ride.dart |
+| Public ranch list/grid toggle shows an error instead of an unhandled async exception | No try/catch/timeout | community.dart |
+| `monthLabel` never throws | `DateTime.parse` | requested_updates.dart |
+
+Test adjusted: `vendor_ride_test.dart` finds the price field by `'60'` (was `'60.0'`).
+
 ## 7. Open items, limitations and questions
 
 | Item | Actual state / next action if requested |
@@ -232,7 +253,7 @@ This handoff change is documentation-only: validate document links/diff and Git 
 | Serving many users / server capacity | User asked whether Firebase suffices. No load test, cost forecast or production scaling audit is recorded; discussion is not a capacity guarantee. |
 | App Store/Play Store cost | Question collected; pricing answers are time-sensitive. No store submission, paid developer enrollment or production signing setup was completed. |
 | Exact screenshot designs | Concepts requested very specific premium glass, background and text sizing. Some old image bytes are missing. Don't claim pixel-exact conformity from transcript text. |
-| Profile counter order | ChatGPT requested Following before Followers; the current profile code renders Followers then Following. Newly identified from cross-chat documentation review; no app change is made by this documentation task. |
+| Profile counter order | Fixed in the 2026-09-26 local bug-fix batch (Following before Followers); pending build/deploy. |
 | Heat/wake behavior | Changes exist; physical-device battery/thermal tests remain unrecorded. |
 | Offline multi-device stock | Each device validates against its current local ledger. Concurrent disconnected devices may oversell a shared stock balance before synchronization. |
 | Cloud migration/privacy | Older business rows remain in Firebase. Opt-out stops current sharing; it is not deletion of historical cloud records or end-to-end encryption. |

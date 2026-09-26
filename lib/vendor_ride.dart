@@ -2,6 +2,15 @@ part of 'main.dart';
 
 const _rideVolume = MethodChannel('vimo/vendor_volume');
 
+/// Clean text for editable numbers: 1.0 -> "1", 90.44999999 -> "90.45".
+String vendorFieldNumber(num value) {
+  if (!value.isFinite) return '0';
+  final fixed = value.toStringAsFixed(2);
+  return fixed.contains('.')
+      ? fixed.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')
+      : fixed;
+}
+
 bool vendorScheduled(Map<String, dynamic> p, DateTime date, String session) {
   final days = (p['days'] as List?) ?? [];
   final storedSessions = (p['sessions'] as List?) ?? [];
@@ -277,20 +286,24 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
   late final _place = TextEditingController(text: widget.person?['place']);
   late final _contact = TextEditingController(text: widget.person?['contact']);
   late final _quantity = TextEditingController(
-    text: '${widget.person?['quantity'] ?? 1}',
+    text: vendorFieldNumber(numv(widget.person ?? {}, 'quantity', 1)),
   );
   late final _price = TextEditingController(
-    text: '${widget.person?['price'] ?? defaultMilkPrice()}',
+    text: vendorFieldNumber(
+      numv(widget.person ?? {}, 'price', defaultMilkPrice()),
+    ),
   );
   late String _kind = widget.person?['kind'] ?? widget.kind;
   late String _cycle = widget.person?['paymentCycle'] ?? 'Daily';
   late String _photo = txt(widget.person ?? {}, 'imageData');
   late Set<int> _days = ((widget.person?['days'] as List?) ?? [])
-      .cast<int>()
+      .whereType<num>()
+      .map((d) => d.toInt())
       .toSet();
   late Set<int> _paymentDays =
       ((widget.person?['paymentDays'] as List?) ?? [0, 1, 2, 3, 4, 5, 6])
-          .cast<int>()
+          .whereType<num>()
+      .map((d) => d.toInt())
           .toSet();
   late final Set<String> _sessions =
       ((widget.person?['sessions'] as List?) ?? ['Morning', 'Evening'])
@@ -939,14 +952,14 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       return;
     }
     final due = vendorPersonDue(txt(p, 'id'), vendorRows('vendor_entries'));
-    _qty.text = '${numv(p, 'quantity')}';
-    _price.text = '${numv(p, 'price')}';
+    _qty.text = vendorFieldNumber(numv(p, 'quantity'));
+    _price.text = vendorFieldNumber(numv(p, 'price'));
     _paid.text =
         vendorPaymentDate(
           p,
           _date,
         ).isAtSameMomentAs(DateTime(_date.year, _date.month, _date.day))
-        ? '${numv(p, 'quantity') * numv(p, 'price') + due}'
+        ? vendorFieldNumber(numv(p, 'quantity') * numv(p, 'price') + due)
         : '0';
     setState(() {
       _editing = txt(p, 'id');

@@ -19,7 +19,8 @@ List<Map<String, dynamic>> monthlyCowMilk(
 }
 
 String monthLabel(String value) {
-  final date = DateTime.parse(value);
+  final date = DateTime.tryParse(value);
+  if (date == null) return value;
   const en = [
     'January',
     'February',

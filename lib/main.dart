@@ -2787,31 +2787,57 @@ void updateAnimal(Map<String, dynamic> animal, Map<String, dynamic> updates) {
 
 // --- dates and age -----------------------------------------------------------
 
-/// Calendar-accurate age. Borrowing from the previous month uses that month's
-/// real length rather than a flat 30, so the day count is never off.
-String ageFromDob(String dob) {
-  if (dob.isEmpty) return '';
-  final b = DateTime.tryParse(dob);
-  if (b == null) return '';
-  final n = DateTime.now();
-
-  int y = n.year - b.year;
-  int m = n.month - b.month;
-  int d = n.day - b.day;
-
+/// Calendar-accurate span. Borrowing from the previous month uses that
+/// month's real length rather than a flat 30, so the day count is never off.
+({int years, int months, int days}) calendarSpan(DateTime from, DateTime to) {
+  int y = to.year - from.year;
+  int m = to.month - from.month;
+  int d = to.day - from.day;
   if (d < 0) {
     m--;
     // Day 0 of the current month resolves to the last day of the previous one.
-    d += DateTime(n.year, n.month, 0).day;
+    d += DateTime(to.year, to.month, 0).day;
   }
   if (m < 0) {
     y--;
     m += 12;
   }
+  return (years: y, months: m, days: d);
+}
 
+String ageFromDob(String dob) {
+  if (dob.isEmpty) return '';
+  final b = DateTime.tryParse(dob);
+  if (b == null) return '';
+  final span = calendarSpan(b, DateTime.now());
+  final y = span.years, m = span.months, d = span.days;
   if (y > 0) return '$y Years $m Months';
   if (m > 0) return '$m Months $d Days';
   return '$d Days';
+}
+
+/// Age for on-screen display, following the interface language.
+String ageTextLocal(Map<String, dynamic> a) {
+  final dob = DateTime.tryParse(txt(a, 'dob'));
+  int y, m, d;
+  if (dob != null) {
+    final span = calendarSpan(dob, DateTime.now());
+    y = span.years;
+    m = span.months;
+    d = span.days;
+    if (y > 0) d = 0;
+    if (y <= 0 && m <= 0 && d <= 0) return bi('0 Days', '0 நாள்');
+  } else {
+    y = toInt(a['ageYears']);
+    m = toInt(a['ageMonths']);
+    d = toInt(a['ageDays']);
+  }
+  final parts = <String>[
+    if (y > 0) bi('$y Years', '$y ஆண்டு'),
+    if (m > 0) bi('$m Months', '$m மாதம்'),
+    if (d > 0) bi('$d Days', '$d நாள்'),
+  ];
+  return parts.isEmpty ? bi('Not set', 'அமைக்கவில்லை') : parts.join(' ');
 }
 
 String ageText(Map<String, dynamic> a) {
@@ -2854,13 +2880,27 @@ int daysSince(String date) {
 }
 
 String durationText(String date) {
-  if (date.isEmpty) return 'Not set';
-  final days = daysSince(date);
-  if (days <= 0) return 'Today';
-  if (days < 30) return '$days days';
-  final months = days ~/ 30;
-  if (months < 12) return '$months months ${days % 30} days';
-  return '${months ~/ 12} years ${months % 12} months';
+  if (date.isEmpty) return bi('Not set', 'அமைக்கவில்லை');
+  final start = DateTime.tryParse(date);
+  if (start == null) return bi('Not set', 'அமைக்கவில்லை');
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final from = DateTime(start.year, start.month, start.day);
+  if (!from.isBefore(today)) return bi('Today', 'இன்று');
+  final span = calendarSpan(from, today);
+  if (span.years > 0) {
+    return bi(
+      '${span.years} years ${span.months} months',
+      '${span.years} ஆண்டு ${span.months} மாதம்',
+    );
+  }
+  if (span.months > 0) {
+    return bi(
+      '${span.months} months ${span.days} days',
+      '${span.months} மாதம் ${span.days} நாள்',
+    );
+  }
+  return bi('${span.days} days', '${span.days} நாள்');
 }
 
 bool matchPeriod(String date, String period) {
@@ -7872,6 +7912,7 @@ class RanchChatScreen extends StatefulWidget {
 
 class _RanchChatScreenState extends State<RanchChatScreen> {
   final _message = TextEditingController();
+  bool _sending = false;
   @override
   void dispose() {
     _message.dispose();
@@ -7880,7 +7921,17 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
 
   Future<void> _send() async {
     final value = _message.text.trim();
-    if (value.isEmpty) return;
+    // A quick second tap on send must not duplicate the message.
+    if (value.isEmpty || _sending) return;
+    _sending = true;
+    try {
+      await _sendValue(value);
+    } finally {
+      _sending = false;
+    }
+  }
+
+  Future<void> _sendValue(String value) async {
     final messageId = 'message_${DateTime.now().microsecondsSinceEpoch}';
     await Hive.box('ranch_messages').add({
       'messageId': messageId,
@@ -10968,7 +11019,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   ),
                 ),
                 AppText(
-                  'Age ${ageText(a)}',
+                  '${bi('Age', 'வயது')} ${ageTextLocal(a)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -13558,6 +13609,8 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
   }
 
   Future<void> _save() async {
+    // Guard before any await: a double tap must never record two sales.
+    if (_saving) return;
     if (!canEditAnimals) {
       snack(context, 'Only admins and editors can sell animals');
       return;
@@ -13569,6 +13622,13 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
     }
 
     final animal = withKey(widget.animalKey, raw);
+    if (txt(animal, 'status') == 'Sold') {
+      snack(
+        context,
+        bi('This animal is already sold', 'இது ஏற்கனவே விற்கப்பட்டது'),
+      );
+      return;
+    }
     final price = toDouble(_amount.text);
     if (price <= 0) {
       snack(context, 'Please enter the sale amount');
@@ -13579,42 +13639,55 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       return;
     }
 
-    final customer = await saveRanchCustomer(
-      name: _customer.text,
-      place: _customerPlace.text,
-      contact: _customerContact.text,
-    );
-
     setState(() => _saving = true);
-    final isCow = txt(animal, 'type') == 'cow';
+    try {
+      final customer = await saveRanchCustomer(
+        name: _customer.text,
+        place: _customerPlace.text,
+        contact: _customerContact.text,
+      );
+      final isCow = txt(animal, 'type') == 'cow';
 
-    await Hive.box('sale_records').add({
-      'category': isCow ? 'Cow Sale' : 'Calf Sale',
-      'animal': txt(animal, 'name'),
-      // Capitalised to match the Sell screen, so milk-sale filtering and any
-      // report grouping see one consistent vocabulary.
-      'type': isCow ? 'Cow' : 'Calf',
-      'quantity': 1.0,
-      'unit': 'Animal',
-      'pricePerUnit': price,
-      'amount': price,
-      'customerId': txt(customer, 'customerId'),
-      'customerName': txt(customer, 'name'),
-      'customerPlace': txt(customer, 'place'),
-      'customerContact': txt(customer, 'contact'),
-      'date': todayDate(),
-      'time': currentTime(),
-      'notes': _notes.text.trim(),
-      'withCalves': _withCalves,
-      'addedBy': currentUserName(),
-      'createdAt': DateTime.now().toIso8601String(),
-    });
+      await Hive.box('sale_records').add({
+        'category': isCow ? 'Cow Sale' : 'Calf Sale',
+        'animal': txt(animal, 'name'),
+        // Capitalised to match the Sell screen, so milk-sale filtering and any
+        // report grouping see one consistent vocabulary.
+        'type': isCow ? 'Cow' : 'Calf',
+        'quantity': 1.0,
+        'unit': 'Animal',
+        'pricePerUnit': price,
+        'amount': price,
+        'customerId': txt(customer, 'customerId'),
+        'customerName': txt(customer, 'name'),
+        'customerPlace': txt(customer, 'place'),
+        'customerContact': txt(customer, 'contact'),
+        'date': todayDate(),
+        'time': currentTime(),
+        'notes': _notes.text.trim(),
+        'withCalves': _withCalves,
+        'addedBy': currentUserName(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
 
-    updateAnimal(animal, {'status': 'Sold'});
-    if (_withCalves) {
-      for (final calf in calvesOf(txt(animal, 'name'))) {
-        updateAnimal(calf, {'status': 'Sold'});
+      updateAnimal(animal, {'status': 'Sold'});
+      if (_withCalves) {
+        for (final calf in calvesOf(txt(animal, 'name'))) {
+          updateAnimal(calf, {'status': 'Sold'});
+        }
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        snack(
+          context,
+          bi(
+            'Could not save the sale. Try again.',
+            'விற்பனையைச் சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          ),
+        );
+      }
+      return;
     }
 
     if (!mounted) return;
@@ -13758,6 +13831,8 @@ class _DeathScreenState extends State<DeathScreen> {
   }
 
   Future<void> _save() async {
+    // One confirmation at a time: repeated taps must not open two dialogs.
+    if (_saving) return;
     if (!canEditAnimals) {
       snack(context, 'Only admins and editors can update animal status');
       return;
@@ -13767,7 +13842,15 @@ class _DeathScreenState extends State<DeathScreen> {
       snack(context, 'Animal not found');
       return;
     }
+    if (txt(withKey(widget.animalKey, raw), 'status') == 'Died') {
+      snack(
+        context,
+        bi('Death already recorded', 'இறப்பு ஏற்கனவே பதிவு செய்யப்பட்டது'),
+      );
+      return;
+    }
 
+    setState(() => _saving = true);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -13797,24 +13880,40 @@ class _DeathScreenState extends State<DeathScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted) {
+      if (mounted) setState(() => _saving = false);
+      return;
+    }
 
-    setState(() => _saving = true);
-    final animal = withKey(widget.animalKey, raw);
+    try {
+      final animal = withKey(widget.animalKey, raw);
 
-    await Hive.box('death_records').add({
-      'animal': txt(animal, 'name'),
-      'type': txt(animal, 'type'),
-      'reason': _reason,
-      'cost': toDouble(_cost.text),
-      'date': todayDate(),
-      'time': currentTime(),
-      'notes': _notes.text.trim(),
-      'addedBy': currentUserName(),
-      'createdAt': DateTime.now().toIso8601String(),
-    });
+      await Hive.box('death_records').add({
+        'animal': txt(animal, 'name'),
+        'type': txt(animal, 'type'),
+        'reason': _reason,
+        'cost': toDouble(_cost.text),
+        'date': todayDate(),
+        'time': currentTime(),
+        'notes': _notes.text.trim(),
+        'addedBy': currentUserName(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
 
-    updateAnimal(animal, {'status': 'Died'});
+      updateAnimal(animal, {'status': 'Died'});
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        snack(
+          context,
+          bi(
+            'Could not save. Try again.',
+            'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          ),
+        );
+      }
+      return;
+    }
 
     if (!mounted) return;
     Navigator.of(context).pop();

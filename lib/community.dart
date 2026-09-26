@@ -287,10 +287,14 @@ class PublicRanchView extends StatelessWidget {
                   selected: {grid},
                   showSelectedIcon: false,
                   onSelectionChanged: (value) async {
-                    await FirebaseFirestore.instance.collection('profiles').doc(uid).set({
-                      'ranchLayout': value.first ? 'grid' : 'list',
-                      'updatedAt': FieldValue.serverTimestamp(),
-                    }, SetOptions(merge: true));
+                    try {
+                      await FirebaseFirestore.instance.collection('profiles').doc(uid).set({
+                        'ranchLayout': value.first ? 'grid' : 'list',
+                        'updatedAt': FieldValue.serverTimestamp(),
+                      }, SetOptions(merge: true)).timeout(CloudSyncService.networkTimeout);
+                    } catch (e) {
+                      if (context.mounted) snack(context, accountError(e));
+                    }
                   },
                 )
               : null,

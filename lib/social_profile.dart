@@ -200,8 +200,8 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
-                              _ProfileCount(uid: uid, kind: 'followers'),
                               _ProfileCount(uid: uid, kind: 'following'),
+                              _ProfileCount(uid: uid, kind: 'followers'),
                             ],
                           ),
                           if (txt(data, 'bio').isNotEmpty)
@@ -359,17 +359,22 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                 onPressed: () => setState(() => _tab = item.$1),
                                 style: TextButton.styleFrom(
                                   backgroundColor: _tab == item.$1
-                                      ? Colors.white
+                                      ? Ink.violetDeep
                                       : Colors.transparent,
                                   foregroundColor: _tab == item.$1
-                                      ? Ink.violet
+                                      ? Colors.white
                                       : Ink.muted,
                                 ),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     if (item.$1 == 1)
-                                      const CowMark(size: 25)
+                                      CowMark(
+                                        size: 25,
+                                        color: _tab == 1
+                                            ? Colors.white
+                                            : Ink.violetDeep,
+                                      )
                                     else
                                       Icon(item.$3, size: 21),
                                     const SizedBox(width: 6),
