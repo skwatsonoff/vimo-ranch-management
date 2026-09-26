@@ -114,7 +114,7 @@ void main() {
     expect(socialPhotoBytes('data:image/jpeg;base64,AQID'), [1, 2, 3]);
   });
 
-  testWidgets('Vendor purpose routes Sell and Stock to vendor records', (
+  testWidgets('Vendor opens the customer ride without the old toolbar', (
     tester,
   ) async {
     await tester.runAsync(
@@ -126,35 +126,28 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const MaterialApp(home: MainShell()));
     await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('Sell'), findsNothing);
-    await tester.tap(find.text('Sell milk'));
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.byType(VendorScreen), findsOneWidget);
-    await tester.tap(find.text('Milk stock'));
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('Vendor milk stock'), findsOneWidget);
+    expect(find.byType(VendorRideScreen), findsOneWidget);
+    expect(find.text('Start'), findsOneWidget);
+    expect(find.text('Sell milk'), findsNothing);
+    expect(find.text('Milk stock'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('Ranch sell contains milk, cows, calves and manure', (
+  testWidgets('Ranch sell contains milk, cows, calves and manure only', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: RanchWorkspace(onOpenCard: (_) {})),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Sell'));
+    await tester.pumpWidget(const MaterialApp(home: SellScreen()));
     await tester.pump(const Duration(milliseconds: 600));
     for (final label in ['Milk', 'Cow', 'Calf', 'Manure']) {
       expect(find.text(label), findsWidgets);
     }
+    expect(find.text('Stock'), findsNothing);
+    expect(find.text('Reports'), findsNothing);
     expect(find.byType(VendorScreen), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

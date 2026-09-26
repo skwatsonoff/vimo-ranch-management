@@ -65,13 +65,7 @@ Future<void> showWorkspaceAdd(BuildContext context, String workspace) async {
     await push(context, const AddEntryScreen());
     return;
   }
-  await push(
-    context,
-    Scaffold(
-      appBar: AppBar(title: Text(bi('Vendor', 'விற்பனையாளர்'))),
-      body: const VendorWorkspace(),
-    ),
-  );
+  await push(context, const VendorPersonForm());
 }
 
 String reportRecordName(Map<String, dynamic> row) {

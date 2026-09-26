@@ -12,10 +12,18 @@ members through Firebase.
   device. The first destination opens at launch; changing purpose preserves data.
 - Cows and calves remain accessible inside Ranch. Vendor contains Milk, Sales,
   Stock and Reports. Stock includes both milk inventory and feed inventory.
-- Vendor suppliers and customers have separate lists. Customers store address,
-  delivery weekdays, morning/evening sessions and daily, every-two-days, weekly,
-  monthly or flexible payment terms. Delivery reminders reflect scheduled sessions
-  without marking them delivered until an actual sale is recorded.
+- Vendor opens a milk balance and a customer delivery ride. Provider circles are
+  ranked separately for morning and evening. Start enables swipes: right completes,
+  left opens a quick quantity/payment edit, and a second edit swipe skips today.
+  End without actions records nothing; completed rides show earnings, payments,
+  milk purchases/sales, costs and the top customer. Unfinished rides resume on this
+  device during the same day. Recorded sales and payments use stable retry IDs.
+- Add Person supports an optional photo/contact, provider or buyer, optional milk
+  weekdays, sessions, quantity, the settings milk price, and daily/custom weekday,
+  weekly or monthly payment schedules. Customize saves each weekday's delivery
+  order by long-press dragging. Volume up completes and volume down skips only in
+  the Android app during an active ride; edit mode is disabled. Web browsers keep
+  swipe controls because phone volume buttons are not exposed to websites.
 - Purchases add vendor milk; deliveries deduct it. Paid amounts and later payments
   update each person's outstanding balance. Synced ranch milk and existing ranch
   milk sales reconcile into vendor stock using per-record transaction checkpoints.

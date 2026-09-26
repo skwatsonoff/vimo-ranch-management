@@ -19,6 +19,16 @@ const assert = require('node:assert/strict');
     const helper = env.authenticatedContext('helper').firestore();
     const outsider = env.authenticatedContext('outsider').firestore();
     const anon = env.unauthenticatedContext().firestore();
+    const personRef = doc(db, 'ranches/test/vendor_people/optional');
+    const optionalPerson = { id: 'optional', kind: 'customer', name: 'Ride customer', place: 'Erode', days: [], sessions: ['Morning'], paymentCycle: 'Flexible', paymentDays: [1, 3], paymentMonthDay: 31, quantity: 2, price: 60, contact: '', imageData: '', routeOrder: { '0': 1 } };
+    await assertSucceeds(setDoc(personRef, optionalPerson)); checks++;
+    await assertFails(updateDoc(personRef, { quantity: -1 })); checks++;
+    await assertFails(updateDoc(personRef, { price: 0 })); checks++;
+    await assertFails(updateDoc(personRef, { paymentDays: [7] })); checks++;
+    await assertFails(updateDoc(personRef, { paymentMonthDay: 32 })); checks++;
+    await assertFails(updateDoc(personRef, { contact: 'x'.repeat(41) })); checks++;
+    await assertFails(updateDoc(personRef, { kind: 'supplier' })); checks++;
+    await assertFails(setDoc(doc(outsider, 'ranches/test/vendor_people/forbidden'), { ...optionalPerson, id: 'forbidden' })); checks++;
     const save = (database, uid, id, kind, quantity, price, paid = 0, payment = 0) => runTransaction(database, async tx => {
       const personId = ['purchase', 'collection'].includes(kind) ? 'supplier' : 'customer';
       const entryRef = doc(database, `ranches/test/vendor_entries/${id}`);

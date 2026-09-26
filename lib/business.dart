@@ -225,7 +225,8 @@ bool vendorDeliveryDue(
 ) =>
     person['kind'] == 'customer' &&
     (person['days'] is List &&
-        (person['days'] as List).contains(date.weekday % 7)) &&
+        ((person['days'] as List).isEmpty ||
+            (person['days'] as List).contains(date.weekday % 7))) &&
     (person['sessions'] is List &&
         (person['sessions'] as List).contains(session));
 
@@ -850,13 +851,6 @@ class _BusinessMetric extends StatelessWidget {
   );
 }
 
-const _paymentCycles = [
-  'Daily',
-  'Every 2 days',
-  'Weekly',
-  'Monthly',
-  'Flexible',
-];
 const _dayNames = [
   'Sunday',
   'Monday',
@@ -876,238 +870,17 @@ const _dayTamil = [
   'சனி',
 ];
 
-class VendorPersonForm extends StatefulWidget {
-  final String kind;
-  final Map<String, dynamic>? person;
-  const VendorPersonForm({super.key, required this.kind, this.person});
-  @override
-  State<VendorPersonForm> createState() => _VendorPersonFormState();
-}
-
-class _VendorPersonFormState extends State<VendorPersonForm> {
-  final _form = GlobalKey<FormState>();
-  late final _name = TextEditingController(text: widget.person?['name']);
-  late final _place = TextEditingController(text: widget.person?['place']);
-  late final Set<int> _days =
-      ((widget.person?['days'] as List?) ?? [0, 1, 2, 3, 4, 5, 6])
-          .cast<int>()
-          .toSet();
-  late final Set<String> _sessions =
-      ((widget.person?['sessions'] as List?) ?? ['Morning'])
-          .cast<String>()
-          .toSet();
-  late String _cycle = widget.person?['paymentCycle'] ?? 'Daily';
-  bool _busy = false;
-  @override
-  void dispose() {
-    _name.dispose();
-    _place.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Ink.canvasTop,
-    appBar: AppBar(
-      title: AppText(widget.person == null ? 'Add person' : 'Edit person'),
-    ),
-    body: Shell(
-      child: Form(
-        key: _form,
-        child: ListView(
-          padding: const EdgeInsets.all(21),
-          children: [
-            Text(
-              widget.kind == 'supplier'
-                  ? bi('Milk supplier', 'பால் கொடுப்பவர்')
-                  : bi('Customer', 'வாடிக்கையாளர்'),
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 24),
-            TextFormField(
-              controller: _name,
-              maxLength: 80,
-              textCapitalization: TextCapitalization.words,
-              decoration: fieldStyle(bi('Person name', 'நபரின் பெயர்')),
-              validator: (v) => v == null || v.trim().isEmpty
-                  ? bi('Enter a name', 'பெயரை உள்ளிடவும்')
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _place,
-              maxLength: 160,
-              decoration: fieldStyle(bi('Place / address', 'இடம் / முகவரி')),
-              validator: (v) =>
-                  widget.kind == 'customer' && (v == null || v.trim().isEmpty)
-                  ? bi('Enter a place', 'இடத்தை உள்ளிடவும்')
-                  : null,
-            ),
-            if (widget.kind == 'customer') ...[
-              const SizedBox(height: 24),
-              Text(
-                bi('Delivery days', 'பால் வாங்கும் நாட்கள்'),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  for (var i = 0; i < 7; i++)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Semantics(
-                          selected: _days.contains(i),
-                          child: Tooltip(
-                            message: tamilUi ? _dayTamil[i] : _dayNames[i],
-                            child: TextButton(
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(0, 44),
-                                backgroundColor: _days.contains(i)
-                                    ? Ink.violet
-                                    : Colors.white.withValues(alpha: .4),
-                                foregroundColor: _days.contains(i)
-                                    ? Colors.white
-                                    : Ink.body,
-                                shape: const CircleBorder(),
-                              ),
-                              onPressed: () => setState(() {
-                                _days.contains(i)
-                                    ? _days.remove(i)
-                                    : _days.add(i);
-                              }),
-                              child: FittedBox(
-                                child: Text(
-                                  tamilUi
-                                      ? const [
-                                          'ஞா',
-                                          'தி',
-                                          'செ',
-                                          'பு',
-                                          'வி',
-                                          'வெ',
-                                          'ச',
-                                        ][i]
-                                      : _dayNames[i].substring(0, 1),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                bi('Delivery time', 'பால் வாங்கும் நேரம்'),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Wrap(
-                spacing: 12,
-                children: [
-                  for (final s in ['Morning', 'Evening'])
-                    FilterChip(
-                      label: AppText(s),
-                      selected: _sessions.contains(s),
-                      onSelected: (v) => setState(() {
-                        v ? _sessions.add(s) : _sessions.remove(s);
-                      }),
-                    ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 24),
-            DropdownButtonFormField<String>(
-              initialValue: _cycle,
-              isExpanded: true,
-              decoration: fieldStyle(
-                bi('Payment frequency', 'பணம் செலுத்தும் இடைவெளி'),
-              ),
-              items: [
-                for (final c in _paymentCycles)
-                  DropdownMenuItem(value: c, child: AppText(c)),
-              ],
-              onChanged: (v) => setState(() => _cycle = v!),
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _busy
-                  ? null
-                  : () async {
-                      if (!_form.currentState!.validate()) return;
-                      if (widget.kind == 'customer' &&
-                          (_days.isEmpty || _sessions.isEmpty)) {
-                        snack(
-                          context,
-                          bi(
-                            'Choose at least one day and delivery time.',
-                            'குறைந்தது ஒரு நாள் மற்றும் நேரத்தைத் தேர்வு செய்யவும்.',
-                          ),
-                        );
-                        return;
-                      }
-                      if (!canRecordEntries) return;
-                      setState(() => _busy = true);
-                      try {
-                        final now = DateTime.now();
-                        final id =
-                            widget.person?['id'] ??
-                            '${settingText('deviceId', 'device')}_${now.microsecondsSinceEpoch}';
-                        final data = <String, dynamic>{
-                          ...?widget.person,
-                          'id': id,
-                          'cloudId': widget.person?['cloudId'] ?? id,
-                          'kind': widget.kind,
-                          'name': _name.text.trim(),
-                          'place': _place.text.trim(),
-                          'days': _days.toList()..sort(),
-                          'sessions': _sessions.toList(),
-                          'paymentCycle': _cycle,
-                          'createdAt':
-                              widget.person?['createdAt'] ??
-                              now.toIso8601String(),
-                          'updatedAtMillis': now.millisecondsSinceEpoch,
-                        };
-                        data.remove('_key');
-                        await Hive.box(
-                          'vendor_people',
-                        ).put(widget.person?['_key'] ?? id, data);
-                        if (context.mounted) Navigator.pop(context);
-                      } catch (_) {
-                        if (context.mounted) {
-                          snack(context, ui('Unable to save. Try again.'));
-                        }
-                      } finally {
-                        if (mounted) setState(() => _busy = false);
-                      }
-                    },
-              child: const Padding(
-                padding: EdgeInsets.all(14),
-                child: AppText('Save'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 class VendorPersonScreen extends StatefulWidget {
   final Map<String, dynamic> person;
   final String intakeKind;
+  final String entryPrefix;
+  final String? initialSession;
   const VendorPersonScreen({
     super.key,
     required this.person,
     this.intakeKind = 'purchase',
+    this.entryPrefix = '',
+    this.initialSession,
   });
   @override
   State<VendorPersonScreen> createState() => _VendorPersonScreenState();
@@ -1125,6 +898,10 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
   @override
   void initState() {
     super.initState();
+    _session = widget.initialSession ?? _session;
+    _qty.text =
+        '${vendorUsualQuantity(widget.person, _session, vendorRows('vendor_entries'))}';
+    _price.text = '${numv(widget.person, 'price', defaultMilkPrice())}';
     _timer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) setState(() {});
     });
@@ -1301,7 +1078,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                           : () async {
                               setState(() => _busy = true);
                               _entryId = _entryId.isEmpty
-                                  ? 'v_${DateTime.now().microsecondsSinceEpoch}_${settingText('deviceId', 'device')}'
+                                  ? '${widget.entryPrefix.isEmpty ? 'v' : widget.entryPrefix}_${DateTime.now().microsecondsSinceEpoch}_${settingText('deviceId', 'device')}'
                                   : _entryId;
                               try {
                                 await VendorLedger.record(

@@ -276,7 +276,7 @@ void main() {
       final price = find.byWidgetPredicate(
         (widget) =>
             widget is TextField &&
-            widget.decoration?.labelText == 'Price per Liter',
+            widget.decoration?.hintText == 'Price per Liter',
       );
       expect(tester.widget<TextField>(price).controller!.text, '0');
       expect(tester.widget<TextField>(price).readOnly, isTrue);

@@ -122,44 +122,8 @@ class VendorWorkspace extends StatefulWidget {
 }
 
 class _VendorWorkspaceState extends State<VendorWorkspace> {
-  int _page = 0;
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Padding(
-        padding: const EdgeInsets.all(12),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in [
-              (0, bi('Collect milk', 'பால் சேகரிப்பு')),
-              (1, bi('Buy milk', 'பால் கொள்முதல்')),
-              (2, bi('Sell milk', 'பால் விற்பனை')),
-              (3, bi('Milk stock', 'பால் இருப்பு')),
-              (4, bi('Reports', 'அறிக்கைகள்')),
-            ])
-              ChoiceChip(
-                label: Text(item.$2),
-                selected: _page == item.$1,
-                onSelected: (_) => setState(() => _page = item.$1),
-              ),
-          ],
-        ),
-      ),
-      Expanded(
-        child: switch (_page) {
-          0 || 1 || 2 => VendorScreen(
-            key: ValueKey(_page),
-            initialSection: _page,
-            showTabs: false,
-          ),
-          3 => const VendorStockScreen(),
-          _ => const VendorOnlyReports(),
-        },
-      ),
-    ],
-  );
+  Widget build(BuildContext context) => const VendorRideScreen();
 }
 
 class RanchWorkspace extends StatefulWidget {

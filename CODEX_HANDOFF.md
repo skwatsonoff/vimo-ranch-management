@@ -1,5 +1,37 @@
 # Continue VIMO on the laptop
 
+## Released — 2026-09-26
+
+- Ranch uses sale terminal, inventory and report icons; the same cow artwork has
+  heavier coloured strokes. Sell, Stock and Reports open separate contextual
+  pages. Material route surfaces remove yellow debug underlines and overlapping
+  transparent pages; report tiles accommodate phone layouts and enlarged text.
+- Edge swipes pop one page, root back restores the previous workspace, and vendor
+  row gestures cannot trigger page back. Focus/keyboard changes smoothly reveal
+  the input. Workspace state remains mounted between tabs.
+- Vendor is now a morning/evening delivery ride with provider circles, milk
+  balance, Customize, Start/End and Add Person. Right completes; left opens a quick
+  quantity/price/payment edit; another edit swipe skips. Ending untouched writes
+  no ledger records. Delivery/payment retries use stable IDs and preserve drafts;
+  summaries show money, milk, costs and top customer. Same-day interrupted rides
+  resume locally. Weekday orders sync on people; ride progress stays local.
+- Person forms share optional photo/contact, optional milk days, sessions,
+  quantity, settings price and daily/custom weekday/weekly/monthly payment terms.
+  Provider ranking is separate by morning/evening transaction frequency/volume.
+- Android volume buttons complete/skip only during an active visible ride, with
+  editing disabled and an explanatory popup. Web browsers cannot access phone
+  volume buttons; the web interface explains this and keeps swipe controls.
+- Validation: existing regressions and all 11 new ride/schedule/payment/report/
+  keyboard/back checks pass; 108 Firestore security checks pass. Source analysis
+  has no errors or warnings (existing informational lints remain). Production web
+  and Android release builds passed. Local phone screenshots cover Ranch,
+  Reports, Vendor and Add Person; browser back was checked locally.
+- Production remains https://my-ranch-sync.web.app. Production browser checking
+  was deliberately omitted at the user's request; the user will check the app.
+- App version is 1.1.0+2. The APK uses the repository's existing debug signing
+  configuration and existing application ID; no Play Store upload was requested.
+
+
 ## Social feed release verification — 2026-09-17
 
 - Fixed the remaining production Social error caused by a device-time query

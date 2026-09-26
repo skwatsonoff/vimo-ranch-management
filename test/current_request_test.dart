@@ -154,7 +154,7 @@ void main() {
     expect(find.textContaining('08:30'), findsOneWidget);
     expect(find.text('4.0 L'), findsOneWidget);
   });
-  testWidgets('Composer never infers a username and explains the switch', (
+  testWidgets('Composer never infers a username and offers photo entry', (
     tester,
   ) async {
     await tester.runAsync(
@@ -163,7 +163,8 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SocialComposer()));
     await tester.pump();
     expect(find.text('@Unchosen Name'), findsNothing);
-    expect(find.text('Colored text background'), findsOneWidget);
+    expect(find.byType(MentionInput), findsOneWidget);
+    expect(find.text('Photo'), findsOneWidget);
     expect(find.text('Choose a username'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });

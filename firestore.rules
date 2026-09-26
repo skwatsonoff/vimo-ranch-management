@@ -325,7 +325,13 @@ service cloud.firestore {
           && request.resource.data.days is list && request.resource.data.days.hasOnly([0, 1, 2, 3, 4, 5, 6])
           && request.resource.data.sessions is list && request.resource.data.sessions.hasOnly(['Morning', 'Evening'])
           && request.resource.data.paymentCycle in ['Daily', 'Every 2 days', 'Weekly', 'Monthly', 'Flexible']
-          && (request.resource.data.kind == 'supplier' || (request.resource.data.days.size() > 0 && request.resource.data.sessions.size() > 0));
+          && request.resource.data.get('contact', '') is string && request.resource.data.get('contact', '').size() <= 40
+          && request.resource.data.get('imageData', '') is string && request.resource.data.get('imageData', '').size() <= 700000
+          && request.resource.data.get('quantity', 1) is number && request.resource.data.get('quantity', 1) > 0
+          && request.resource.data.get('price', 1) is number && request.resource.data.get('price', 1) > 0
+          && request.resource.data.get('paymentDays', []) is list && request.resource.data.get('paymentDays', []).hasOnly([0, 1, 2, 3, 4, 5, 6])
+          && request.resource.data.get('paymentMonthDay', 1) is int && request.resource.data.get('paymentMonthDay', 1) >= 1 && request.resource.data.get('paymentMonthDay', 1) <= 31
+          && request.resource.data.get('routeOrder', {}) is map;
         allow delete: if false;
       }
 

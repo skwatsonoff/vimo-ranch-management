@@ -54,10 +54,14 @@ part 'name_display.dart';
 part 'ranch_inventory.dart';
 part 'community.dart';
 part 'vendor_stock_separation.dart';
+part 'vendor_ride.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
 final rootNavigatorKey = GlobalKey<NavigatorState>();
+final appRouteObserver = RouteObserver<PageRoute<dynamic>>();
+final vendorWorkspaceRevision = ValueNotifier<int>(0);
+bool vendorSwipeInProgress = false;
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -1501,9 +1505,15 @@ class LiquidRoute<T> extends PageRouteBuilder<T> {
     : super(
         transitionDuration: Gold.slow,
         reverseTransitionDuration: Gold.base,
-        opaque: false,
+        opaque: true,
         barrierColor: Colors.transparent,
-        pageBuilder: (context, _, _) => builder(context),
+        pageBuilder: (context, _, _) => Material(
+          color: Ink.canvasTop,
+          textStyle: Theme.of(
+            context,
+          ).textTheme.bodyMedium!.copyWith(decoration: TextDecoration.none),
+          child: builder(context),
+        ),
         transitionsBuilder: (context, animation, secondary, child) {
           if (MediaQuery.disableAnimationsOf(context)) {
             return FadeTransition(opacity: animation, child: child);
@@ -2106,7 +2116,7 @@ class RanchIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (type == 'cow' || type == 'calf') {
-      return CowMark(size: size);
+      return CowMark(size: size, color: color);
     }
     return SizedBox(
       width: size,
@@ -2439,7 +2449,7 @@ int toInt(dynamic v) => v is int
     : (v is num && v.isFinite ? v.toInt() : int.tryParse('$v') ?? 0);
 
 Map<String, dynamic> asMap(dynamic value) =>
-    Map<String, dynamic>.from(value as Map);
+    value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
 
 Map<String, dynamic> withKey(dynamic key, dynamic value) => {
   ...asMap(value),
@@ -2453,8 +2463,9 @@ String txt(Map<String, dynamic> m, String k, [String d = '']) {
   return s.trim().isEmpty || s == 'null' ? d : s;
 }
 
-double numv(Map<String, dynamic> m, String k) {
+double numv(Map<String, dynamic> m, String k, [double fallback = 0]) {
   final v = m[k];
+  if (v == null) return fallback;
   if (v is num) return v.isFinite ? v.toDouble() : 0.0;
   return toDouble('$v');
 }
@@ -2487,7 +2498,9 @@ String currencySymbol() => settingText('currency', '\u20b9');
 String currentUserName() {
   final stored = settingText('currentUser', '').trim();
   if (stored.isNotEmpty) return stored;
-  final email = FirebaseAuth.instance.currentUser?.email ?? '';
+  final email = firebaseReady
+      ? FirebaseAuth.instance.currentUser?.email ?? ''
+      : '';
   return email.contains('@') ? email.split('@').first : 'Ranch Member';
 }
 
@@ -4042,6 +4055,9 @@ class CloudSyncService {
       FirebaseAuth.instance.currentUser != null &&
       ranchId().isNotEmpty;
 
+  static bool isLocalSetting(String key) =>
+      key.startsWith('vendorRide_') || localOnlySettings.contains(key);
+
   static const networkTimeout = Duration(seconds: 12);
 
   static bool mayUpload(String boxName, Map<String, dynamic> data) {
@@ -4127,7 +4143,7 @@ class CloudSyncService {
       final pending = asMap(settingValue('pendingSettingKeys', {}));
       await runSyncSteps({
         for (final entry in pending.entries)
-          if (!localOnlySettings.contains(entry.key))
+          if (!isLocalSetting(entry.key))
             entry.key: () async {
               final value = box.get(entry.key);
               await col
@@ -4257,7 +4273,7 @@ class CloudSyncService {
     final box = Hive.box(boxName);
     if (boxName == 'settings') {
       for (final doc in snap.docs) {
-        if (localOnlySettings.contains(doc.id)) continue;
+        if (isLocalSetting(doc.id)) continue;
         final data = localCloudData(doc.data());
         if (asMap(settingValue('pendingSettingKeys', {})).containsKey(doc.id)) {
           continue;
@@ -4758,7 +4774,7 @@ class CollaborationRealtimeSyncService {
       for (final change in snapshot.docChanges) {
         final cloudId = change.doc.id;
         if (boxName == 'settings') {
-          if (CloudSyncService.localOnlySettings.contains(cloudId) ||
+          if (CloudSyncService.isLocalSetting(cloudId) ||
               asMap(
                 settingValue('pendingSettingKeys', {}),
               ).containsKey(cloudId)) {
@@ -4925,7 +4941,7 @@ class AutoSyncService {
           if (boxName == 'settings') {
             if (_consumeRemoteEcho(boxName, event.key, event.value)) return;
             if (!canManageRanch) return;
-            if (CloudSyncService.localOnlySettings.contains('${event.key}')) {
+            if (CloudSyncService.isLocalSetting('${event.key}')) {
               return;
             }
             final keys = asMap(settingValue('pendingSettingKeys', {}));
@@ -5124,7 +5140,7 @@ class AutoSyncService {
           settingValue('settingsQueueInitialized', false) != true) {
         final pending = asMap(settingValue('pendingSettingKeys', {}));
         for (final key in settings.keys) {
-          if (!CloudSyncService.localOnlySettings.contains('$key')) {
+          if (!CloudSyncService.isLocalSetting('$key')) {
             pending.putIfAbsent(
               '$key',
               () => DateTime.now().microsecondsSinceEpoch,
@@ -5203,16 +5219,35 @@ const AssetImage vimoIconImage = AssetImage('assets/images/vimo_logo_v3.png');
 /// The house cow mark, used wherever a cow or calf needs representing.
 class CowMark extends StatelessWidget {
   final double size;
-  const CowMark({super.key, this.size = Gold.s21});
+  final Color color;
+  const CowMark({super.key, this.size = Gold.s21, this.color = Ink.violetDeep});
 
   @override
-  Widget build(BuildContext context) => Image.asset(
-    'assets/images/cow_mark.png',
-    width: size,
-    height: size,
-    fit: BoxFit.contain,
-    filterQuality: FilterQuality.high,
-    gaplessPlayback: true,
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: Stack(
+      children: [
+        for (final offset in const [
+          Offset(-.55, 0),
+          Offset(.55, 0),
+          Offset(0, -.55),
+          Offset(0, .55),
+          Offset.zero,
+        ])
+          Transform.translate(
+            offset: offset,
+            child: Image.asset(
+              'assets/images/cow_mark.png',
+              width: size,
+              height: size,
+              fit: BoxFit.contain,
+              color: color,
+              filterQuality: FilterQuality.high,
+              gaplessPlayback: true,
+            ),
+          ),
+      ],
+    ),
   );
 }
 
@@ -6201,6 +6236,7 @@ class VimoApp extends StatelessWidget {
       builder: (_, _, _) => MaterialApp(
         scaffoldMessengerKey: rootMessengerKey,
         navigatorKey: rootNavigatorKey,
+        navigatorObservers: [appRouteObserver],
         locale: Locale(tamilUi ? 'ta' : 'en'),
         supportedLocales: const [Locale('en'), Locale('ta')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -6262,6 +6298,7 @@ class VimoApp extends StatelessWidget {
             hintStyle: TextStyle(color: Ink.muted, fontSize: 15),
           ),
           chipTheme: ChipThemeData(
+            showCheckmark: false,
             backgroundColor: Colors.white.withValues(alpha: .44),
             selectedColor: Ink.violet.withValues(alpha: .15),
             side: const BorderSide(color: Color(0xCFFFFFFF)),
@@ -8545,6 +8582,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
 
 class _MainShellState extends State<MainShell> {
   int _tab = 0;
+  final List<int> _tabHistory = [];
   StreamSubscription<BoxEvent>? _languageChanges;
   @override
   void initState() {
@@ -8650,92 +8688,108 @@ class _MainShellState extends State<MainShell> {
     final navItems = order.map((id) => items[id]!).toList();
     final tab = _tab.clamp(0, pages.length - 1);
 
-    return Scaffold(
-      extendBody: false,
-      backgroundColor: Ink.canvasTop,
-      appBar: AppBar(
-        toolbarHeight: 60,
-        leadingWidth: 64,
-        leading: Semantics(
-          button: true,
-          label: bi('Profile', 'சுயவிவரம்'),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => push(context, const SocialProfileScreen()),
-            child: const Padding(
-              padding: EdgeInsets.only(left: 10),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: CurrentProfileAvatar(radius: 23),
-              ),
-            ),
-          ),
-        ),
-        title: AppText(
-          order[tab] == 'Social'
-              ? 'VIMO People'
-              : order[tab] == 'Chat'
-              ? ui('Chat')
-              : '${appName()} ${ui(order[tab])}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.4,
-          ),
-        ),
-        actions: [
-          if (order[tab] == 'Social' || order[tab] == 'Chat')
-            IconButton(
-              tooltip: ui('Search'),
-              icon: const Icon(CupertinoIcons.search, size: 26),
-              onPressed: () => push(context, const CommunitySearchScreen()),
-            ),
-          const RanchNotificationButton(),
-        ],
-      ),
-      body: pages[tab],
-      floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
-          ? null
-          : order[tab] == 'Chat' ||
-                (order[tab] != 'Social' && !canRecordEntries)
-          ? null
-          : FloatingActionButton(
-              heroTag: 'workspace-add',
-              tooltip: ui('Add'),
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              focusElevation: 0,
-              hoverElevation: 0,
-              highlightElevation: 0,
-              foregroundColor: Ink.violetDeep,
-              onPressed: () => showWorkspaceAdd(context, order[tab]),
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Ink.violetDeep,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _tabHistory.isNotEmpty) {
+          setState(() => _tab = _tabHistory.removeLast());
+          vendorWorkspaceRevision.value++;
+        }
+      },
+      child: Scaffold(
+        extendBody: false,
+        backgroundColor: Ink.canvasTop,
+        appBar: AppBar(
+          toolbarHeight: 60,
+          leadingWidth: 64,
+          leading: Semantics(
+            button: true,
+            label: bi('Profile', 'சுயவிவரம்'),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => push(context, const SocialProfileScreen()),
+              child: const Padding(
+                padding: EdgeInsets.only(left: 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: CurrentProfileAvatar(radius: 23),
                 ),
-                child: const Icon(CupertinoIcons.plus, color: Colors.white),
               ),
             ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(Gold.s21, 0, Gold.s21, Gold.s13),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            heightFactor: 1,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: Gold.contentWidth + Gold.s89,
+          ),
+          title: AppText(
+            order[tab] == 'Social'
+                ? 'VIMO People'
+                : order[tab] == 'Chat'
+                ? ui('Chat')
+                : '${appName()} ${ui(order[tab])}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+          actions: [
+            if (order[tab] == 'Social' || order[tab] == 'Chat')
+              IconButton(
+                tooltip: ui('Search'),
+                icon: const Icon(CupertinoIcons.search, size: 26),
+                onPressed: () => push(context, const CommunitySearchScreen()),
               ),
-              child: _NavBar(
-                index: tab,
-                items: navItems,
-                onChanged: (i) => setState(() => _tab = i),
+            const RanchNotificationButton(),
+          ],
+        ),
+        body: IndexedStack(index: tab, children: pages),
+        floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+            ? null
+            : order[tab] == 'Chat' ||
+                  order[tab] == 'Vendor' ||
+                  (order[tab] != 'Social' && !canRecordEntries)
+            ? null
+            : FloatingActionButton(
+                heroTag: 'workspace-add',
+                tooltip: ui('Add'),
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                focusElevation: 0,
+                hoverElevation: 0,
+                highlightElevation: 0,
+                foregroundColor: Ink.violetDeep,
+                onPressed: () => showWorkspaceAdd(context, order[tab]),
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Ink.violetDeep,
+                  ),
+                  child: const Icon(CupertinoIcons.plus, color: Colors.white),
+                ),
+              ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Gold.s21, 0, Gold.s21, Gold.s13),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: Gold.contentWidth + Gold.s89,
+                ),
+                child: _NavBar(
+                  index: tab,
+                  items: navItems,
+                  onChanged: (i) => setState(() {
+                    if (i != _tab) {
+                      _tabHistory.add(_tab);
+                      _tab = i;
+                      vendorWorkspaceRevision.value++;
+                    }
+                  }),
+                ),
               ),
             ),
           ),
@@ -8944,9 +8998,13 @@ class DashboardScreen extends StatelessWidget {
         type: 'sell',
         label: 'Sell',
         value: '${saleRows().length}',
-        icon: const Icon(Icons.sell_outlined, size: 29, color: Ink.green),
+        icon: const Icon(
+          Icons.point_of_sale_rounded,
+          size: 29,
+          color: Ink.green,
+        ),
         ghost: const Icon(
-          Icons.sell_outlined,
+          Icons.point_of_sale_rounded,
           size: Gold.s89,
           color: Ink.green,
         ),
@@ -8957,8 +9015,8 @@ class DashboardScreen extends StatelessWidget {
         type: 'calves',
         label: 'Calves',
         value: '${animalsBy('calf').length}',
-        icon: const CowMark(size: 29),
-        ghost: const CowMark(size: Gold.s89),
+        icon: const CowMark(size: 29, color: Ink.amber),
+        ghost: const CowMark(size: Gold.s89, color: Ink.amber),
         accent: Ink.amber,
         onTap: onOpenCard,
       ),
@@ -8966,8 +9024,12 @@ class DashboardScreen extends StatelessWidget {
         type: 'stock',
         label: 'Stock',
         value: '${stockRows().length}',
-        icon: const RanchIcon(type: 'bottle', size: 29, color: Ink.blue),
-        ghost: const RanchIcon(type: 'milk', size: Gold.s89, color: Ink.blue),
+        icon: const Icon(Icons.inventory_2_rounded, size: 29, color: Ink.blue),
+        ghost: const Icon(
+          Icons.inventory_2_rounded,
+          size: Gold.s89,
+          color: Ink.blue,
+        ),
         accent: Ink.blue,
         onTap: onOpenCard,
       ),
@@ -8992,13 +9054,9 @@ class DashboardScreen extends StatelessWidget {
         type: 'reports',
         label: 'Reports',
         value: '${reportDetailRows('income', 'This Month').length}',
-        icon: const Icon(
-          Icons.account_balance_wallet_outlined,
-          size: 29,
-          color: Ink.amber,
-        ),
+        icon: const Icon(Icons.analytics_rounded, size: 29, color: Ink.amber),
         ghost: const Icon(
-          Icons.account_balance_wallet_outlined,
+          Icons.analytics_rounded,
           size: Gold.s89,
           color: Ink.amber,
         ),
@@ -13138,7 +13196,43 @@ class _GlobalSwipeBack extends StatefulWidget {
   State<_GlobalSwipeBack> createState() => _GlobalSwipeBackState();
 }
 
-class _GlobalSwipeBackState extends State<_GlobalSwipeBack> {
+class _GlobalSwipeBackState extends State<_GlobalSwipeBack>
+    with WidgetsBindingObserver {
+  Timer? _keyboardTimer;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addListener(_revealInput);
+  }
+
+  @override
+  void didChangeMetrics() => _revealInput();
+  void _revealInput() {
+    _keyboardTimer?.cancel();
+    _keyboardTimer = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      final focusContext = FocusManager.instance.primaryFocus?.context;
+      if (focusContext == null || !focusContext.mounted) return;
+      Scrollable.ensureVisible(
+        focusContext,
+        alignment: .35,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _keyboardTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    FocusManager.instance.removeListener(_revealInput);
+    super.dispose();
+  }
+
   Offset? _start;
   @override
   Widget build(BuildContext context) => Listener(
@@ -13148,11 +13242,17 @@ class _GlobalSwipeBackState extends State<_GlobalSwipeBack> {
     onPointerUp: (event) {
       final start = _start;
       _start = null;
-      if (start == null || start.dx > 32) return;
+      if (vendorSwipeInProgress) return;
+      if (start == null) return;
+      final width = MediaQuery.sizeOf(context).width;
+      if (start.dx > 28 && start.dx < width - 28) return;
       final delta = event.position - start;
-      if (delta.dx > 78 && delta.dy.abs() < 56) {
+      if (((start.dx <= 28 && delta.dx > 78) ||
+              (start.dx >= width - 28 && delta.dx < -78)) &&
+          delta.dy.abs() < 56) {
         FocusManager.instance.primaryFocus?.unfocus();
-        rootNavigatorKey.currentState?.maybePop();
+        final navigator = rootNavigatorKey.currentState;
+        navigator?.maybePop();
       }
     },
     child: widget.child,
@@ -13332,6 +13432,7 @@ Widget customerPicker({
         Align(
           alignment: Alignment.centerLeft,
           child: ChoiceChip(
+            key: const ValueKey('own-use-customer'),
             label: const AppText(ownUseCustomerName),
             selected: isOwnUseCustomer(customer.text),
             showCheckmark: false,
@@ -13765,7 +13866,7 @@ class _SellScreenState extends State<SellScreen> {
   static const List<String> _types = ['Milk', 'Cow', 'Calf', 'Manure'];
   static const List<String> _stockItems = ['Vaikol', 'Thavudu'];
 
-  late int _section = widget.initialSection;
+  late final int _section = widget.initialSection;
   int _type = 0;
   int _stockItem = 0;
   String _animal = '';
@@ -14062,25 +14163,6 @@ class _SellScreenState extends State<SellScreen> {
     );
   }
 
-  Widget _sectionSwitcher() => Glass(
-    radius: Gold.r27,
-    blur: Gold.s21,
-    padding: const EdgeInsets.all(Gold.s5),
-    elevation: 0.72,
-    child: LiquidSegmentBar(
-      labels: tamilUi
-          ? const ['விற்பனை', 'இருப்பு', 'அறிக்கைகள்']
-          : const ['Sell', 'Stock', 'Reports'],
-      icons: const [
-        Icons.sell_rounded,
-        Icons.inventory_2_rounded,
-        Icons.bar_chart_rounded,
-      ],
-      index: _section,
-      onChanged: (value) => setState(() => _section = value),
-    ),
-  );
-
   Future<void> _saveStockPurchase() async {
     if (!canRecordEntries) {
       snack(context, 'Your ranch role does not allow adding stock');
@@ -14148,7 +14230,6 @@ class _SellScreenState extends State<SellScreen> {
             _MainShellState.bottomInset,
           ),
           children: [
-            if (!widget.embedded) _sectionSwitcher(),
             const SizedBox(height: Gold.s21),
             AppText(
               tamilUi ? 'தீவன இருப்பு' : 'Stock',
@@ -14338,27 +14419,21 @@ class _SellScreenState extends State<SellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.embedded && appPurpose == 'Vendor' && _section < 2) {
-      return Column(
-        children: [
-          Padding(padding: const EdgeInsets.all(21), child: _sectionSwitcher()),
-          Expanded(
-            child: _section == 0
-                ? const VendorScreen(initialSection: 1)
-                : const VendorStockScreen(),
-          ),
-        ],
-      );
-    }
+    final child = _content(context);
+    return widget.embedded
+        ? child
+        : Scaffold(
+            resizeToAvoidBottomInset: true,
+            appBar: AppBar(
+              title: AppText(['Sell', 'Stock', 'Reports'][_section]),
+            ),
+            body: child,
+          );
+  }
+
+  Widget _content(BuildContext context) {
     if (_section == 1) return _stockScreen();
-    if (_section == 2) {
-      return Column(
-        children: [
-          Padding(padding: const EdgeInsets.all(21), child: _sectionSwitcher()),
-          const Expanded(child: ReportsScreen()),
-        ],
-      );
-    }
+    if (_section == 2) return const ReportsScreen();
     return ValueListenableBuilder<Box<dynamic>>(
       valueListenable: Hive.box('sale_records').listenable(),
       builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
@@ -14380,7 +14455,6 @@ class _SellScreenState extends State<SellScreen> {
                 _MainShellState.bottomInset,
               ),
               children: [
-                if (!widget.embedded) _sectionSwitcher(),
                 const SizedBox(height: Gold.s21),
                 Reveal(
                   index: 0,
@@ -14959,7 +15033,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: Gold.s13,
                 mainAxisSpacing: Gold.s13,
-                childAspectRatio: Gold.sqrtPhi,
+                mainAxisExtent: math.max(
+                  164,
+                  118 + 48 * MediaQuery.textScalerOf(context).scale(1),
+                ),
                 children: [
                   _SummaryTile(
                     label: 'Milk Collected',
@@ -15212,29 +15289,30 @@ class ProfitBar extends StatelessWidget {
           ),
         ),
         const SizedBox(height: Gold.s8),
-        Row(
+        Wrap(
+          spacing: Gold.s16,
+          runSpacing: Gold.s8,
+          alignment: WrapAlignment.spaceBetween,
           children: [
-            const _Dot(color: Ink.green),
-            const SizedBox(width: Gold.s5),
-            AppText(
-              'Income ${money(income)}',
-              style: const TextStyle(
-                fontSize: Gold.t10,
-                fontWeight: FontWeight.w700,
-                color: Ink.body,
+            for (final item in [
+              (Ink.green, 'Income ${money(income)}'),
+              (Ink.red, 'Expense ${money(expense)}'),
+            ])
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _Dot(color: item.$1),
+                  const SizedBox(width: Gold.s5),
+                  AppText(
+                    item.$2,
+                    style: const TextStyle(
+                      fontSize: Gold.t10,
+                      fontWeight: FontWeight.w700,
+                      color: Ink.body,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const Spacer(),
-            const _Dot(color: Ink.red),
-            const SizedBox(width: Gold.s5),
-            AppText(
-              'Expense ${money(expense)}',
-              style: const TextStyle(
-                fontSize: Gold.t10,
-                fontWeight: FontWeight.w700,
-                color: Ink.body,
-              ),
-            ),
           ],
         ),
       ],
