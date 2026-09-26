@@ -6,6 +6,13 @@ implementation status and current continuation instructions. Read it first.
 The dated notes below are historical; older blocked/deployment/branch statements
 do not override the September 26 release checkpoint in the master handoff.
 
+## Checkpoint — 2026-09-26, version 1.3.0+5 (Claude)
+
+- Vendor/ride/person/chat/profile redesign per the user's 8 screenshots; full list in
+  VIMO_MASTER_HANDOFF.md section 6a. Branch `claude/vendor-social-polish`.
+- GitHub Actions: analyze clean, 82/82 tests, web release build passed.
+- Deploy via `CLAUDE_DEPLOY.bat` (clean clone of `main`, hosting only) after approval.
+
 ## Released — 2026-09-26, version 1.2.1+4
 
 - Reviewed Claude's laptop edits and added calendar month-end/leap-year,

@@ -1,6 +1,6 @@
 # VIMO — Master Requirements and Continuation Handoff
 
-Updated: 2026-09-26. App checkpoint: **1.2.1+4**, commit **785a4a5dd98be6542ee0e2f685d689b21565c1db**.
+Updated: 2026-09-26. App checkpoint: **1.3.0+5** (Claude branch `claude/vendor-social-polish`, CI green; see section 6a). Previous release: 1.2.1+4, commit `785a4a5`.
 
 This is the primary continuation document for Claude, ChatGPT and Codex. It records the user's app requirements across accessible Codex and ChatGPT conversations, the work delivered, implementation locations, unresolved limits and original user inputs. Read the current decisions before the historical input appendix.
 
@@ -11,14 +11,14 @@ This is the primary continuation document for Claude, ChatGPT and Codex. It reco
 | Repository | https://github.com/skwatsonoff/vimo-ranch-management |
 | Production app | https://my-ranch-sync.web.app |
 | Firebase project | `my-ranch-sync` |
-| App version | `1.2.1+4` in [pubspec.yaml](pubspec.yaml) |
+| App version | `1.3.0+5` in [pubspec.yaml](pubspec.yaml) |
 | App release commit | `785a4a5` |
 | Branch | `codex/ranch-vendor-market-glass` |
 | GitHub state at this checkpoint | Both `main` and the working branch contain `785a4a5`; subsequent documentation commits do not change the released app |
 | Local project | `C:\Users\itsme\ranch_management` |
 | Android artifact | `build/app/outputs/flutter-apk/app-release.apk` |
 | Current handoff work | Cross-chat app requirements and implementation history consolidated in this document; published with the repository documentation |
-| Current app work | Claude's imported bug fixes and Codex review corrections are validated, built and deployed as 1.2.1+4; the user will check the live app |
+| Current app work | 1.3.0+5 Vendor/ride/person/chat/profile redesign by Claude — GitHub CI green (analyze, 82 tests, web build). Deploy with `CLAUDE_DEPLOY.bat` after the user approves; see section 6a |
 
 The older [CODEX_HANDOFF.md](CODEX_HANDOFF.md) and [CHANGE_REVIEW.md](CHANGE_REVIEW.md) retain investigation history. Old statements that main is outdated, PR #2 is unmerged, deployment has not happened, or a rules check still blocks release are historical. Use this checkpoint for current state.
 
@@ -245,6 +245,32 @@ Test adjusted: `vendor_ride_test.dart` finds the price field by `'60'` (was `'60
 Validation: the complete Flutter suite passed 81 checks with one new confirmation-test fixture timing failure. The fixture was corrected to await real asynchronous confirmation/storage work rather than wait for an indefinitely animated saving spinner. All seven checks in `test/bugfix_batch_test.dart` subsequently passed: calendar boundaries, Tamil/export labels, malformed nested social data, weekday/number normalization, double sale save, already-sold rejection and death confirmation/cancel/retry. Together the 75 existing and seven new checks are verified. Final `flutter analyze lib test --no-pub --no-fatal-infos` passed with no errors/warnings and ten informational lints. Rules are unchanged; the earlier 120 rules checks were not rerun for this UI/local-handler batch.
 
 **Release complete:** production web build succeeded (155.2s compilation), Android release APK build succeeded (265.0s; approximately 69.4MB), and Firebase Hosting finalized/released the new version successfully at https://my-ranch-sync.web.app. The built web metadata confirms version `1.2.1`, build `4`. Only Hosting was deployed because rules/indexes are unchanged. No production browser/phone visual check was run, per the user's preference. The APK remains at `build/app/outputs/flutter-apk/app-release.apk` with existing package/signing.
+
+### 6a. 1.3.0+5 — Vendor, ride, person, chat and profile redesign (Claude, 2026-09-26)
+
+User request (19:47 JST, with 8 screenshots): Apple-quality Liquid Glass, perfect alignment, working app flow; fix everything first, then test once.
+
+| Area | Delivered | Files |
+| --- | --- | --- |
+| Vendor icon | Milk bottle replaced everywhere in Vendor (nav, purpose picker, milk card) by a painted bicycle with two cans (user's reference image) | liquid_design.dart `MilkVendorIcon` |
+| Vendor header | App bar says "Vendor" (and "Reports"), no second in-page "Vendor" title; Reports nav uses the analytics report icon instead of signal-like bars | main.dart |
+| Session | Morning/Evening selector removed; session follows the clock (before 12:00 = Morning), refreshed every minute while no ride is active | vendor_ride.dart `vendorSessionNow` |
+| Providers | Provider circles in the freed space plus a solid "All" button opening `VendorProvidersScreen` (every provider, balance to pay) | vendor_ride.dart |
+| Milk card / actions | Balanced milk card (glass icon, balance, today +in/−out), opens Milk stock; Start/End as full LiquidButton (End is red) with round add-person button; Customize moved beside "Customers" | vendor_ride.dart |
+| Customer rows | Larger litres pill, bigger name and amount aligned right; status text uses dark readable tones (`Ink.amberText/greenText/redText`); right column bounded for long/Tamil labels | vendor_ride.dart, main.dart `Ink` |
+| Ride flow | Before Start: plain white list. After Start: finished customers move to the top as compact rows, one active card, the next slides in (AnimatedSwitcher), "Up next" dimmed. After End: list returns to plain white | vendor_ride.dart `_rideList` |
+| Quick edit | Only litres (price is edited in the person form); litres recalculates the amount; Received now / Receive later; small amount field only when receiving now | vendor_ride.dart `_editFields` |
+| Summary | "Pays later" list under Top customer with the day each will pay | vendor_ride.dart `VendorRideSummary` |
+| Person page | Image-5 style glass portrait (blurred frosted lower edge with name), chips (balance, role, short schedule), entry form, live total with previous balance, then stats and history; saving returns to Vendor | business.dart `VendorPersonScreen` |
+| Schedule text | "Payment · Every day" / "Weekly · Sun" instead of every weekday name | vendor_ride.dart `vendorPaymentScheduleLabel` |
+| Avatars | All people avatars use `GlassAvatar` (luminous rim, soft depth, cached image providers) via `profileAvatar` and `_VendorAvatar` | liquid_design.dart, social_profile.dart |
+| Record details | Internal fields hidden everywhere (details screen and Excel export): ids/uids/keys, device, cloud, sync, createdAt/updatedAt | requested_updates.dart `isInternalField` |
+| Chat | Messages-style bubbles (violet for me, grey for others, tail corner), capsule composer, list rows with chevrons; direct chat header avatar/name opens the profile | interface.dart `AppleBubble`, community.dart |
+| Profile / social | Image-8 style: Parisienne "Vimo" wordmark (bundled font, OFL), overlapping glass avatar, uppercase name, @handle, location, Following │ Followers with divider, action pills, Follow button; posts show "2 days ago", rounded photos, like/comment counts. Visitors see "Ranch" (or the custom name) instead of "My ranch" | social_profile.dart, social.dart, community.dart |
+
+Validation: GitHub Actions `Flutter checks` (new workflow `.github/workflows/flutter-checks.yml`, runs on `claude/**` pushes): analyze no errors/warnings, 82/82 tests, `flutter build web --release` succeeded (run 36238729545). One real overflow (3.3px ride card) and one portrait gradient paint error were found by the run and fixed. Test updates: timing colours now expect the text tones.
+
+Deploy: `CLAUDE_DEPLOY.bat` in the laptop project clones GitHub `main` into `%TEMP%\vimo_release`, builds web and runs `firebase deploy --only hosting --project my-ranch-sync`; the laptop working tree is not touched. Rules/indexes unchanged.
 
 ## 7. Open items, limitations and questions
 
