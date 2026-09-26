@@ -1601,16 +1601,21 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                 style: const TextStyle(color: Ink.muted),
               ),
             ),
-          Text(
-            skipped
-                ? bi('Skipped today', 'இன்று தவிர்க்கப்பட்டது')
-                : paid
-                ? bi('Received', 'பெற்றது')
-                : bi('Delivered', 'வழங்கியது'),
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: Text(
+              skipped
+                  ? bi('Skipped today', 'இன்று தவிர்க்கப்பட்டது')
+                  : paid
+                  ? bi('Received', 'பெற்றது')
+                  : bi('Delivered', 'வழங்கியது'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
             ),
           ),
         ],
@@ -1705,40 +1710,53 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    money(amount),
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -.3,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    timing.label,
-                    textAlign: TextAlign.end,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: timing.color,
-                    ),
-                  ),
-                  if (due > 0.001)
-                    Text(
-                      now
-                          ? '${bi('Collect', 'பெறு')} ${money(due + amount)}'
-                          : '${bi('Due', 'நிலுவை')} ${money(due)}',
-                      textAlign: TextAlign.end,
-                      style: TextStyle(
-                        color: now ? Ink.greenText : Ink.muted,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
+              // Bounded so long status labels (or Tamil text) never push
+              // the row wider than the card.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 124),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        money(amount),
+                        style: const TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -.3,
+                        ),
                       ),
                     ),
-                ],
+                    const SizedBox(height: 3),
+                    Text(
+                      timing.label,
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: timing.color,
+                      ),
+                    ),
+                    if (due > 0.001)
+                      Text(
+                        now
+                            ? '${bi('Collect', 'பெறு')} ${money(due + amount)}'
+                            : '${bi('Due', 'நிலுவை')} ${money(due)}',
+                        textAlign: TextAlign.end,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: now ? Ink.greenText : Ink.muted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
