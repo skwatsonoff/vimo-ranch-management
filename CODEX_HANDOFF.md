@@ -1,5 +1,11 @@
 # Continue VIMO on the laptop
 
+**Current master handoff:** [VIMO_MASTER_HANDOFF.md](VIMO_MASTER_HANDOFF.md)
+combines the accessible Codex and ChatGPT requirements, original user inputs,
+implementation status and current continuation instructions. Read it first.
+The dated notes below are historical; older blocked/deployment/branch statements
+do not override the September 26 release checkpoint in the master handoff.
+
 ## Released — 2026-09-26, version 1.2.0+3
 
 - Vendor entries now validate and flush to Hive before any network work. Stock

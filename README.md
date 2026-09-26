@@ -1,8 +1,12 @@
 # VIMO - Ranch, Vendor & Market
 
+**Continue development:** read [VIMO_MASTER_HANDOFF.md](VIMO_MASTER_HANDOFF.md)
+for cross-chat user requirements, current decisions, implemented work, release
+evidence, open items and original Codex/ChatGPT inputs.
+
 VIMO is an offline-first ranch management web app built with Flutter. It keeps
-daily work available in the browser through Hive and syncs signed-in family
-members through Firebase.
+Ranch and Vendor work on the device through Hive, with optional Firebase sharing
+between approved ranch members. Social and chat use Firebase.
 
 ## Ranch, vendor and market workspaces
 
@@ -42,7 +46,7 @@ members through Firebase.
   fields keep their headings after typing; transaction sessions are inferred
   automatically. Payment frequency shows one relevant day/date selector.
 - Social posts use a unique account username and are visible to signed-in VIMO
-  users across workspaces. Posts support text, colored text tiles, one compressed
+  users across workspaces. Posts support plain text, one compressed
   photo and a voice clip up to 20 seconds. Photos resize once to up to 1600px at
   high JPEG quality within the media size limit. Members can like and comment. Authors
   can delete their own posts/comments. The feed shows the latest 60 posts, with
@@ -85,7 +89,7 @@ Never deploy an emulator build. Production deployment includes
   doctor, pregnancy, purchases, sales, deaths, calving, expenses, and reports
 - Monthly top-three milk ranking and active-animal birthday reminders
 - Offline local storage, backup/restore, individual CSV exports, one complete
-  multi-sheet Excel workbook, and automatic cloud sync
+  multi-sheet Excel workbook, and automatic sync when member sharing is enabled
 - Responsive installable PWA with VIMO Liquid Glass styling
 - Private ranch membership with Admin, Editor, Basic Entry, and Viewer roles
 - Admin approval for join requests and a pending/cancel flow for applicants
