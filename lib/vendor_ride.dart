@@ -21,6 +21,9 @@ Set<int> vendorWeekdays(dynamic value) => value is List
           .toSet()
     : <int>{};
 
+String vendorSessionNow([DateTime? at]) =>
+    (at ?? DateTime.now()).hour < 12 ? 'Morning' : 'Evening';
+
 bool vendorScheduled(Map<String, dynamic> p, DateTime date, String session) {
   final days = vendorWeekdays(p['days']);
   final storedSessions = (p['sessions'] as List?) ?? [];
@@ -69,14 +72,33 @@ DateTime vendorPaymentDate(Map<String, dynamic> p, DateTime date) {
   return day;
 }
 
+const _dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const _dayShortTamil = ['ஞா', 'தி', 'செ', 'பு', 'வி', 'வெ', 'ச'];
+
+/// Short, readable schedule: "Every day", "Weekly · Sun", "Mon, Thu".
+String vendorScheduleDays(Set<int> days) {
+  if (days.length >= 7) return bi('Every day', 'தினமும்');
+  final sorted = days.toList()..sort();
+  return sorted
+      .map((d) => tamilUi ? _dayShortTamil[d] : _dayShort[d])
+      .join(', ');
+}
+
 String vendorPaymentScheduleLabel(Map<String, dynamic> person) {
   final cycle = txt(person, 'paymentCycle', 'Daily');
-  if (cycle == 'Daily') return bi('Payment · Daily', 'பணம் · தினமும்');
+  final prefix = bi('Payment', 'பணம்');
+  if (cycle == 'Daily') return '$prefix · ${bi('Daily', 'தினமும்')}';
   if (cycle == 'Monthly') {
-    return '${bi('Payment · Monthly on', 'பணம் · மாதந்தோறும்')} ${numv(person, 'paymentMonthDay', 1).toInt()}';
+    return '$prefix · ${bi('Monthly on', 'மாதந்தோறும்')} ${numv(person, 'paymentMonthDay', 1).toInt()}';
   }
   final days = vendorWeekdays(person['paymentDays']);
-  return '${bi('Payment', 'பணம்')} · ${cycle == 'Weekly' ? bi('Weekly', 'வாரந்தோறும்') : ui(cycle)}${days.isEmpty ? '' : ' · ${days.map((d) => tamilUi ? _dayTamil[d] : _dayNames[d]).join(', ')}'}';
+  if (days.length >= 7) return '$prefix · ${bi('Every day', 'தினமும்')}';
+  final cycleLabel = cycle == 'Weekly'
+      ? bi('Weekly', 'வாரந்தோறும்')
+      : bi('Selected days', 'தேர்ந்த நாட்கள்');
+  return days.isEmpty
+      ? '$prefix · $cycleLabel'
+      : '$prefix · $cycleLabel · ${vendorScheduleDays(days)}';
 }
 
 ({String label, Color color}) vendorPaymentTiming(
@@ -113,19 +135,19 @@ String vendorPaymentScheduleLabel(Map<String, dynamic> person) {
               : age == 1
               ? bi('Received yesterday', 'நேற்று பெற்றது')
               : '${bi('Received', 'பெற்றது')} ${paidDate.day}/${paidDate.month}',
-          color: Ink.green,
+          color: Ink.greenText,
         );
     }
   }
   final due = vendorPaymentDate(person, today);
   final days = due.difference(today).inDays;
   return days <= 0
-      ? (label: bi('Receive now', 'இப்போது பெறவும்'), color: Ink.amber)
+      ? (label: bi('Receive now', 'இப்போது பெறவும்'), color: Ink.amberText)
       : (
           label: days == 1
               ? bi('Due tomorrow', 'நாளை பெறவும்')
               : '${bi('Due', 'பெறுவது')} ${due.day}/${due.month}',
-          color: Ink.red,
+          color: Ink.redText,
         );
 }
 
@@ -419,12 +441,33 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                       },
                 child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 35,
-                      backgroundImage: animalImage({'imageData': _photo}),
-                      child: _photo.isEmpty
-                          ? const Icon(CupertinoIcons.camera_fill, size: 28)
-                          : null,
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        GlassAvatar(
+                          image: cachedPhoto(_photo),
+                          label: _name.text,
+                          radius: 44,
+                        ),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Ink.violetDeep,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: const Icon(
+                              CupertinoIcons.camera_fill,
+                              size: 15,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     Text(bi('Photo · optional', 'புகைப்படம் · விருப்பம்')),
@@ -605,15 +648,15 @@ class VendorRideScreen extends StatefulWidget {
 
 class _VendorRideScreenState extends State<VendorRideScreen>
     with WidgetsBindingObserver, RouteAware {
-  String _session = DateTime.now().hour < 12 ? 'Morning' : 'Evening';
+  String _session = vendorSessionNow();
   String _rideId = '';
   String _rideDate = '';
   List<String> _supplyIds = [];
   List<Map<String, dynamic>> _stops = [];
   Set<String> _done = {}, _skipped = {};
   String? _editing;
-  bool _busy = false, _hint = false, _volume = false;
-  Timer? _hintTimer;
+  bool _busy = false, _hint = false, _volume = false, _payNow = true;
+  Timer? _hintTimer, _clock;
   final _qty = TextEditingController(),
       _price = TextEditingController(),
       _paid = TextEditingController();
@@ -661,6 +704,12 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     });
     HardwareKeyboard.instance.addHandler(_keyEvent);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncVolume());
+    // Morning/evening follows the clock; no manual selector is needed.
+    _clock = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted && !_active && vendorSessionNow() != _session) {
+        setState(() => _session = vendorSessionNow());
+      }
+    });
   }
 
   bool get _visible {
@@ -725,6 +774,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     appRouteObserver.unsubscribe(this);
     vendorWorkspaceRevision.removeListener(_workspaceChanged);
     _hintTimer?.cancel();
+    _clock?.cancel();
     _scroll.dispose();
     _qty.dispose();
     _price.dispose();
@@ -959,11 +1009,11 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     final due = vendorPersonDue(txt(p, 'id'), vendorRows('vendor_entries'));
     _qty.text = vendorFieldNumber(numv(p, 'quantity'));
     _price.text = vendorFieldNumber(numv(p, 'price'));
-    _paid.text =
-        vendorPaymentDate(
-          p,
-          _date,
-        ).isAtSameMomentAs(DateTime(_date.year, _date.month, _date.day))
+    _payNow = vendorPaymentDate(
+      p,
+      _date,
+    ).isAtSameMomentAs(DateTime(_date.year, _date.month, _date.day));
+    _paid.text = _payNow
         ? vendorFieldNumber(numv(p, 'quantity') * numv(p, 'price') + due)
         : '0';
     setState(() {
@@ -1066,6 +1116,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       builder: (context, _) {
         final all = vendorRows('vendor_people'),
             rows = vendorRows('vendor_entries');
+        if (!_active) _session = vendorSessionNow();
         final buyers = vendorRoutePeople(all, rows, DateTime.now(), _session);
         final suppliers = vendorRoutePeople(
           all,
@@ -1074,209 +1125,103 @@ class _VendorRideScreenState extends State<VendorRideScreen>
           _session,
           suppliers: true,
         );
-        final display = _active ? _stops : buyers;
+        final others = _active
+            ? const <Map<String, dynamic>>[]
+            : all
+                  .where(
+                    (p) =>
+                        p['kind'] == 'customer' &&
+                        !buyers.any((b) => b['id'] == p['id']),
+                  )
+                  .toList();
         return Shell(
           child: SizedBox.expand(
             child: SingleChildScrollView(
               controller: _scroll,
-              padding: const EdgeInsets.fromLTRB(21, 12, 21, 32),
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 40),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppText(
-                          'Vendor',
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: _busy || _active
-                            ? null
-                            : () async {
-                                await _open(
-                                  VendorCustomizeScreen(
-                                    volume: _volume,
-                                    storageKey: _storageKey,
-                                  ),
-                                );
-                                if (mounted) {
-                                  setState(
-                                    () => _volume =
-                                        Hive.box('settings').get(
-                                          '${_storageKey}_volume',
-                                          defaultValue: false,
-                                        ) ==
-                                        true,
-                                  );
-                                }
-                              },
-                        icon: const Icon(
-                          CupertinoIcons.slider_horizontal_3,
-                          size: 19,
-                        ),
-                        label: Text(bi('Customize', 'மாற்று')),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  LiquidSegmentBar(
-                    labels: const ['Morning', 'Evening'],
-                    index: _session == 'Morning' ? 0 : 1,
-                    onChanged: (i) {
-                      if (!_active) {
-                        setState(
-                          () => _session = i == 0 ? 'Morning' : 'Evening',
-                        );
-                      }
-                    },
-                  ),
-                  if (suppliers.isNotEmpty) ...[
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      height: 104,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: suppliers.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 16),
-                        itemBuilder: (_, i) {
-                          final p = suppliers[i];
-                          return SizedBox(
-                            width: 74,
-                            child: GestureDetector(
-                              onTap: _busy
-                                  ? null
-                                  : () => _open(
-                                      VendorPersonScreen(
-                                        person: p,
-                                        intakeKind: 'collection',
-                                        entryPrefix: _active ? _rideId : '',
-                                        initialSession: _session,
-                                      ),
-                                    ),
-                              child: Column(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      gradient: LinearGradient(
-                                        colors: [Ink.violet, Ink.blue],
-                                      ),
-                                    ),
-                                    child: _VendorAvatar(person: p, radius: 28),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    txt(p, 'name'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  Text(
-                                    txt(p, 'place'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Ink.muted,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  Glass(
-                    padding: const EdgeInsets.all(21),
-                    child: Row(
-                      children: [
-                        const RanchIcon(type: 'milk', size: 44, weight: 2.7),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                bi('Milk', 'பால்'),
-                                style: const TextStyle(color: Ink.muted),
-                              ),
-                              FlowText(
-                                '${vendorMilkBalance(rows).toStringAsFixed(2)} L',
-                                style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _providersRow(suppliers),
+                  const SizedBox(height: 16),
+                  _milkCard(rows),
                   const SizedBox(height: 16),
                   Row(
                     children: [
                       Expanded(
-                        child: FilledButton.icon(
+                        child: LiquidButton(
+                          label: _active
+                              ? bi('End', 'முடி')
+                              : bi('Start', 'தொடங்கு'),
+                          icon: _active
+                              ? CupertinoIcons.stop_fill
+                              : CupertinoIcons.play_fill,
+                          height: 56,
+                          radius: 28,
+                          start: _active
+                              ? const Color(0xFFFF7A85)
+                              : Ink.violet,
+                          end: _active ? Ink.red : Ink.violetDeep,
                           onPressed: _busy || !canRecordEntries
                               ? null
                               : () => _active ? _end() : _start(buyers, rows),
-                          icon: Icon(
-                            _active
-                                ? CupertinoIcons.stop_fill
-                                : CupertinoIcons.play_fill,
-                            size: 18,
-                          ),
-                          label: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Text(
-                              _active
-                                  ? bi('End', 'முடி')
-                                  : bi('Start', 'தொடங்கு'),
-                            ),
-                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
-                      IconButton.filledTonal(
+                      _CircleGlassButton(
                         tooltip: ui('Add person'),
-                        onPressed: _busy || !canRecordEntries
+                        icon: CupertinoIcons.person_badge_plus,
+                        onTap: _busy || !canRecordEntries
                             ? null
                             : () => _open(const VendorPersonForm()),
-                        icon: const Icon(CupertinoIcons.person_badge_plus),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 26),
                   Row(
                     children: [
                       Expanded(
                         child: Text(
                           bi('Customers', 'வாடிக்கையாளர்கள்'),
                           style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -.3,
                           ),
                         ),
                       ),
                       if (_active)
-                        Text(
-                          '${_done.length + _skipped.length}/${_stops.length}',
-                          style: const TextStyle(color: Ink.muted),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: ShapeDecoration(
+                            color: Ink.violetDeep.withValues(alpha: .10),
+                            shape: const StadiumBorder(),
+                          ),
+                          child: Text(
+                            '${_done.length + _skipped.length}/${_stops.length}',
+                            style: const TextStyle(
+                              color: Ink.violetDeep,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else
+                        TextButton.icon(
+                          onPressed: _busy ? null : _customize,
+                          icon: const Icon(
+                            CupertinoIcons.slider_horizontal_3,
+                            size: 19,
+                          ),
+                          label: Text(bi('Customize', 'மாற்று')),
                         ),
                     ],
                   ),
                   if (_active && _volume)
                     Padding(
-                      padding: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         bi(
                           'Volume ↑ Complete · ↓ Skip · Editing off',
@@ -1286,39 +1231,81 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                       ),
                     ),
                   const SizedBox(height: 12),
-                  if (display.isEmpty)
+                  if (_active)
+                    ..._rideList(rows)
+                  else if (buyers.isEmpty)
                     Glass(
                       child: Text(
                         bi(
                           'Add a milk buyer to begin. No customers scheduled for this session.',
                           'பால் வாங்குபவரைச் சேர்க்கவும். இந்த நேரத்திற்கு வாடிக்கையாளர்கள் இல்லை.',
                         ),
+                        style: const TextStyle(color: Ink.muted),
                       ),
-                    ),
-                  for (final p in display)
-                    Padding(
-                      key: _keys.putIfAbsent(txt(p, 'id'), GlobalKey.new),
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _stop(p, rows),
-                    ),
-                  if (!_active &&
-                      all.any(
-                        (p) => p['kind'] == 'customer' && !buyers.contains(p),
-                      )) ...[
-                    const SizedBox(height: 12),
+                    )
+                  else
+                    for (final p in buyers)
+                      Padding(
+                        key: _keys.putIfAbsent(txt(p, 'id'), GlobalKey.new),
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _stop(p, rows),
+                      ),
+                  if (others.isNotEmpty) ...[
+                    const SizedBox(height: 14),
                     Text(
                       bi('Other customers', 'மற்ற வாடிக்கையாளர்கள்'),
-                      style: const TextStyle(color: Ink.muted),
+                      style: const TextStyle(
+                        color: Ink.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    for (final p in all.where(
-                      (p) => p['kind'] == 'customer' && !buyers.contains(p),
-                    ))
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: _VendorAvatar(person: p),
-                        title: Text(txt(p, 'name')),
-                        subtitle: Text(txt(p, 'place')),
-                        onTap: () => _open(VendorPersonScreen(person: p)),
+                    const SizedBox(height: 8),
+                    for (final p in others)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Glass(
+                          radius: 22,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          onTap: () => _open(VendorPersonScreen(person: p)),
+                          child: Row(
+                            children: [
+                              _VendorAvatar(person: p, radius: 20),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      txt(p, 'name'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      txt(p, 'place'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Ink.muted,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                CupertinoIcons.chevron_right,
+                                size: 16,
+                                color: Ink.faint,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                   ],
                 ],
@@ -1330,13 +1317,316 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     );
   }
 
-  Widget _stop(Map<String, dynamic> p, List<Map<String, dynamic>> rows) {
+  Future<void> _customize() async {
+    await _open(VendorCustomizeScreen(volume: _volume, storageKey: _storageKey));
+    if (mounted) {
+      setState(
+        () => _volume =
+            Hive.box(
+              'settings',
+            ).get('${_storageKey}_volume', defaultValue: false) ==
+            true,
+      );
+    }
+  }
+
+  Widget _providersRow(List<Map<String, dynamic>> suppliers) => SizedBox(
+    height: 108,
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: suppliers.isEmpty
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _busy || !canRecordEntries
+                        ? null
+                        : () => _open(const VendorPersonForm(kind: 'supplier')),
+                    icon: const Icon(CupertinoIcons.add_circled),
+                    label: Text(bi('Add milk provider', 'பால் வழங்குநரைச் சேர்')),
+                  ),
+                )
+              : ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(top: 2, right: 8),
+                  itemCount: suppliers.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 14),
+                  itemBuilder: (_, i) {
+                    final p = suppliers[i];
+                    return _ProviderBubble(
+                      person: p,
+                      onTap: _busy
+                          ? null
+                          : () => _open(
+                              VendorPersonScreen(
+                                person: p,
+                                intakeKind: 'collection',
+                                entryPrefix: _active ? _rideId : '',
+                                initialSession: _session,
+                              ),
+                            ),
+                    );
+                  },
+                ),
+        ),
+        const SizedBox(width: 8),
+        _ProviderBubble(
+          label: bi('All', 'அனைத்தும்'),
+          icon: CupertinoIcons.person_3_fill,
+          onTap: _busy
+              ? null
+              : () => _open(
+                  VendorProvidersScreen(
+                    entryPrefix: _active ? _rideId : '',
+                    session: _session,
+                  ),
+                ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _milkCard(List<Map<String, dynamic>> rows) {
+    final today = todayDate();
+    double sumToday(bool intake) => rows
+        .where(
+          (r) =>
+              r['date'] == today &&
+              r['stockScope'] == 'vendor_v2' &&
+              (intake
+                  ? ['collection', 'purchase'].contains(r['kind'])
+                  : r['kind'] == 'sale'),
+        )
+        .fold(0.0, (s, r) => s + numv(r, 'quantity'));
+    final inToday = sumToday(true), outToday = sumToday(false);
+    return Glass(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      onTap: _busy ? null : () => _open(const VendorStockScreen()),
+      child: Row(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.white, Color(0xFFEDE6FF)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Ink.violetDeep.withValues(alpha: .14),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: const MilkVendorIcon(size: 42),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  bi('Milk balance', 'பால் இருப்பு'),
+                  style: const TextStyle(
+                    color: Ink.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${vendorFieldNumber(vendorMilkBalance(rows))} L',
+                    style: const TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.6,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MilkFlow(
+                label: '+${vendorFieldNumber(inToday)} L',
+                color: Ink.greenText,
+              ),
+              const SizedBox(height: 6),
+              _MilkFlow(
+                label: '−${vendorFieldNumber(outToday)} L',
+                color: Ink.violetDeep,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _rideList(List<Map<String, dynamic>> rows) {
+    final finished = _stops
+        .where(
+          (p) => _done.contains(txt(p, 'id')) || _skipped.contains(txt(p, 'id')),
+        )
+        .toList();
+    final current = _current;
+    final upcoming = _stops
+        .where(
+          (p) =>
+              !finished.contains(p) && txt(p, 'id') != txt(current ?? {}, 'id'),
+        )
+        .toList();
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    return [
+      for (final p in finished)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _finishedRow(p),
+        ),
+      AnimatedSwitcher(
+        duration: reduce ? Duration.zero : const Duration(milliseconds: 380),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween(
+              begin: const Offset(0, .18),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        ),
+        child: current == null
+            ? Padding(
+                key: const ValueKey('ride-finished'),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Glass(
+                  child: Row(
+                    children: [
+                      const Icon(
+                        CupertinoIcons.check_mark_circled_solid,
+                        color: Ink.green,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          bi(
+                            'All customers done. Press End.',
+                            'அனைவரும் முடிந்தது. முடி அழுத்தவும்.',
+                          ),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Padding(
+                key: ValueKey('ride-${txt(current, 'id')}'),
+                padding: const EdgeInsets.only(bottom: 12, top: 4),
+                child: KeyedSubtree(
+                  key: _keys.putIfAbsent(txt(current, 'id'), GlobalKey.new),
+                  child: _stop(current, rows),
+                ),
+              ),
+      ),
+      if (upcoming.isNotEmpty) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(
+            bi('Up next', 'அடுத்து'),
+            style: const TextStyle(
+              color: Ink.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        for (final p in upcoming)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Opacity(opacity: .55, child: _stop(p, rows, preview: true)),
+          ),
+      ],
+    ];
+  }
+
+  Widget _finishedRow(Map<String, dynamic> p) {
     final id = txt(p, 'id');
-    final current = _active && _current?['id'] == id;
-    final done = _active && _done.contains(id),
-        skip = _active && _skipped.contains(id);
-    final edit = _editing == id;
-    final qty = vendorUsualQuantity(p, _session, rows),
+    final skipped = _skipped.contains(id);
+    final paid = numv(p, 'ridePaid') > 0;
+    final color = skipped ? Ink.redText : Ink.greenText;
+    final qty = numv(p, 'quantity');
+    return Glass(
+      radius: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      tint: (skipped ? Ink.red : Ink.green).withValues(alpha: .07),
+      child: Row(
+        children: [
+          Icon(
+            skipped
+                ? CupertinoIcons.forward_fill
+                : CupertinoIcons.check_mark_circled_solid,
+            color: color,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          _VendorAvatar(person: p, radius: 17),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              txt(p, 'name'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (!skipped)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Text(
+                '${vendorFieldNumber(qty)} L',
+                style: const TextStyle(color: Ink.muted),
+              ),
+            ),
+          Text(
+            skipped
+                ? bi('Skipped today', 'இன்று தவிர்க்கப்பட்டது')
+                : paid
+                ? bi('Received', 'பெற்றது')
+                : bi('Delivered', 'வழங்கியது'),
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stop(
+    Map<String, dynamic> p,
+    List<Map<String, dynamic>> rows, {
+    bool preview = false,
+  }) {
+    final id = txt(p, 'id');
+    final current = !preview && _active && _current?['id'] == id;
+    final edit = current && _editing == id;
+    final qty = _active ? numv(p, 'quantity') : vendorUsualQuantity(p, _session, rows),
         price = numv(p, 'price', defaultMilkPrice());
     final amount = qty * price, due = vendorPersonDue(id, rows);
     final payDate = vendorPaymentDate(p, _active ? _date : DateTime.now());
@@ -1345,194 +1635,390 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       DateTime(today.year, today.month, today.day),
     );
     final timing = vendorPaymentTiming(p, rows, today);
-    final tone = skip
-        ? Ink.red
-        : done
-        ? Ink.green
-        : edit
-        ? Ink.amber
-        : timing.color;
+    final card = Glass(
+      padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+      radius: 26,
+      tint: edit ? Ink.amber.withValues(alpha: .06) : null,
+      onTap: _active ? null : () => _open(VendorPersonScreen(person: p)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _VendorAvatar(person: p, radius: 25),
+              const SizedBox(width: 12),
+              Container(
+                constraints: const BoxConstraints(minWidth: 50),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: ShapeDecoration(
+                  color: Ink.violetDeep.withValues(alpha: .08),
+                  shape: const StadiumBorder(),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      vendorFieldNumber(qty),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Ink.violetDeep,
+                      ),
+                    ),
+                    const Text(
+                      ' L',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Ink.violetDeep,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      txt(p, 'name'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      txt(p, 'place'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Ink.muted, fontSize: 13.5),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    money(amount),
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.3,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    timing.label,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: timing.color,
+                    ),
+                  ),
+                  if (due > 0.001)
+                    Text(
+                      now
+                          ? '${bi('Collect', 'பெறு')} ${money(due + amount)}'
+                          : '${bi('Due', 'நிலுவை')} ${money(due)}',
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: now ? Ink.greenText : Ink.muted,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          if (edit) ..._editFields(p, due),
+          if (current && _busy)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+        ],
+      ),
+    );
+    if (preview || !_active) return card;
     return _VendorSwipeCard(
       enabled: current && !_busy,
       editing: edit,
       hint: current && _hint,
       onRight: () => edit ? _skip(p) : _complete(p),
       onLeft: () => edit || _volume ? _skip(p) : _edit(p),
-      child: Glass(
-        padding: const EdgeInsets.all(16),
-        tint: tone.withValues(alpha: done || skip || edit ? .16 : .04),
-        onTap: _active ? null : () => _open(VendorPersonScreen(person: p)),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                _VendorAvatar(person: p),
-                const SizedBox(width: 10),
-                Text(
-                  '${qty.toStringAsFixed(qty % 1 == 0 ? 0 : 1)} L',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        txt(p, 'name'),
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        txt(p, 'place'),
-                        style: const TextStyle(color: Ink.muted, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      FittedBox(
-                        child: Text(
-                          money(amount),
-                          style: const TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        skip
-                            ? bi('Skipped today', 'இன்று தவிர்க்கப்பட்டது')
-                            : done
-                            ? (numv(p, 'ridePaid') > 0
-                                  ? bi('Received', 'பெற்றது')
-                                  : bi('Delivered', 'வழங்கியது'))
-                            : timing.label,
-                        textAlign: TextAlign.end,
-                        style: TextStyle(fontSize: 12, color: tone),
-                      ),
-                      if (!done && !skip && due > 0)
-                        Text(
-                          '${bi('Due', 'நிலுவை')} ${money(due)}',
-                          textAlign: TextAlign.end,
-                          style: const TextStyle(
-                            color: Ink.muted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      if (!done && !skip && now && due > 0)
-                        Text(
-                          '${bi('Collect', 'பெறு')} ${money(due + amount)}',
-                          textAlign: TextAlign.end,
-                          style: const TextStyle(
-                            color: Ink.green,
-                            fontSize: 11,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+      child: card,
+    );
+  }
+
+  List<Widget> _editFields(Map<String, dynamic> p, double due) {
+    void recompute() {
+      if (_payNow) {
+        _paid.text = vendorFieldNumber(
+          toDouble(_qty.text) * toDouble(_price.text) + due,
+        );
+      }
+    }
+
+    final litres = toDouble(_qty.text), price = toDouble(_price.text);
+    return [
+      const SizedBox(height: 16),
+      TextField(
+        controller: _qty,
+        autofocus: false,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: fieldStyle(bi('Litres', 'லிட்டர்')),
+        onChanged: (_) => setState(recompute),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(6, 8, 6, 12),
+        child: Text(
+          '${vendorFieldNumber(litres)} L × ${money(price)} = ${money(litres * price)}'
+          '${due > 0.001 ? '  ·  ${bi('Due', 'நிலுவை')} ${money(due)}' : ''}',
+          style: const TextStyle(
+            color: Ink.body,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      Row(
+        children: [
+          Expanded(
+            child: _VendorPill(
+              label: bi('Received now', 'இப்போது பெற்றது'),
+              selected: _payNow,
+              onTap: () => setState(() {
+                _payNow = true;
+                recompute();
+              }),
             ),
-            if (edit) ...[
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _qty,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: fieldStyle(bi('Litres', 'லிட்டர்')),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _price,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: fieldStyle(bi('Price / L', 'விலை / லி')),
-                    ),
-                  ),
-                ],
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _VendorPill(
+              label: bi('Receive later', 'பிறகு பெறுவது'),
+              selected: !_payNow,
+              onTap: () => setState(() {
+                _payNow = false;
+                _paid.text = '0';
+              }),
+            ),
+          ),
+        ],
+      ),
+      if (_payNow) ...[
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                bi('Amount received', 'பெற்ற தொகை'),
+                style: const TextStyle(
+                  color: Ink.muted,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _VendorPill(
-                      label: bi('Received now', 'இப்போது பெற்றது'),
-                      selected: toDouble(_paid.text) > 0,
-                      onTap: () => setState(
-                        () => _paid.text =
-                            '${toDouble(_qty.text) * toDouble(_price.text) + due}',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _VendorPill(
-                      label: bi('Receive later', 'பிறகு பெறுவது'),
-                      selected: toDouble(_paid.text) == 0,
-                      onTap: () => setState(() => _paid.text = '0'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
+            ),
+            SizedBox(
+              width: 132,
+              child: TextField(
                 controller: _paid,
+                textAlign: TextAlign.end,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: fieldStyle(bi('Payment now', 'இப்போது பணம்')),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() => _editing = null),
-                      child: AppText('Cancel'),
-                    ),
-                  ),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _complete(p, edited: true),
-                      child: AppText('Save'),
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                bi(
-                  'Swipe again to skip today',
-                  'மீண்டும் நகர்த்தினால் இன்று தவிர்க்கப்படும்',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                 ),
-                style: const TextStyle(fontSize: 12, color: Ink.amber),
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixText: currencySymbol(),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: GlassInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  enabledBorder: GlassInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  focusedBorder: GlassInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(
+                      color: Ink.violetDeep,
+                      width: 1.4,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: .7),
+                ),
               ),
-            ],
-            if (current && _busy)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: LinearProgressIndicator(minHeight: 2),
+            ),
+          ],
+        ),
+      ],
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Expanded(
+            child: TextButton(
+              onPressed: _busy ? null : () => setState(() => _editing = null),
+              child: AppText('Cancel'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: LiquidButton(
+              label: ui('Save'),
+              height: 48,
+              radius: 24,
+              onPressed: _busy ? null : () => _complete(p, edited: true),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Text(
+        bi(
+          'Swipe again to skip today',
+          'மீண்டும் நகர்த்தினால் இன்று தவிர்க்கப்படும்',
+        ),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 12,
+          color: Ink.amberText,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ];
+  }
+}
+
+class _MilkFlow extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _MilkFlow({required this.label, required this.color});
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: ShapeDecoration(
+      color: color.withValues(alpha: .09),
+      shape: const StadiumBorder(),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: color,
+        fontWeight: FontWeight.w700,
+        fontSize: 13,
+      ),
+    ),
+  );
+}
+
+class _CircleGlassButton extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _CircleGlassButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: SizedBox.square(
+      dimension: 56,
+      child: Glass(
+        radius: 28,
+        padding: EdgeInsets.zero,
+        onTap: onTap,
+        child: Center(
+          child: Icon(
+            icon,
+            color: onTap == null ? Ink.faint : Ink.violetDeep,
+            size: 25,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ProviderBubble extends StatelessWidget {
+  final Map<String, dynamic>? person;
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onTap;
+  const _ProviderBubble({
+    this.person,
+    this.label = '',
+    this.icon,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final p = person;
+    return SizedBox(
+      width: 72,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          children: [
+            if (p != null)
+              _VendorAvatar(person: p, radius: 30, halo: true)
+            else
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Ink.violet, Ink.violetDeep],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Ink.violetDeep.withValues(alpha: .3),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: Colors.white, size: 26),
+              ),
+            const SizedBox(height: 6),
+            Text(
+              p == null ? label : txt(p, 'name'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            if (p != null)
+              Text(
+                txt(p, 'place'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Ink.muted, fontSize: 11),
               ),
           ],
         ),
@@ -1541,24 +2027,153 @@ class _VendorRideScreenState extends State<VendorRideScreen>
   }
 }
 
+/// Every milk provider on one page.
+class VendorProvidersScreen extends StatelessWidget {
+  final String entryPrefix, session;
+  const VendorProvidersScreen({
+    super.key,
+    this.entryPrefix = '',
+    this.session = 'Morning',
+  });
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Ink.canvasTop,
+    appBar: AppBar(
+      title: Text(bi('Milk providers', 'பால் வழங்குநர்கள்')),
+      actions: [
+        if (canRecordEntries)
+          IconButton(
+            tooltip: ui('Add person'),
+            icon: const Icon(CupertinoIcons.person_badge_plus),
+            onPressed: () =>
+                push(context, const VendorPersonForm(kind: 'supplier')),
+          ),
+      ],
+    ),
+    body: Shell(
+      child: AnimatedBuilder(
+        animation: Listenable.merge([
+          Hive.box('vendor_people').listenable(),
+          Hive.box('vendor_entries').listenable(),
+        ]),
+        builder: (context, _) {
+          final rows = vendorRows('vendor_entries');
+          final providers = vendorRoutePeople(
+            vendorRows('vendor_people'),
+            rows,
+            DateTime.now(),
+            session,
+            suppliers: true,
+          );
+          if (providers.isEmpty) {
+            return Center(
+              child: Text(
+                bi('No milk providers yet.', 'பால் வழங்குநர்கள் இல்லை.'),
+                style: const TextStyle(color: Ink.muted),
+              ),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+            itemCount: providers.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (_, i) {
+              final p = providers[i];
+              final due = vendorPersonDue(txt(p, 'id'), rows);
+              return Glass(
+                radius: 24,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                onTap: () => push(
+                  context,
+                  VendorPersonScreen(
+                    person: p,
+                    intakeKind: 'collection',
+                    entryPrefix: entryPrefix,
+                    initialSession: session,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    _VendorAvatar(person: p, radius: 26, halo: true),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            txt(p, 'name'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            txt(p, 'place'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Ink.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (due > 0.001)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            money(due),
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            bi('To pay', 'கொடுக்க'),
+                            style: const TextStyle(
+                              color: Ink.amberText,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      const Icon(
+                        CupertinoIcons.chevron_right,
+                        size: 16,
+                        color: Ink.faint,
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    ),
+  );
+}
+
 class _VendorAvatar extends StatelessWidget {
   final Map<String, dynamic> person;
   final double radius;
-  const _VendorAvatar({required this.person, this.radius = 22});
+  final bool halo;
+  const _VendorAvatar({
+    required this.person,
+    this.radius = 22,
+    this.halo = false,
+  });
   @override
-  Widget build(BuildContext context) => CircleAvatar(
+  Widget build(BuildContext context) => GlassAvatar(
+    image: personPhoto(person),
+    label: txt(person, 'name'),
     radius: radius,
-    backgroundColor: Ink.lavender,
-    backgroundImage: animalImage(person),
-    child: animalImage(person) == null
-        ? Text(
-            txt(person, 'name', '?').characters.first,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Ink.violetDeep,
-            ),
-          )
-        : null,
+    halo: halo,
   );
 }
 
@@ -1990,6 +2605,38 @@ class VendorRideSummary extends StatelessWidget {
 
     people.sort((a, b) => score(b).compareTo(score(a)));
     final top = people.where((p) => score(p) >= 0).firstOrNull;
+    // Customers served on credit this ride, with the day they will pay.
+    final today = DateTime.now();
+    final later = <({Map<String, dynamic> person, double amount, DateTime on})>[];
+    for (final sale in sales) {
+      final owed = numv(sale, 'amount') - numv(sale, 'paid');
+      if (owed <= .001) continue;
+      final person = people
+          .where((p) => p['id'] == sale['personId'])
+          .firstOrNull;
+      if (person == null) continue;
+      final settled = rows.any(
+        (r) =>
+            r['kind'] == 'payment' &&
+            r['personId'] == sale['personId'] &&
+            numv(r, 'amount') >= owed - .001,
+      );
+      if (settled) continue;
+      later.add((
+        person: person,
+        amount: owed,
+        on: vendorPaymentDate(
+          person,
+          today.add(const Duration(days: 1)),
+        ),
+      ));
+    }
+    String payDay(DateTime on) {
+      final start = DateTime(today.year, today.month, today.day);
+      final days = on.difference(start).inDays;
+      if (days <= 1) return bi('Pays tomorrow', 'நாளை செலுத்துவார்');
+      return '${bi('Pays on', 'செலுத்தும் நாள்')} ${on.day}/${on.month}';
+    }
     return Scaffold(
       appBar: AppBar(title: Text(bi('Ride summary', 'பயணக் கணக்கு'))),
       body: Shell(
@@ -2090,6 +2737,63 @@ class VendorRideSummary extends StatelessWidget {
                   ),
                 ),
               ),
+            ],
+            if (later.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text(
+                bi('Pays later', 'பிறகு செலுத்துபவர்கள்'),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final item in later)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Glass(
+                    radius: 22,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        _VendorAvatar(person: item.person, radius: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                txt(item.person, 'name'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Text(
+                                payDay(item.on),
+                                style: const TextStyle(
+                                  color: Ink.redText,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          money(item.amount),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
             const SizedBox(height: 24),
             FilledButton(

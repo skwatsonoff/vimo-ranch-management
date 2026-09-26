@@ -180,7 +180,7 @@ void main() {
     'Payment timing distinguishes due now, recent receipts and future due dates',
     () {
       final date = DateTime(2026, 9, 26);
-      expect(vendorPaymentTiming(buyer, [], date).color, Ink.amber);
+      expect(vendorPaymentTiming(buyer, [], date).color, Ink.amberText);
       expect(
         vendorPaymentTiming(
           {
@@ -203,7 +203,7 @@ void main() {
           [],
           date,
         ).color,
-        Ink.red,
+        Ink.redText,
       );
       expect(
         vendorPaymentTiming(buyer, [
@@ -227,7 +227,7 @@ void main() {
             'date': '2026-09-25',
           },
         ], date).color,
-        Ink.green,
+        Ink.greenText,
       );
     },
   );

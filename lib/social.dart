@@ -509,15 +509,36 @@ class _SocialPostState extends State<_SocialPost> {
           .doc(txt(widget.post.data(), 'authorUid'))
           .get();
 
+  late final Future<int?> _commentCount = widget.post.reference
+      .collection('comments')
+      .count()
+      .get()
+      .then((result) => result.count)
+      .catchError((_) => null);
+
   String _relative(Timestamp? stamp) {
     if (stamp == null) return bi('Sending', 'அனுப்புகிறது');
     final elapsed = DateTime.now().difference(stamp.toDate());
-    if (elapsed.inMinutes < 1) return bi('now', 'இப்போது');
-    if (elapsed.inHours < 1) return '${elapsed.inMinutes}m';
-    if (elapsed.inDays < 1) return '${elapsed.inHours}h';
-    if (elapsed.inDays < 30) return '${elapsed.inDays}d';
-    if (elapsed.inDays < 365) return '${math.max(1, elapsed.inDays ~/ 7)}w';
-    return '${math.max(1, elapsed.inDays ~/ 365)}y';
+    if (elapsed.inMinutes < 1) return bi('Just now', 'இப்போது');
+    if (elapsed.inHours < 1) {
+      return bi(
+        '${elapsed.inMinutes} min ago',
+        '${elapsed.inMinutes} நிமிடம் முன்',
+      );
+    }
+    if (elapsed.inDays < 1) {
+      return bi('${elapsed.inHours} h ago', '${elapsed.inHours} மணி முன்');
+    }
+    if (elapsed.inDays == 1) return bi('Yesterday', 'நேற்று');
+    if (elapsed.inDays < 7) {
+      return bi('${elapsed.inDays} days ago', '${elapsed.inDays} நாள் முன்');
+    }
+    if (elapsed.inDays < 365) {
+      final weeks = math.max(1, elapsed.inDays ~/ 7);
+      return bi('$weeks w ago', '$weeks வாரம் முன்');
+    }
+    final years = math.max(1, elapsed.inDays ~/ 365);
+    return bi('$years y ago', '$years ஆண்டு முன்');
   }
 
   Future<void> _deletePost() async {
@@ -653,7 +674,8 @@ class _SocialPostState extends State<_SocialPost> {
                     future: _author,
                     builder: (_, profile) => profileAvatar(
                       txt(profile.data?.data() ?? {}, 'photo'),
-                      radius: 23,
+                      radius: 24,
+                      label: txt(p, 'authorName'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -690,9 +712,9 @@ class _SocialPostState extends State<_SocialPost> {
                               ),
                         ),
                         Text(
-                          '${txt(p, 'authorUsername', txt(p, 'authorName'))} · ${_relative(stamp)}',
+                          _relative(stamp),
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 13,
                             color: Ink.muted,
                           ),
                         ),
@@ -746,7 +768,7 @@ class _SocialPostState extends State<_SocialPost> {
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(22),
                     child: Image.memory(
                       socialPhotoBytes(photo),
                       width: double.infinity,
@@ -836,16 +858,31 @@ class _SocialPostState extends State<_SocialPost> {
                             color: liked ? Colors.pink : _blue,
                           ),
                           label: Text(
-                            '${snapshot.data?.size ?? 0} ${bi('likes', 'விருப்பங்கள்')}',
+                            '${snapshot.data?.size ?? 0}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Ink.body,
+                            ),
                           ),
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: () => setState(
-                          () => _commentsVisible = !_commentsVisible,
+                      FutureBuilder<int?>(
+                        future: _commentCount,
+                        builder: (context, count) => TextButton.icon(
+                          onPressed: () => setState(
+                            () => _commentsVisible = !_commentsVisible,
+                          ),
+                          icon: const Icon(CupertinoIcons.chat_bubble),
+                          label: Text(
+                            count.data == null
+                                ? bi('Comments', 'கருத்துகள்')
+                                : '${count.data}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Ink.body,
+                            ),
+                          ),
                         ),
-                        icon: const Icon(CupertinoIcons.chat_bubble),
-                        label: Text(bi('Comments', 'கருத்துகள்')),
                       ),
                     ],
                   );

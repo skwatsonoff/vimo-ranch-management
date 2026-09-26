@@ -20,6 +20,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as dart_ui show ImageFilter;
 
 import 'package:audioplayers/audioplayers.dart' hide Source;
 import 'package:file_picker/file_picker.dart';
@@ -613,7 +614,7 @@ String _excelWorksheet(
   }
   for (final row in data) {
     for (final key in row.keys) {
-      if (key == 'imageData' || key == 'key') continue;
+      if (isInternalField(key)) continue;
       if (!keys.contains(key)) keys.add(key);
     }
   }
@@ -988,6 +989,10 @@ class Ink {
   static const Color amber = Color(0xFFF0A02A);
   static const Color red = Color(0xFFE1495B);
   static const Color blue = Color(0xFF4F6BFF);
+  // Darker text tones stay readable on tinted glass.
+  static const Color amberText = Color(0xFFB45309);
+  static const Color greenText = Color(0xFF15803D);
+  static const Color redText = Color(0xFFC0263A);
 
   // Rank — read off the gold / purple / green cards in the reference design
   static const Color goldLight = Color(0xFFFBE08B);
@@ -8776,8 +8781,8 @@ class _MainShellState extends State<MainShell> {
       'Social': _NavItem('Social', CupertinoIcons.globe, CupertinoIcons.globe),
       'Reports': _NavItem(
         'Reports',
-        CupertinoIcons.chart_bar_fill,
-        CupertinoIcons.chart_bar,
+        Icons.analytics_rounded,
+        Icons.analytics_outlined,
       ),
       'Profile': _NavItem(
         'Profile',
@@ -8826,8 +8831,10 @@ class _MainShellState extends State<MainShell> {
           title: AppText(
             order[tab] == 'Social'
                 ? 'VIMO People'
-                : order[tab] == 'Chat'
-                ? ui('Chat')
+                : order[tab] == 'Chat' ||
+                      order[tab] == 'Vendor' ||
+                      order[tab] == 'Reports'
+                ? ui(order[tab])
                 : '${appName()} ${ui(order[tab])}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

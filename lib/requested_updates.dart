@@ -257,6 +257,42 @@ Map<String, int> cowRankStreak(String cowName) {
   return {'rank': maintainedRank, 'months': streak};
 }
 
+/// Sync, device and account plumbing is never shown to people.
+bool isInternalField(String key) {
+  if (key.startsWith('_') || key == 'key') return true;
+  const hidden = {
+    'pendingUpload',
+    'updatedAtMillis',
+    'photo',
+    'voice',
+    'imageData',
+    'imageUrl',
+    'mentions',
+    'bioMentions',
+    'stockScope',
+    'syncMode',
+    'revision',
+    'schemaVersion',
+  };
+  if (hidden.contains(key)) return true;
+  final k = key.toLowerCase();
+  const publicIds = {'id', 'cowid', 'calfid', 'animalid', 'tagid'};
+  if (publicIds.contains(k)) return false;
+  // CamelCase suffixes only, so fields like "paid" stay visible.
+  return k == 'uid' ||
+      key.endsWith('Uid') ||
+      key.endsWith('Id') ||
+      key.endsWith('ID') ||
+      key.endsWith('Key') ||
+      k.contains('device') ||
+      k.contains('cloud') ||
+      k.contains('millis') ||
+      k.contains('sync') ||
+      k.startsWith('createdat') ||
+      k.startsWith('updatedat') ||
+      k.endsWith('timestamp');
+}
+
 class RecordFullDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> record;
   final String title;
@@ -294,6 +330,9 @@ class RecordFullDetailsScreen extends StatelessWidget {
         .where(
           (entry) =>
               !_hidden.contains(entry.key) &&
+              !isInternalField(entry.key) &&
+              entry.value is! Map &&
+              entry.value is! List &&
               '${entry.value}'.trim().isNotEmpty,
         )
         .toList();

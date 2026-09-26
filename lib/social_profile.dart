@@ -48,26 +48,16 @@ String accountError(Object error) {
   );
 }
 
-Widget profileAvatar(String photo, {double radius = 38}) => CircleAvatar(
+Widget profileAvatar(
+  String photo, {
+  double radius = 38,
+  String label = '',
+  bool halo = false,
+}) => GlassAvatar(
+  image: cachedPhoto(photo),
+  label: label,
   radius: radius,
-  backgroundColor: Ink.violet.withValues(alpha: .12),
-  child: photo.isEmpty
-      ? Icon(CupertinoIcons.person_fill, size: radius, color: Ink.violet)
-      : ClipOval(
-          child: Image.memory(
-            socialPhotoBytes(photo),
-            width: radius * 2,
-            height: radius * 2,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            filterQuality: FilterQuality.medium,
-            errorBuilder: (_, _, _) => Icon(
-              CupertinoIcons.person_fill,
-              size: radius,
-              color: Ink.violet,
-            ),
-          ),
-        ),
+  halo: halo,
 );
 
 class SocialProfileScreen extends StatefulWidget {
@@ -111,229 +101,273 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
                   children: [
                     SizedBox(
-                      height: 110,
+                      height: 150,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
                           Opacity(
-                            opacity: .22,
+                            opacity: .16,
                             child: Image(
                               image: heroArtImage,
                               fit: BoxFit.cover,
                             ),
                           ),
                           const Align(
-                            alignment: Alignment.bottomRight,
-                            child: Padding(
-                              padding: EdgeInsets.all(24),
-                              child: Text(
-                                'Vimo',
-                                style: TextStyle(
-                                  fontSize: 44,
-                                  fontWeight: FontWeight.w300,
-                                  fontStyle: FontStyle.italic,
-                                  color: Ink.violet,
-                                ),
-                              ),
-                            ),
+                            alignment: Alignment(.72, .1),
+                            child: VimoScript(size: 58),
                           ),
                         ],
                       ),
                     ),
-                    Glass(
-                      radius: 34,
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Glass(
+                          radius: 34,
+                          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              profileAvatar(txt(data, 'photo'), radius: 48),
-                              const SizedBox(width: 18),
-                              Expanded(
-                                child: Column(
+                              Padding(
+                                padding: const EdgeInsets.only(left: 118),
+                                child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      txt(
-                                        data,
-                                        'displayName',
-                                        own ? currentUserName() : name,
-                                      ),
-                                      style: const TextStyle(
-                                        fontSize: 21,
-                                        fontWeight: FontWeight.w800,
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            txt(
+                                              data,
+                                              'displayName',
+                                              own ? currentUserName() : name,
+                                            ).toUpperCase(),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 21,
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: .2,
+                                              color: Ink.navy,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            name.isEmpty
+                                                ? bi(
+                                                    'Choose a username',
+                                                    'பயனர்பெயரைத் தேர்ந்தெடு',
+                                                  )
+                                                : '@$name',
+                                            style: const TextStyle(
+                                              color: Ink.muted,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          if (txt(data, 'place').isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 6,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  const Icon(
+                                                    CupertinoIcons
+                                                        .location_solid,
+                                                    size: 16,
+                                                    color: Ink.violetDeep,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Flexible(
+                                                    child: Text(
+                                                      txt(data, 'place'),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        color: Ink.body,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ),
-                                    Text(
-                                      name.isEmpty
-                                          ? bi(
-                                              'Choose a username',
-                                              'பயனர்பெயரைத் தேர்ந்தெடு',
-                                            )
-                                          : name,
-                                      style: const TextStyle(
-                                        color: Ink.violetDeep,
-                                        fontWeight: FontWeight.w600,
+                                    if (own)
+                                      IconButton(
+                                        tooltip: bi(
+                                          'Edit profile',
+                                          'சுயவிவரத்தைத் திருத்து',
+                                        ),
+                                        icon: const Icon(CupertinoIcons.pencil),
+                                        onPressed: () => push(
+                                          context,
+                                          EditSocialProfileScreen(data: data),
+                                        ),
                                       ),
-                                    ),
-                                    if (txt(data, 'place').isNotEmpty)
-                                      Text(txt(data, 'place')),
                                   ],
                                 ),
                               ),
-                              if (own)
-                                IconButton(
-                                  tooltip: bi(
-                                    'Edit profile',
-                                    'சுயவிவரத்தைத் திருத்து',
-                                  ),
-                                  icon: const Icon(CupertinoIcons.pencil),
-                                  onPressed: () => push(
-                                    context,
-                                    EditSocialProfileScreen(data: data),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              _ProfileCount(uid: uid, kind: 'following'),
-                              _ProfileCount(uid: uid, kind: 'followers'),
-                            ],
-                          ),
-                          if (txt(data, 'bio').isNotEmpty)
-                            MentionText(
-                              txt(data, 'bio'),
-                              mentions: data['bioMentions'] is List
-                                  ? List.from(data['bioMentions'])
-                                  : const [],
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          const SizedBox(height: 14),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 8,
-                            children: [
-                              if (txt(data, 'whatsapp').isNotEmpty)
-                                OutlinedButton.icon(
-                                  icon: const Icon(CupertinoIcons.chat_bubble),
-                                  label: const Text('WhatsApp'),
-                                  onPressed: () => _link(
-                                    'https://wa.me/${txt(data, 'whatsapp').replaceAll(RegExp(r'[^0-9]'), '')}',
-                                  ),
-                                ),
-                              if (txt(data, 'link').isNotEmpty &&
-                                  validProfileLink(txt(data, 'link')))
-                                OutlinedButton.icon(
-                                  icon: const Icon(CupertinoIcons.link),
-                                  label: Text(bi('My link', 'என் இணைப்பு')),
-                                  onPressed: () => _link(txt(data, 'link')),
-                                ),
-                              if (!own)
-                                OutlinedButton.icon(
-                                  icon: const Icon(
-                                    CupertinoIcons.chat_bubble_2,
-                                  ),
-                                  label: Text(bi('Message', 'செய்தி')),
-                                  onPressed: () async {
-                                    try {
-                                      final chat = await DirectChatService.open(
-                                        uid,
-                                      );
-                                      if (context.mounted) {
-                                        await push(
-                                          context,
-                                          DirectChatScreen(
-                                            chatId: chat,
-                                            peer: uid,
-                                          ),
-                                        );
-                                      }
-                                    } catch (e) {
-                                      if (context.mounted) {
-                                        snack(context, accountError(e));
-                                      }
-                                    }
-                                  },
-                                ),
-                            ],
-                          ),
-                          if (!own)
-                            StreamBuilder<
-                              DocumentSnapshot<Map<String, dynamic>>
-                            >(
-                              stream: FirebaseFirestore.instance
-                                  .collection('profiles')
-                                  .doc(uid)
-                                  .collection('followers')
-                                  .doc(signedInUid)
-                                  .snapshots(),
-                              builder: (context, follow) => TextButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () async {
-                                        if (accountUsername.isEmpty) {
-                                          await push(
-                                            context,
-                                            const UsernameScreen(),
-                                          );
-                                          if (!mounted ||
-                                              accountUsername.isEmpty) {
-                                            return;
-                                          }
-                                        }
-                                        setState(() => _busy = true);
-                                        try {
-                                          final db = FirebaseFirestore.instance;
-                                          final batch = db.batch();
-                                          final a = db
-                                              .collection('profiles')
-                                              .doc(uid)
-                                              .collection('followers')
-                                              .doc(signedInUid);
-                                          final b = db
-                                              .collection('profiles')
-                                              .doc(signedInUid)
-                                              .collection('following')
-                                              .doc(uid);
-                                          if (follow.data?.exists == true) {
-                                            batch.delete(a);
-                                            batch.delete(b);
-                                          } else {
-                                            batch.set(a, {
-                                              'createdAt':
-                                                  FieldValue.serverTimestamp(),
-                                            });
-                                            batch.set(b, {
-                                              'createdAt':
-                                                  FieldValue.serverTimestamp(),
-                                            });
-                                          }
-                                          await batch.commit().timeout(
-                                            CloudSyncService.networkTimeout,
-                                          );
-                                        } catch (e) {
-                                          if (context.mounted) {
-                                            snack(context, accountError(e));
-                                          }
-                                        } finally {
-                                          if (mounted) {
-                                            setState(() => _busy = false);
-                                          }
-                                        }
-                                      },
-                                child: Text(
-                                  follow.data?.exists == true
-                                      ? bi('Unfollow', 'பின்தொடர்வதை நிறுத்து')
-                                      : bi('Follow', 'பின்தொடர்'),
+                              const SizedBox(height: 16),
+                              IntrinsicHeight(
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: _ProfileCount(
+                                        uid: uid,
+                                        kind: 'following',
+                                      ),
+                                    ),
+                                    VerticalDivider(
+                                      width: 1,
+                                      thickness: 1,
+                                      color: Ink.violetDeep.withValues(
+                                        alpha: .14,
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: _ProfileCount(
+                                        uid: uid,
+                                        kind: 'followers',
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
+                              if (txt(data, 'bio').isNotEmpty) ...[
+                                const SizedBox(height: 14),
+                                MentionText(
+                                  txt(data, 'bio'),
+                                  mentions: data['bioMentions'] is List
+                                      ? List.from(data['bioMentions'])
+                                      : const [],
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    height: 1.4,
+                                    color: Ink.body,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  if (txt(data, 'whatsapp').isNotEmpty)
+                                    Expanded(
+                                      child: _ProfileAction(
+                                        icon: CupertinoIcons.chat_bubble_fill,
+                                        iconColor: const Color(0xFF25D366),
+                                        label: 'WhatsApp',
+                                        onTap: () => _link(
+                                          'https://wa.me/${txt(data, 'whatsapp').replaceAll(RegExp(r'[^0-9]'), '')}',
+                                        ),
+                                      ),
+                                    ),
+                                  if (txt(data, 'whatsapp').isNotEmpty &&
+                                      (validProfileLink(txt(data, 'link')) &&
+                                              txt(data, 'link').isNotEmpty ||
+                                          !own))
+                                    const SizedBox(width: 10),
+                                  if (txt(data, 'link').isNotEmpty &&
+                                      validProfileLink(txt(data, 'link')))
+                                    Expanded(
+                                      child: _ProfileAction(
+                                        icon: CupertinoIcons.link,
+                                        label: bi('My link', 'என் இணைப்பு'),
+                                        onTap: () => _link(txt(data, 'link')),
+                                      ),
+                                    ),
+                                  if (!own) ...[
+                                    if (txt(data, 'link').isNotEmpty &&
+                                        validProfileLink(txt(data, 'link')))
+                                      const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _ProfileAction(
+                                        icon: CupertinoIcons.chat_bubble_2_fill,
+                                        label: bi('Message', 'செய்தி'),
+                                        onTap: () async {
+                                          try {
+                                            final chat =
+                                                await DirectChatService.open(
+                                                  uid,
+                                                );
+                                            if (context.mounted) {
+                                              await push(
+                                                context,
+                                                DirectChatScreen(
+                                                  chatId: chat,
+                                                  peer: uid,
+                                                ),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            if (context.mounted) {
+                                              snack(context, accountError(e));
+                                            }
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              if (!own)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: StreamBuilder<
+                                    DocumentSnapshot<Map<String, dynamic>>
+                                  >(
+                                    stream: FirebaseFirestore.instance
+                                        .collection('profiles')
+                                        .doc(uid)
+                                        .collection('followers')
+                                        .doc(signedInUid)
+                                        .snapshots(),
+                                    builder: (context, follow) {
+                                      final following =
+                                          follow.data?.exists == true;
+                                      return LiquidButton(
+                                        label: following
+                                            ? bi(
+                                                'Following',
+                                                'பின்தொடர்கிறீர்கள்',
+                                              )
+                                            : bi('Follow', 'பின்தொடர்'),
+                                        icon: following
+                                            ? CupertinoIcons.check_mark
+                                            : CupertinoIcons.person_add_solid,
+                                        height: 48,
+                                        radius: 24,
+                                        start: following
+                                            ? const Color(0xFFB9ABEA)
+                                            : Ink.violet,
+                                        end: following
+                                            ? const Color(0xFF9B89DE)
+                                            : Ink.violetDeep,
+                                        busy: _busy,
+                                        onPressed: _busy
+                                            ? null
+                                            : () => _toggleFollow(following),
+                                      );
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          left: 14,
+                          top: -46,
+                          child: profileAvatar(
+                            txt(data, 'photo'),
+                            radius: 56,
+                            label: txt(data, 'displayName', name),
+                          ),
+                        ),
+                      ],
                     ),
                     if (snap.hasError)
                       Padding(
@@ -342,6 +376,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                       ),
                     const SizedBox(height: 20),
                     Glass(
+                      radius: 28,
                       padding: const EdgeInsets.all(5),
                       child: Row(
                         children: [
@@ -358,6 +393,10 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                               child: TextButton(
                                 onPressed: () => setState(() => _tab = item.$1),
                                 style: TextButton.styleFrom(
+                                  shape: const StadiumBorder(),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
                                   backgroundColor: _tab == item.$1
                                       ? Ink.violetDeep
                                       : Colors.transparent,
@@ -419,6 +458,40 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
             ),
     ),
   );
+  Future<void> _toggleFollow(bool following) async {
+    if (accountUsername.isEmpty) {
+      await push(context, const UsernameScreen());
+      if (!mounted || accountUsername.isEmpty) return;
+    }
+    setState(() => _busy = true);
+    try {
+      final db = FirebaseFirestore.instance;
+      final batch = db.batch();
+      final a = db
+          .collection('profiles')
+          .doc(uid)
+          .collection('followers')
+          .doc(signedInUid);
+      final b = db
+          .collection('profiles')
+          .doc(signedInUid)
+          .collection('following')
+          .doc(uid);
+      if (following) {
+        batch.delete(a);
+        batch.delete(b);
+      } else {
+        batch.set(a, {'createdAt': FieldValue.serverTimestamp()});
+        batch.set(b, {'createdAt': FieldValue.serverTimestamp()});
+      }
+      await batch.commit().timeout(CloudSyncService.networkTimeout);
+    } catch (e) {
+      if (mounted) snack(context, accountError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _link(String value) async {
     try {
       await launchUrl(Uri.parse(value), mode: LaunchMode.externalApplication);
@@ -493,11 +566,77 @@ class _ProfileCount extends StatelessWidget {
         .doc(uid)
         .collection(kind)
         .snapshots(),
-    builder: (context, snapshot) => TextButton(
-      onPressed: () => push(context, ProfilePeopleScreen(uid: uid, kind: kind)),
-      child: Text(
-        '${snapshot.hasData ? snapshot.data!.docs.length : '–'} ${kind == 'followers' ? bi('Followers', 'பின்தொடர்பவர்கள்') : bi('Following', 'பின்தொடர்பவை')}',
-      ),
+    builder: (context, snapshot) {
+      final count = snapshot.data?.docs.length;
+      String compact(int n) => n >= 1000000
+          ? '${(n / 1000000).toStringAsFixed(n % 1000000 == 0 ? 0 : 1)}M'
+          : n >= 1000
+          ? '${(n / 1000).toStringAsFixed(n % 1000 == 0 ? 0 : 1)}K'
+          : '$n';
+      return InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () =>
+            push(context, ProfilePeopleScreen(uid: uid, kind: kind)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            children: [
+              Text(
+                count == null ? '–' : compact(count),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Ink.navy,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                kind == 'followers'
+                    ? bi('Followers', 'பின்தொடர்பவர்கள்')
+                    : bi('Following', 'பின்தொடர்பவை'),
+                style: const TextStyle(color: Ink.muted, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _ProfileAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color iconColor;
+  final VoidCallback onTap;
+  const _ProfileAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.iconColor = Ink.violetDeep,
+  });
+  @override
+  Widget build(BuildContext context) => Glass(
+    radius: 22,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    onTap: onTap,
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 20, color: iconColor),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Ink.navy,
+            ),
+          ),
+        ),
+      ],
     ),
   );
 }

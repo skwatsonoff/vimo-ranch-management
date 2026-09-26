@@ -13,10 +13,12 @@ class MentionInput extends StatefulWidget {
   final int minLines;
   final int maxLines;
   final int? maxLength;
+  final bool bare;
   const MentionInput({
     super.key,
     required this.controller,
     required this.hint,
+    this.bare = false,
     this.ranchOnly = false,
     this.minLines = 1,
     this.maxLines = 5,
@@ -151,7 +153,9 @@ class _MentionInputState extends State<MentionInput> {
             (_, {required currentLength, required isFocused, maxLength}) =>
                 null,
         textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(hintText: widget.hint),
+        decoration: widget.bare
+            ? bareFieldStyle(widget.hint)
+            : InputDecoration(hintText: widget.hint),
       ),
       if (_people.isNotEmpty)
         Glass(
@@ -184,11 +188,13 @@ class MentionText extends StatelessWidget {
   final String text;
   final List<dynamic> mentions;
   final TextStyle? style;
+  final Color mentionColor;
   const MentionText(
     this.text, {
     super.key,
     this.mentions = const [],
     this.style,
+    this.mentionColor = Ink.violetDeep,
   });
   @override
   Widget build(BuildContext context) {
@@ -210,9 +216,13 @@ class MentionText extends StatelessWidget {
       spans.add(
         TextSpan(
           text: name,
-          style: const TextStyle(
-            color: Ink.violetDeep,
+          style: TextStyle(
+            color: mentionColor,
             fontWeight: FontWeight.w700,
+            decoration: mentionColor == Colors.white
+                ? TextDecoration.underline
+                : null,
+            decorationColor: mentionColor,
           ),
           recognizer: TapGestureRecognizer()
             ..onTap = () =>
@@ -318,6 +328,26 @@ class PublicRanchService {
   }
 }
 
+/// Borderless field for use inside a capsule composer.
+InputDecoration bareFieldStyle(String hint) => InputDecoration(
+  hintText: hint,
+  isDense: true,
+  filled: false,
+  border: InputBorder.none,
+  enabledBorder: InputBorder.none,
+  focusedBorder: InputBorder.none,
+  disabledBorder: InputBorder.none,
+  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+);
+
+/// "My ranch" belongs to the owner; visitors see a neutral ranch title.
+String publicRanchTitle(String name, {required bool own}) {
+  final clean = name.trim();
+  final generic = clean.isEmpty || clean.toLowerCase() == 'my ranch';
+  if (own) return generic ? bi('My ranch', 'என் பண்ணை') : clean;
+  return generic ? bi('Ranch', 'பண்ணை') : clean;
+}
+
 class PublicRanchView extends StatelessWidget {
   final String uid;
   final Map<String, dynamic> profile;
@@ -337,7 +367,10 @@ class PublicRanchView extends StatelessWidget {
       children: [
         ListTile(
           leading: const CowMark(size: 32),
-          title: Text(txt(profile, 'ranchName')),
+          title: Text(
+            publicRanchTitle(txt(profile, 'ranchName'), own: own),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
           trailing: own
               ? SegmentedButton<bool>(
                   segments: const [
@@ -781,19 +814,16 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
             'displayName',
             txt(data, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')),
           );
-          return ListTile(
-            leading: profileAvatar(txt(data, 'photo'), radius: 23),
-            title: Text(displayName),
-            subtitle: Text(
-              ranchMember
-                  ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
-                  : txt(data, 'username'),
-              style: const TextStyle(
-                color: Ink.violetDeep,
-                fontWeight: FontWeight.w600,
-              ),
+          return _ChatRow(
+            avatar: profileAvatar(
+              txt(data, 'photo'),
+              radius: 26,
+              label: displayName,
             ),
-            trailing: const Icon(CupertinoIcons.chat_bubble),
+            title: displayName,
+            subtitle: ranchMember
+                ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
+                : txt(data, 'username'),
             onTap: () => _open(uid),
           );
         },
@@ -878,12 +908,25 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                         return ListView(
                           children: [
                             if (CloudSyncService.ready)
-                              ListTile(
-                                leading: const Icon(CupertinoIcons.person_3),
-                                title: Text(farmName()),
-                                subtitle: Text(
-                                  bi('Ranch group', 'பண்ணைக் குழு'),
+                              _ChatRow(
+                                avatar: Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [Ink.violet, Ink.violetDeep],
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    CupertinoIcons.person_3_fill,
+                                    color: Colors.white,
+                                  ),
                                 ),
+                                title: farmName(),
+                                subtitle: bi('Ranch group', 'பண்ணைக் குழு'),
                                 onTap: () => push(
                                   context,
                                   Scaffold(
@@ -981,6 +1024,81 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
   }
 }
 
+/// Messages-style list row: avatar, name, detail and a quiet chevron.
+class _ChatRow extends StatelessWidget {
+  final Widget avatar;
+  final String title, subtitle;
+  final VoidCallback onTap;
+  const _ChatRow({
+    required this.avatar,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 16, 0),
+      child: Row(
+        children: [
+          avatar,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.only(bottom: 12, top: 2),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: Ink.faint.withValues(alpha: .22),
+                    width: .6,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: Ink.navy,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Ink.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 15,
+                    color: Ink.faint,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class DirectChatScreen extends StatefulWidget {
   final String chatId, peer;
   const DirectChatScreen({super.key, required this.chatId, required this.peer});
@@ -1022,10 +1140,23 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     }
   }
 
+  String _clock(dynamic stamp) {
+    final time = stamp is Timestamp ? stamp.toDate() : null;
+    if (time == null) return '';
+    final local = time.toLocal();
+    return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _openProfile() =>
+      push(context, SocialProfileScreen(uid: widget.peer));
+
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.white,
     appBar: AppBar(
-      titleSpacing: 0,
+      centerTitle: true,
+      toolbarHeight: 72,
+      backgroundColor: Colors.white.withValues(alpha: .96),
       title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('profiles')
@@ -1033,165 +1164,170 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
             .snapshots(),
         builder: (context, profile) {
           final data = profile.data?.data() ?? const <String, dynamic>{};
-          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: CloudSyncService.ready
-                ? CloudSyncService.ranch
-                      .collection('members')
-                      .doc(widget.peer)
-                      .snapshots()
-                : null,
-            builder: (context, member) => Row(
-              children: [
-                profileAvatar(txt(data, 'photo'), radius: 19),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          final name = txt(
+            data,
+            'displayName',
+            txt(data, 'username', bi('Chat', 'அரட்டை')),
+          );
+          return Semantics(
+            button: true,
+            label: bi('Open profile', 'சுயவிவரத்தைத் திற'),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openProfile,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  profileAvatar(txt(data, 'photo'), radius: 19, label: name),
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        txt(
-                          data,
-                          'displayName',
-                          txt(data, 'username', bi('Chat', 'அரட்டை')),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                      Flexible(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                      Text(
-                        member.data?.exists == true
-                            ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
-                            : txt(data, 'username'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Ink.violetDeep,
-                        ),
+                      const Icon(
+                        CupertinoIcons.chevron_right,
+                        size: 11,
+                        color: Ink.faint,
                       ),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
       ),
     ),
-    body: Shell(
-      child: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('direct_chats')
-                  .doc(widget.chatId)
-                  .collection('messages')
-                  .orderBy('createdAt', descending: true)
-                  .limit(200)
-                  .snapshots(),
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return Center(child: Text(accountError(snap.error!)));
-                }
-                if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                return ListView(
-                  reverse: true,
-                  padding: const EdgeInsets.all(20),
-                  children: [
-                    for (final d in snap.data!.docs)
-                      Align(
-                        alignment: d.data()['senderUid'] == signedInUid
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Glass(child: Text(txt(d.data(), 'text'))),
-                        ),
+    body: Column(
+      children: [
+        Expanded(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('direct_chats')
+                .doc(widget.chatId)
+                .collection('messages')
+                .orderBy('createdAt', descending: true)
+                .limit(200)
+                .snapshots(),
+            builder: (context, snap) {
+              if (snap.hasError) {
+                return Center(child: Text(accountError(snap.error!)));
+              }
+              if (!snap.hasData) {
+                return const Center(child: CupertinoActivityIndicator());
+              }
+              return ValueListenableBuilder(
+                valueListenable: Hive.box('community_outbox').listenable(),
+                builder: (context, box, _) {
+                  final pending = box.values
+                      .whereType<Map>()
+                      .where(
+                        (m) =>
+                            m['senderUid'] == signedInUid &&
+                            m['chatId'] == widget.chatId,
+                      )
+                      .toList()
+                      .reversed;
+                  final docs = snap.data!.docs;
+                  if (docs.isEmpty && pending.isEmpty) {
+                    return Center(
+                      child: Text(
+                        bi('Say hello 👋', 'வணக்கம் சொல்லுங்கள் 👋'),
+                        style: const TextStyle(color: Ink.muted),
                       ),
-                  ],
-                );
-              },
-            ),
-          ),
-          ValueListenableBuilder(
-            valueListenable: Hive.box('community_outbox').listenable(),
-            builder: (context, box, _) {
-              final pending = box.values
-                  .whereType<Map>()
-                  .where(
-                    (m) =>
-                        m['senderUid'] == signedInUid &&
-                        m['chatId'] == widget.chatId,
-                  )
-                  .toList();
-              if (pending.isEmpty) return const SizedBox.shrink();
-              return ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 140),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final message in pending)
-                      ListTile(
-                        title: Text(txt(asMap(message), 'text')),
-                        subtitle: Text(
-                          bi(
-                            'Saved · waiting to send',
-                            'சேமிக்கப்பட்டது · அனுப்பக் காத்திருக்கிறது',
+                    );
+                  }
+                  return ListView(
+                    reverse: true,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    children: [
+                      for (final message in pending)
+                        AppleBubble(
+                          mine: true,
+                          pending: true,
+                          child: Text(
+                            txt(asMap(message), 'text'),
+                            style: const TextStyle(
+                              fontSize: 16.5,
+                              height: 1.3,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                        trailing: const Icon(CupertinoIcons.clock, size: 16),
-                      ),
-                  ],
-                ),
+                      for (final d in docs)
+                        Builder(
+                          builder: (_) {
+                            final mine = d.data()['senderUid'] == signedInUid;
+                            return AppleBubble(
+                              mine: mine,
+                              time: _clock(d.data()['createdAt']),
+                              child: Text(
+                                txt(d.data(), 'text'),
+                                style: TextStyle(
+                                  fontSize: 16.5,
+                                  height: 1.3,
+                                  color: mine ? Colors.white : Ink.navy,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  );
+                },
               );
             },
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _text,
-                      enabled: !_busy,
-                      maxLength: 2000,
-                      buildCounter:
-                          (
-                            _, {
-                            required currentLength,
-                            required isFocused,
-                            maxLength,
-                          }) => null,
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: fieldStyle(bi('Message', 'செய்தி')),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _busy ? null : _send,
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(CupertinoIcons.arrow_up),
-                  ),
-                ],
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+            child: AppleComposer(
+              field: TextField(
+                controller: _text,
+                enabled: !_busy,
+                maxLength: 2000,
+                buildCounter:
+                    (_, {required currentLength, required isFocused, maxLength}) =>
+                        null,
+                minLines: 1,
+                maxLines: 5,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: bareFieldStyle(bi('Message', 'செய்தி')),
+              ),
+              trailing: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _text,
+                builder: (_, value, _) => IconButton(
+                  tooltip: ui('Send'),
+                  onPressed: _busy || value.text.trim().isEmpty ? null : _send,
+                  icon: _busy
+                      ? const CupertinoActivityIndicator()
+                      : Icon(
+                          CupertinoIcons.arrow_up_circle_fill,
+                          size: 32,
+                          color: value.text.trim().isEmpty
+                              ? Ink.faint
+                              : Ink.violetDeep,
+                        ),
+                ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     ),
   );
 }

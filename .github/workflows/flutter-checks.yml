@@ -1,0 +1,52 @@
+name: Flutter checks
+on:
+  push:
+    branches: ['claude/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install packages
+        run: flutter pub get
+      - name: Analyze
+        id: analyze
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          flutter analyze --no-fatal-infos --no-pub | tee analyze.txt
+      - name: Report analyzer findings
+        if: always()
+        run: |
+          grep -E '^\s*(error|warning) - ' analyze.txt | head -40 | while IFS= read -r line; do
+            level=$(echo "$line" | sed -E 's/^\s*(error|warning) - .*/\1/')
+            loc=$(echo "$line" | grep -oE '[A-Za-z0-9_\\/.-]+\.dart:[0-9]+:[0-9]+' | tail -1)
+            file=$(echo "$loc" | cut -d: -f1 | tr '\\' '/')
+            ln=$(echo "$loc" | cut -d: -f2)
+            msg=$(echo "$line" | sed -E 's/^\s*(error|warning) - //')
+            echo "::${level} file=${file},line=${ln}::${msg}"
+          done
+          grep -E 'issues? found|No issues found' analyze.txt | tail -1 | sed 's/^/::notice::Analyze: /' || true
+      - name: Test
+        id: test
+        continue-on-error: true
+        run: flutter test --no-pub -r github
+      - name: Build web
+        id: build
+        continue-on-error: true
+        run: flutter build web --release --no-pub --no-wasm-dry-run
+      - name: Result
+        run: |
+          echo "analyze=${{ steps.analyze.outcome }} test=${{ steps.test.outcome }} build=${{ steps.build.outcome }}"
+          echo "::notice::analyze=${{ steps.analyze.outcome }} test=${{ steps.test.outcome }} build=${{ steps.build.outcome }}"
+          test "${{ steps.analyze.outcome }}" = success
+          test "${{ steps.test.outcome }}" = success
+          test "${{ steps.build.outcome }}" = success

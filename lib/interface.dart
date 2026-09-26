@@ -946,103 +946,34 @@ class _ConversationViewState extends State<_ConversationView> {
   Widget _chatBubble(Map<String, dynamic> message, bool mine) {
     final sender = txt(message, 'sender', 'Ranch member');
     final participantColor = chatParticipantColor(sender);
-    final bubbleColor = Color.lerp(
-      Colors.white,
-      participantColor,
-      mine ? .18 : .10,
-    )!;
     final isVoice =
         txt(message, 'messageType') == 'voice' &&
         (txt(message, 'audioData').isNotEmpty ||
             txt(message, 'audioUrl').isNotEmpty);
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: math.min(420, MediaQuery.sizeOf(context).width * .82),
-        ),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.fromLTRB(14, 10, 12, 7),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color.lerp(
-                Colors.white,
-                bubbleColor,
-                .55,
-              )!.withValues(alpha: .84),
-              bubbleColor.withValues(alpha: .50),
-            ],
-          ),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: .80),
-            width: 1,
-          ),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(mine ? 18 : 5),
-            topRight: Radius.circular(mine ? 5 : 18),
-            bottomLeft: const Radius.circular(18),
-            bottomRight: const Radius.circular(18),
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x10000000),
-              blurRadius: 5,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              sender,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    return AppleBubble(
+      mine: mine,
+      sender: mine ? null : sender,
+      senderColor: participantColor,
+      time: txt(message, 'time'),
+      child: isVoice
+          ? _VoiceMessageBubble(
+              url: txt(message, 'audioUrl'),
+              encodedAudio: txt(message, 'audioData'),
+              durationSeconds: toInt(message['audioDuration']),
+              color: mine ? Colors.white : Ink.violetDeep,
+            )
+          : MentionText(
+              txt(message, 'text'),
+              mentions: message['mentions'] is List
+                  ? List.from(message['mentions'])
+                  : const [],
+              mentionColor: mine ? Colors.white : Ink.violetDeep,
               style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: participantColor,
+                fontSize: 16.5,
+                height: 1.3,
+                color: mine ? Colors.white : Ink.navy,
               ),
             ),
-            const SizedBox(height: 4),
-            if (isVoice)
-              _VoiceMessageBubble(
-                url: txt(message, 'audioUrl'),
-                encodedAudio: txt(message, 'audioData'),
-                durationSeconds: toInt(message['audioDuration']),
-                color: participantColor,
-              )
-            else
-              MentionText(
-                txt(message, 'text'),
-                mentions: message['mentions'] is List
-                    ? List.from(message['mentions'])
-                    : const [],
-                style: const TextStyle(
-                  fontSize: 16,
-                  height: 1.35,
-                  color: Ink.navy,
-                ),
-              ),
-            const SizedBox(height: 3),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                txt(message, 'time'),
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w500,
-                  color: participantColor.withValues(alpha: .72),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1300,11 +1231,26 @@ class _ConversationViewState extends State<_ConversationView> {
                   top: false,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Glass(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      radius: 22,
-                      opacity: .62,
-                      elevation: .65,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      decoration: ShapeDecoration(
+                        color: Colors.white.withValues(alpha: .94),
+                        shape: StadiumBorder(
+                          side: BorderSide(
+                            color: Ink.faint.withValues(alpha: .35),
+                          ),
+                        ),
+                        shadows: const [
+                          BoxShadow(
+                            color: Color(0x0F000000),
+                            blurRadius: 10,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
                       child: _recording || _sendingVoice
                           ? Row(
                               children: [
@@ -1387,6 +1333,7 @@ class _ConversationViewState extends State<_ConversationView> {
                                     maxLines: 5,
                                     hint: ui('Message'),
                                     ranchOnly: true,
+                                    bare: true,
                                   ),
                                 ),
                                 ValueListenableBuilder<TextEditingValue>(
@@ -1729,6 +1676,119 @@ class AppInfoScreen extends StatelessWidget {
           );
         },
       ),
+    ),
+  );
+}
+
+/// iMessage-style bubble: filled for me, soft grey for others, tail corner.
+class AppleBubble extends StatelessWidget {
+  final bool mine;
+  final Widget child;
+  final String? sender;
+  final Color senderColor;
+  final String time;
+  final bool pending;
+  const AppleBubble({
+    super.key,
+    required this.mine,
+    required this.child,
+    this.sender,
+    this.senderColor = Ink.violetDeep,
+    this.time = '',
+    this.pending = false,
+  });
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Column(
+      crossAxisAlignment: mine
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        if (sender != null && sender!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 14, bottom: 3),
+            child: Text(
+              sender!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: senderColor,
+              ),
+            ),
+          ),
+        Container(
+          constraints: BoxConstraints(
+            maxWidth: math.min(420, MediaQuery.sizeOf(context).width * .76),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            gradient: mine
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF8C6BFF), Ink.violetDeep],
+                  )
+                : null,
+            color: mine ? null : const Color(0xFFE9E9EB),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(20),
+              topRight: const Radius.circular(20),
+              bottomLeft: Radius.circular(mine ? 20 : 6),
+              bottomRight: Radius.circular(mine ? 6 : 20),
+            ),
+          ),
+          child: Opacity(opacity: pending ? .7 : 1, child: child),
+        ),
+        if (time.isNotEmpty || pending)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 3, 8, 2),
+            child: Text(
+              pending ? bi('Sending…', 'அனுப்புகிறது…') : time,
+              style: const TextStyle(fontSize: 11, color: Ink.faint),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+/// Rounded capsule composer shared by the chat screens.
+class AppleComposer extends StatelessWidget {
+  final Widget field;
+  final Widget? leading;
+  final Widget trailing;
+  const AppleComposer({
+    super.key,
+    required this.field,
+    required this.trailing,
+    this.leading,
+  });
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+    decoration: ShapeDecoration(
+      color: Colors.white.withValues(alpha: .92),
+      shape: StadiumBorder(
+        side: BorderSide(color: Ink.faint.withValues(alpha: .35)),
+      ),
+      shadows: const [
+        BoxShadow(
+          color: Color(0x0F000000),
+          blurRadius: 10,
+          offset: Offset(0, 3),
+        ),
+      ],
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ?leading,
+        Expanded(child: field),
+        trailing,
+      ],
     ),
   );
 }

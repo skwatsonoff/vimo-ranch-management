@@ -694,12 +694,10 @@ class _VendorScreenState extends State<VendorScreen> {
                 children: [
                   for (final p in people)
                     ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: _blue.withValues(alpha: .09),
-                        child: Text(
-                          txt(p, 'name').characters.first,
-                          style: const TextStyle(color: _blue),
-                        ),
+                      leading: GlassAvatar(
+                        image: personPhoto(p),
+                        label: txt(p, 'name'),
+                        radius: 22,
                       ),
                       title: Text(txt(p, 'name')),
                       subtitle: Text(
@@ -925,19 +923,28 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
       _paid = TextEditingController(text: '0');
   bool _busy = false;
   bool _payment = false;
-  String _session = DateTime.now().hour < 12 ? 'Morning' : 'Evening';
+  String _session = vendorSessionNow();
   String _entryId = '';
   Timer? _timer;
   @override
   void initState() {
     super.initState();
     _session = widget.initialSession ?? _session;
-    _qty.text =
-        '${vendorUsualQuantity(widget.person, _session, vendorRows('vendor_entries'))}';
-    _price.text = '${numv(widget.person, 'price', defaultMilkPrice())}';
+    _qty.text = vendorFieldNumber(
+      vendorUsualQuantity(widget.person, _session, vendorRows('vendor_entries')),
+    );
+    _price.text = vendorFieldNumber(
+      numv(widget.person, 'price', defaultMilkPrice()),
+    );
+    _qty.addListener(_refresh);
+    _price.addListener(_refresh);
     _timer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) setState(() {});
     });
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -947,6 +954,57 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
     _price.dispose();
     _paid.dispose();
     super.dispose();
+  }
+
+  Future<void> _save(Map<String, dynamic> p, bool supplier) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    _entryId = _entryId.isEmpty
+        ? '${widget.entryPrefix.isEmpty ? 'v' : widget.entryPrefix}_${DateTime.now().microsecondsSinceEpoch}_${settingText('deviceId', 'device')}'
+        : _entryId;
+    try {
+      await VendorLedger.record(
+        id: _entryId,
+        person: p,
+        kind: _payment
+            ? 'payment'
+            : supplier
+            ? widget.intakeKind
+            : 'sale',
+        quantity: double.tryParse(_qty.text) ?? 0,
+        price: double.tryParse(_price.text) ?? 0,
+        paid: _payment ? 0 : double.tryParse(_paid.text) ?? -1,
+        payment: _payment ? double.tryParse(_paid.text) ?? 0 : 0,
+        session: vendorSessionNow(),
+      );
+      _entryId = '';
+      if (!mounted) return;
+      snack(context, bi('Saved', 'சேமிக்கப்பட்டது'));
+      // A finished entry returns to the Vendor page.
+      await Navigator.of(context).maybePop();
+    } catch (e) {
+      if (mounted) {
+        snack(
+          context,
+          e is FirebaseException
+              ? bi(
+                  'Could not save. Check your connection and retry.',
+                  'சேமிக்க முடியவில்லை. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
+                )
+              : '$e'.replaceFirst('Bad state: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _contact(String uri) async {
+    try {
+      await launchUrl(Uri.parse(uri), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) snack(context, ui('Unable to open'));
+    }
   }
 
   @override
@@ -959,10 +1017,11 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
           ).where((p) => p['id'] == widget.person['id']).firstOrNull ??
           widget.person;
       final supplier = p['kind'] == 'supplier';
+      final contact = txt(p, 'contact').replaceAll(RegExp(r'[^0-9+]'), '');
       return Scaffold(
         backgroundColor: Ink.canvasTop,
         appBar: AppBar(
-          title: Text(txt(p, 'name')),
+          title: const SizedBox.shrink(),
           actions: [
             if (canRecordEntries)
               IconButton(
@@ -985,39 +1044,131 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                   (a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')),
                 );
               final due = vendorPersonDue(txt(p, 'id'), rows);
+              final month = thisMonth();
+              final monthLitres = rows
+                  .where(
+                    (r) =>
+                        txt(r, 'date').startsWith(month) &&
+                        r['kind'] != 'payment',
+                  )
+                  .fold(0.0, (s, r) => s + numv(r, 'quantity'));
+              final qty = toDouble(_qty.text), price = toDouble(_price.text);
+              final entryTotal = qty * price;
+              final days = vendorWeekdays(p['days']);
+              final sessions = ((p['sessions'] as List?) ?? const [])
+                  .whereType<String>()
+                  .toList();
               return ListView(
-                padding: const EdgeInsets.all(21),
+                padding: const EdgeInsets.fromLTRB(21, 0, 21, 40),
                 children: [
-                  Text(
-                    txt(p, 'place'),
-                    style: const TextStyle(color: Ink.muted),
+                  Center(
+                    child: GlassPortrait(
+                      image: personPhoto(p),
+                      title: txt(p, 'name'),
+                      subtitle: txt(
+                        p,
+                        'place',
+                        supplier
+                            ? bi('Milk provider', 'பால் வழங்குநர்')
+                            : bi('Milk buyer', 'பால் வாங்குபவர்'),
+                      ),
+                      size: 196,
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    vendorPaymentScheduleLabel(p),
-                    style: const TextStyle(color: Ink.muted),
-                  ),
-                  const SizedBox(height: 20),
-                  Glass(
-                    padding: const EdgeInsets.all(22),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          supplier
-                              ? bi('Amount to pay', 'கொடுக்கவேண்டிய தொகை')
-                              : bi('Amount to collect', 'வசூலிக்கவேண்டிய தொகை'),
-                          style: const TextStyle(color: Ink.muted),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _InfoChip(
+                        icon: supplier
+                            ? CupertinoIcons.arrow_down_circle
+                            : CupertinoIcons.arrow_up_circle,
+                        label: supplier
+                            ? bi('Provider', 'வழங்குநர்')
+                            : bi('Buyer', 'வாங்குபவர்'),
+                      ),
+                      _InfoChip(
+                        icon: CupertinoIcons.calendar,
+                        label: vendorPaymentScheduleLabel(p),
+                      ),
+                      if (days.isNotEmpty)
+                        _InfoChip(
+                          icon: CupertinoIcons.drop,
+                          label: vendorScheduleDays(days),
                         ),
-                        Text(
-                          '${currencySymbol()}${due.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w700,
+                      if (sessions.isNotEmpty && sessions.length < 2)
+                        _InfoChip(
+                          icon: sessions.first == 'Morning'
+                              ? CupertinoIcons.sun_max
+                              : CupertinoIcons.moon,
+                          label: ui(sessions.first),
+                        ),
+                    ],
+                  ),
+                  if (contact.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _contact('tel:$contact'),
+                          icon: const Icon(CupertinoIcons.phone_fill, size: 18),
+                          label: Text(bi('Call', 'அழை')),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          onPressed: () => _contact(
+                            'https://wa.me/${contact.replaceAll('+', '')}',
+                          ),
+                          icon: const Icon(
+                            CupertinoIcons.chat_bubble_fill,
+                            size: 18,
+                          ),
+                          label: const Text('WhatsApp'),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  Glass(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 16,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _PersonStat(
+                            label: due > .001
+                                ? supplier
+                                      ? bi('To pay', 'கொடுக்கவேண்டியது')
+                                      : bi('To collect', 'பெறவேண்டியது')
+                                : bi('Balance', 'நிலுவை'),
+                            value: due > .001
+                                ? money(due)
+                                : bi('Settled', 'தீர்ந்தது'),
+                            color: due > .001
+                                ? supplier
+                                      ? Ink.amberText
+                                      : Ink.redText
+                                : Ink.greenText,
                           ),
                         ),
-                        Text(
-                          '${bi('Milk available', 'பால் இருப்பு')}: ${vendorMilkBalance(all).toStringAsFixed(2)} L',
+                        const _StatDivider(),
+                        Expanded(
+                          child: _PersonStat(
+                            label: bi('This month', 'இந்த மாதம்'),
+                            value: '${vendorFieldNumber(monthLitres)} L',
+                          ),
+                        ),
+                        const _StatDivider(),
+                        Expanded(
+                          child: _PersonStat(
+                            label: bi('Price / L', 'விலை / லி'),
+                            value: money(numv(p, 'price', defaultMilkPrice())),
+                          ),
                         ),
                       ],
                     ),
@@ -1048,6 +1199,9 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                           : (v) => setState(() {
                               _payment = v.first;
                               _entryId = '';
+                              _paid.text = _payment && due > .001
+                                  ? vendorFieldNumber(due)
+                                  : '0';
                             }),
                     ),
                     const SizedBox(height: 20),
@@ -1072,6 +1226,43 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      if (entryTotal > 0)
+                        Glass(
+                          radius: 22,
+                          padding: const EdgeInsets.all(16),
+                          tint: Ink.violetDeep.withValues(alpha: .05),
+                          child: Column(
+                            children: [
+                              _TotalLine(
+                                label:
+                                    '${vendorFieldNumber(qty)} L × ${money(price)}',
+                                value: money(entryTotal),
+                              ),
+                              if (due > .001) ...[
+                                const SizedBox(height: 6),
+                                _TotalLine(
+                                  label: bi(
+                                    'Previous balance',
+                                    'முந்தைய நிலுவை',
+                                  ),
+                                  value: money(due),
+                                ),
+                                const Divider(height: 18),
+                                _TotalLine(
+                                  label: supplier
+                                      ? bi('Total to pay', 'மொத்தம் கொடுக்க')
+                                      : bi(
+                                          'Total to collect',
+                                          'மொத்தம் பெற',
+                                        ),
+                                  value: money(entryTotal + due),
+                                  strong: true,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 12),
                     ],
                     TextField(
                       controller: _paid,
@@ -1093,73 +1284,16 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                               ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: _busy
-                          ? null
-                          : () async {
-                              setState(() => _busy = true);
-                              _entryId = _entryId.isEmpty
-                                  ? '${widget.entryPrefix.isEmpty ? 'v' : widget.entryPrefix}_${DateTime.now().microsecondsSinceEpoch}_${settingText('deviceId', 'device')}'
-                                  : _entryId;
-                              try {
-                                await VendorLedger.record(
-                                  id: _entryId,
-                                  person: p,
-                                  kind: _payment
-                                      ? 'payment'
-                                      : supplier
-                                      ? widget.intakeKind
-                                      : 'sale',
-                                  quantity: double.tryParse(_qty.text) ?? 0,
-                                  price: double.tryParse(_price.text) ?? 0,
-                                  paid: _payment
-                                      ? 0
-                                      : double.tryParse(_paid.text) ?? -1,
-                                  payment: _payment
-                                      ? double.tryParse(_paid.text) ?? 0
-                                      : 0,
-                                  session: DateTime.now().hour < 12
-                                      ? 'Morning'
-                                      : 'Evening',
-                                );
-                                _entryId = '';
-                                _qty.clear();
-                                _paid.text = '0';
-                                if (context.mounted) {
-                                  snack(
-                                    context,
-                                    bi('Saved', 'சேமிக்கப்பட்டது'),
-                                  );
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  snack(
-                                    context,
-                                    e is FirebaseException
-                                        ? bi(
-                                            'Could not save. Check your connection and retry.',
-                                            'சேமிக்க முடியவில்லை. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
-                                          )
-                                        : '$e'.replaceFirst('Bad state: ', ''),
-                                  );
-                                }
-                              } finally {
-                                if (mounted) setState(() => _busy = false);
-                              }
-                            },
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Text(
-                          _busy
-                              ? bi('Saving…', 'சேமிக்கிறது…')
-                              : bi('Save entry', 'பதிவைச் சேமி'),
-                        ),
-                      ),
+                    const SizedBox(height: 20),
+                    LiquidButton(
+                      label: bi('Save entry', 'பதிவைச் சேமி'),
+                      busy: _busy,
+                      height: 56,
+                      radius: 28,
+                      onPressed: _busy ? null : () => _save(p, supplier),
                     ),
                   ],
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 30),
                   Text(
                     bi('History', 'பரிவர்த்தனைகள்'),
                     style: const TextStyle(
@@ -1169,37 +1303,88 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                   ),
                   const SizedBox(height: 12),
                   if (rows.isEmpty)
-                    Text(bi('No transactions yet.', 'பரிவர்த்தனைகள் இல்லை.')),
+                    Text(
+                      bi('No transactions yet.', 'பரிவர்த்தனைகள் இல்லை.'),
+                      style: const TextStyle(color: Ink.muted),
+                    ),
                   for (final r in rows)
-                    _InsetGroup(
-                      children: [
-                        ListTile(
-                          title: Text(
-                            '${vendorEntryLabel(txt(r, 'kind'))} · ${currencySymbol()}${numv(r, 'amount').toStringAsFixed(2)}',
-                          ),
-                          subtitle: Text(
-                            '${txt(r, 'date')} · ${txt(r, 'time')}\n${r['kind'] == 'payment' ? '' : '${numv(r, 'quantity')} L × ${currencySymbol()}${numv(r, 'price')}\n'}${txt(r, 'notes')}',
-                          ),
-                          trailing:
-                              withinEntryEditWindow(r, DateTime.now()) &&
-                                  canRecordEntries &&
-                                  (!firebaseReady ||
-                                      r['createdByUid'] ==
-                                          FirebaseAuth
-                                              .instance
-                                              .currentUser
-                                              ?.uid)
-                              ? IconButton(
-                                  tooltip: bi(
-                                    'Edit note',
-                                    'குறிப்பைத் திருத்து',
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Glass(
+                        radius: 22,
+                        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color:
+                                    (r['kind'] == 'payment'
+                                            ? Ink.green
+                                            : Ink.violetDeep)
+                                        .withValues(alpha: .1),
+                              ),
+                              child: Icon(
+                                r['kind'] == 'payment'
+                                    ? CupertinoIcons.money_dollar
+                                    : CupertinoIcons.drop_fill,
+                                size: 20,
+                                color: r['kind'] == 'payment'
+                                    ? Ink.greenText
+                                    : Ink.violetDeep,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    vendorEntryLabel(txt(r, 'kind')),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                  icon: const Icon(CupertinoIcons.pencil),
-                                  onPressed: () => _editNote(r),
-                                )
-                              : null,
+                                  Text(
+                                    [
+                                      '${txt(r, 'date')} · ${txt(r, 'time')}',
+                                      if (r['kind'] != 'payment')
+                                        '${vendorFieldNumber(numv(r, 'quantity'))} L × ${money(numv(r, 'price'))}',
+                                      if (txt(r, 'notes').isNotEmpty)
+                                        txt(r, 'notes'),
+                                    ].join('\n'),
+                                    style: const TextStyle(
+                                      color: Ink.muted,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              money(numv(r, 'amount')),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                            if (withinEntryEditWindow(r, DateTime.now()) &&
+                                canRecordEntries &&
+                                (!firebaseReady ||
+                                    r['createdByUid'] ==
+                                        FirebaseAuth.instance.currentUser?.uid))
+                              IconButton(
+                                tooltip: bi('Edit note', 'குறிப்பைத் திருத்து'),
+                                icon: const Icon(CupertinoIcons.pencil),
+                                onPressed: () => _editNote(r),
+                              )
+                            else
+                              const SizedBox(width: 8),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                 ],
               );
@@ -1251,4 +1436,114 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
       if (mounted) snack(context, '$e'.replaceFirst('Bad state: ', ''));
     }
   }
+}
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _InfoChip({required this.icon, required this.label});
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+    decoration: ShapeDecoration(
+      color: Colors.white.withValues(alpha: .72),
+      shape: StadiumBorder(
+        side: BorderSide(color: Ink.violetDeep.withValues(alpha: .10)),
+      ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: Ink.violetDeep),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Ink.body,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PersonStat extends StatelessWidget {
+  final String label, value;
+  final Color color;
+  const _PersonStat({
+    required this.label,
+    required this.value,
+    this.color = Ink.navy,
+  });
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          value,
+          style: TextStyle(
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            color: color,
+          ),
+        ),
+      ),
+      const SizedBox(height: 3),
+      Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+      ),
+    ],
+  );
+}
+
+class _StatDivider extends StatelessWidget {
+  const _StatDivider();
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 1,
+    height: 34,
+    color: Ink.violetDeep.withValues(alpha: .12),
+  );
+}
+
+class _TotalLine extends StatelessWidget {
+  final String label, value;
+  final bool strong;
+  const _TotalLine({
+    required this.label,
+    required this.value,
+    this.strong = false,
+  });
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          label,
+          style: TextStyle(
+            color: strong ? Ink.navy : Ink.muted,
+            fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
+          ),
+        ),
+      ),
+      Text(
+        value,
+        style: TextStyle(
+          fontSize: strong ? 20 : 16,
+          fontWeight: FontWeight.w800,
+          color: Ink.navy,
+        ),
+      ),
+    ],
+  );
 }
