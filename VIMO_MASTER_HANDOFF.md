@@ -1,6 +1,6 @@
 # VIMO — Master Requirements and Continuation Handoff
 
-Updated: 2026-09-26. App checkpoint: **1.3.0+5** (Claude branch `claude/vendor-social-polish`, CI green; see section 6a). Previous release: 1.2.1+4, commit `785a4a5`.
+Updated: 2026-09-26. App release: **1.3.0+5**, commit `9f93ea5`, deployed (see section 6a). Previous release: 1.2.1+4, commit `785a4a5`.
 
 This is the primary continuation document for Claude, ChatGPT and Codex. It records the user's app requirements across accessible Codex and ChatGPT conversations, the work delivered, implementation locations, unresolved limits and original user inputs. Read the current decisions before the historical input appendix.
 
@@ -18,7 +18,7 @@ This is the primary continuation document for Claude, ChatGPT and Codex. It reco
 | Local project | `C:\Users\itsme\ranch_management` |
 | Android artifact | `build/app/outputs/flutter-apk/app-release.apk` |
 | Current handoff work | Cross-chat app requirements and implementation history consolidated in this document; published with the repository documentation |
-| Current app work | 1.3.0+5 Vendor/ride/person/chat/profile redesign by Claude — GitHub CI green (analyze, 82 tests, web build). Deploy with `CLAUDE_DEPLOY.bat` after the user approves; see section 6a |
+| Current app work | 1.3.0+5 Vendor/ride/person/chat/profile redesign by Claude — CI green (analyze, 82 tests, web build), on `main` as `9f93ea5` and **deployed to Firebase Hosting 2026-09-26 20:32 JST** via `CLAUDE_DEPLOY.bat`; the user checks the live app; see section 6a |
 
 The older [CODEX_HANDOFF.md](CODEX_HANDOFF.md) and [CHANGE_REVIEW.md](CHANGE_REVIEW.md) retain investigation history. Old statements that main is outdated, PR #2 is unmerged, deployment has not happened, or a rules check still blocks release are historical. Use this checkpoint for current state.
 
