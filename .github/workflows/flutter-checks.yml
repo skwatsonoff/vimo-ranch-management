@@ -38,7 +38,45 @@ jobs:
       - name: Test
         id: test
         continue-on-error: true
-        run: flutter test --no-pub -r github
+        run: |
+          set -o pipefail
+          flutter test --no-pub -r json > test.json
+      - name: Report test failures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          names, errors, prints, passed, failed = {}, {}, {}, 0, 0
+          for line in open('test.json', encoding='utf-8'):
+              try:
+                  e = json.loads(line)
+              except Exception:
+                  continue
+              t = e.get('type')
+              if t == 'testStart':
+                  names[e['test']['id']] = e['test']['name']
+              elif t == 'print':
+                  prints.setdefault(e['testID'], []).append(e.get('message', ''))
+              elif t == 'error':
+                  errors.setdefault(e['testID'], []).append(
+                      (e.get('error', '') + '\n' + e.get('stackTrace', '')))
+              elif t == 'testDone' and not e.get('hidden'):
+                  if e.get('result') == 'success':
+                      passed += 1
+                  else:
+                      failed += 1
+          def esc(s):
+              return s.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          for tid, errs in list(errors.items())[:20]:
+              logged = '\n'.join(prints.get(tid, []))
+              keep = [l for l in logged.splitlines()
+                      if l.strip() and not l.strip().startswith('#')
+                      and 'package:flutter' not in l and '═' not in l][:30]
+              text = '\n'.join(keep) + '\n----\n' + '\n'.join(errs)
+              lines = [l for l in text.splitlines() if l.strip()][:55]
+              print('::error title=' + esc(names.get(tid, str(tid))[:180]) + '::' + esc('\n'.join(lines)[:3500]))
+          print(f'::notice::Tests passed={passed} failed={failed}')
+          PY
       - name: Build web
         id: build
         continue-on-error: true
