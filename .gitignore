@@ -41,6 +41,7 @@ migrate_working_dir/
 /VIMO_WEB_APP_*_SOURCE/
 /VIMO_WEB_APP_*_SOURCE.zip
 /VIMO_WEB_APP_SOURCE.zip
+/_claude_backup_2026-09-26/
 
 # Symbolication related
 app.*.symbols

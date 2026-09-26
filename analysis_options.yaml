@@ -13,6 +13,8 @@ analyzer:
   exclude:
     # Local emulator/CLI dependencies contain standalone Dart example projects.
     - tmp/**
+    # Recovery copies are not part of the application's source libraries.
+    - _claude_backup_2026-09-26/**
 
 linter:
   # The lint rules applied to this project can be customized in the

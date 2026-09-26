@@ -371,7 +371,7 @@ void main() {
     push(ctx, const VendorPersonForm());
     await tester.pumpAndSettle();
     final field = find.byWidgetPredicate(
-      (w) => w is TextFormField && w.controller?.text == '60.0',
+      (w) => w is TextFormField && w.controller?.text == '60',
     );
     await tester.scrollUntilVisible(
       field,

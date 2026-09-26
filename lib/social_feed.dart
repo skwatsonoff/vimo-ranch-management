@@ -9,39 +9,60 @@ class SocialPostRecord {
       FirebaseFirestore.instance.collection('social_posts').doc(id);
 }
 
-dynamic decodeSocialField(Map<String, dynamic> field) {
+dynamic decodeSocialField(dynamic value) {
+  // One malformed field must not break the whole feed.
+  if (value is! Map) return null;
+  final field = value;
   if (field.containsKey('timestampValue')) {
-    return Timestamp.fromDate(
-      DateTime.parse(field['timestampValue'] as String),
-    );
+    final time = DateTime.tryParse('${field['timestampValue']}');
+    return time == null ? null : Timestamp.fromDate(time);
   }
   if (field.containsKey('integerValue')) {
-    return int.parse('${field['integerValue']}');
+    return int.tryParse('${field['integerValue']}');
   }
-  if (field.containsKey('doubleValue')) return field['doubleValue'];
-  if (field.containsKey('booleanValue')) return field['booleanValue'];
-  if (field.containsKey('stringValue')) return field['stringValue'];
+  if (field.containsKey('doubleValue')) {
+    final value = field['doubleValue'];
+    final number = value is num ? value.toDouble() : double.tryParse('$value');
+    return number != null && number.isFinite ? number : null;
+  }
+  if (field.containsKey('booleanValue')) {
+    return field['booleanValue'] is bool ? field['booleanValue'] : null;
+  }
+  if (field.containsKey('stringValue')) {
+    return field['stringValue'] is String ? field['stringValue'] : null;
+  }
   if (field.containsKey('arrayValue')) {
-    final values = (field['arrayValue'] as Map<String, dynamic>)['values'];
+    final array = field['arrayValue'];
+    final values = array is Map ? array['values'] : null;
     return values is List
-        ? [
-            for (final value in values)
-              decodeSocialField(Map<String, dynamic>.from(value as Map)),
-          ]
+        ? [for (final value in values) decodeSocialField(value)]
         : <dynamic>[];
   }
   if (field.containsKey('mapValue')) {
-    final fields = (field['mapValue'] as Map<String, dynamic>)['fields'];
+    final map = field['mapValue'];
+    final fields = map is Map ? map['fields'] : null;
     return fields is Map
         ? {
             for (final entry in fields.entries)
-              '${entry.key}': decodeSocialField(
-                Map<String, dynamic>.from(entry.value as Map),
-              ),
+              '${entry.key}': decodeSocialField(entry.value),
           }
         : <String, dynamic>{};
   }
   return null;
+}
+
+SocialPostRecord? decodeSocialPost(dynamic row) {
+  if (row is! Map || row['document'] is! Map) return null;
+  final document = row['document'] as Map;
+  final name = document['name'];
+  if (name is! String || name.split('/').last.isEmpty) return null;
+  final fields = document['fields'];
+  return SocialPostRecord(name.split('/').last, {
+    if (fields is Map)
+      for (final entry in fields.entries)
+        if (entry.key is String)
+          entry.key as String: decodeSocialField(entry.value),
+  });
 }
 
 /// Scheduled-post visibility is evaluated at each HTTP request's server time.
@@ -70,16 +91,25 @@ class SocialFeed {
     // createdAt <= deviceNow broader than the rules' request.time permission.
     String? publishedThrough;
     if (!own) {
-      final clockResponse = await http.post(
-        Uri.parse('$host/v1/$documentsPath:batchGet'),
-        headers: headers,
-        body: jsonEncode({'documents': ['$documentsPath/users/${user.uid}']}),
-      ).timeout(CloudSyncService.networkTimeout);
+      final clockResponse = await http
+          .post(
+            Uri.parse('$host/v1/$documentsPath:batchGet'),
+            headers: headers,
+            body: jsonEncode({
+              'documents': ['$documentsPath/users/${user.uid}'],
+            }),
+          )
+          .timeout(CloudSyncService.networkTimeout);
       if (clockResponse.statusCode != 200) {
         throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
       }
       final clockRows = jsonDecode(clockResponse.body) as List<dynamic>;
-      publishedThrough = clockRows.first['readTime'] as String;
+      publishedThrough = clockRows.isEmpty
+          ? null
+          : clockRows.first['readTime'] as String?;
+      if (publishedThrough == null) {
+        throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+      }
     }
     final filters = <Map<String, dynamic>>[
       if (authorUid != null)
@@ -95,17 +125,13 @@ class SocialFeed {
           'fieldFilter': {
             'field': {'fieldPath': 'createdAt'},
             'op': 'LESS_THAN_OR_EQUAL',
-            'value': {
-              'timestampValue': publishedThrough,
-            },
+            'value': {'timestampValue': publishedThrough},
           },
         },
     ];
     final response = await http
         .post(
-          Uri.parse(
-            '$host/v1/$documentsPath:runQuery',
-          ),
+          Uri.parse('$host/v1/$documentsPath:runQuery'),
           headers: headers,
           body: jsonEncode({
             'structuredQuery': {
@@ -142,18 +168,7 @@ class SocialFeed {
     final rows = jsonDecode(response.body) as List<dynamic>;
     return [
       for (final row in rows)
-        if (row['document'] != null)
-          SocialPostRecord(
-            (row['document']['name'] as String).split('/').last,
-            {
-              for (final entry
-                  in (row['document']['fields'] as Map<String, dynamic>)
-                      .entries)
-                entry.key: decodeSocialField(
-                  entry.value as Map<String, dynamic>,
-                ),
-            },
-          ),
+        if (decodeSocialPost(row) case final post?) post,
     ];
   }
 }

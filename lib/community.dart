@@ -47,8 +47,13 @@ class _MentionInputState extends State<MentionInput> {
   void _changed() {
     _timer?.cancel();
     final selection = widget.controller.selection;
-    final cursor = selection.isValid ? selection.baseOffset : widget.controller.text.length;
-    final before = widget.controller.text.substring(0, cursor.clamp(0, widget.controller.text.length));
+    final cursor = selection.isValid
+        ? selection.baseOffset
+        : widget.controller.text.length;
+    final before = widget.controller.text.substring(
+      0,
+      cursor.clamp(0, widget.controller.text.length),
+    );
     final match = RegExp(r'(?:^|\s)@([a-zA-Z0-9_]*)$').firstMatch(before);
     if (match == null) {
       if (_people.isNotEmpty) setState(() => _people = const []);
@@ -65,20 +70,47 @@ class _MentionInputState extends State<MentionInput> {
       final db = FirebaseFirestore.instance;
       final ids = <String>{};
       if (widget.ranchOnly && CloudSyncService.ready) {
-        final members = await CloudSyncService.ranch.collection('members').limit(40).get();
-        ids.addAll(members.docs.where((d) => d.data()['active'] != false).map((d) => d.id));
+        final members = await CloudSyncService.ranch
+            .collection('members')
+            .limit(40)
+            .get();
+        ids.addAll(
+          members.docs
+              .where((d) => d.data()['active'] != false)
+              .map((d) => d.id),
+        );
       } else {
-        final following = await db.collection('profiles').doc(signedInUid).collection('following').limit(40).get();
-        final followers = await db.collection('profiles').doc(signedInUid).collection('followers').limit(40).get();
+        final following = await db
+            .collection('profiles')
+            .doc(signedInUid)
+            .collection('following')
+            .limit(40)
+            .get();
+        final followers = await db
+            .collection('profiles')
+            .doc(signedInUid)
+            .collection('followers')
+            .limit(40)
+            .get();
         ids.addAll([...following.docs, ...followers.docs].map((d) => d.id));
-        final search = await db.collection('profiles').orderBy('username').startAt([query]).endAt(['$query\uf8ff']).limit(12).get();
+        final search = await db
+            .collection('profiles')
+            .orderBy('username')
+            .startAt([query])
+            .endAt(['$query\uf8ff'])
+            .limit(12)
+            .get();
         ids.addAll(search.docs.map((d) => d.id));
       }
       ids.remove(signedInUid);
-      final docs = await Future.wait(ids.take(40).map((id) => db.collection('profiles').doc(id).get()));
+      final docs = await Future.wait(
+        ids.take(40).map((id) => db.collection('profiles').doc(id).get()),
+      );
       final people = <Map<String, dynamic>>[
         for (final doc in docs)
-          if (doc.exists && (query.isEmpty || txt(doc.data()!, 'username').toLowerCase().contains(query)))
+          if (doc.exists &&
+              (query.isEmpty ||
+                  txt(doc.data()!, 'username').toLowerCase().contains(query)))
             {...doc.data()!, 'uid': doc.id},
       ]..sort((a, b) => txt(a, 'username').compareTo(txt(b, 'username')));
       if (mounted) setState(() => _people = people.take(5).toList());
@@ -91,7 +123,9 @@ class _MentionInputState extends State<MentionInput> {
     final username = txt(person, 'username');
     if (username.isEmpty || _start < 0) return;
     final value = widget.controller.value;
-    final cursor = value.selection.isValid ? value.selection.baseOffset : value.text.length;
+    final cursor = value.selection.isValid
+        ? value.selection.baseOffset
+        : value.text.length;
     final text = value.text.replaceRange(_start, cursor, '$username ');
     widget.controller.value = TextEditingValue(
       text: text,
@@ -113,7 +147,9 @@ class _MentionInputState extends State<MentionInput> {
         minLines: widget.minLines,
         maxLines: widget.maxLines,
         maxLength: widget.maxLength,
-        buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+        buildCounter:
+            (_, {required currentLength, required isFocused, maxLength}) =>
+                null,
         textCapitalization: TextCapitalization.sentences,
         decoration: InputDecoration(hintText: widget.hint),
       ),
@@ -128,8 +164,13 @@ class _MentionInputState extends State<MentionInput> {
                 ListTile(
                   dense: true,
                   leading: profileAvatar(txt(person, 'photo'), radius: 18),
-                  title: Text(txt(person, 'displayName', txt(person, 'username'))),
-                  subtitle: Text(txt(person, 'username'), style: const TextStyle(color: Ink.violetDeep)),
+                  title: Text(
+                    txt(person, 'displayName', txt(person, 'username')),
+                  ),
+                  subtitle: Text(
+                    txt(person, 'username'),
+                    style: const TextStyle(color: Ink.violetDeep),
+                  ),
                   onTap: () => _select(person),
                 ),
             ],
@@ -143,7 +184,12 @@ class MentionText extends StatelessWidget {
   final String text;
   final List<dynamic> mentions;
   final TextStyle? style;
-  const MentionText(this.text, {super.key, this.mentions = const [], this.style});
+  const MentionText(
+    this.text, {
+    super.key,
+    this.mentions = const [],
+    this.style,
+  });
   @override
   Widget build(BuildContext context) {
     final byName = <String, String>{
@@ -152,22 +198,36 @@ class MentionText extends StatelessWidget {
           txt(asMap(raw), 'username'): txt(asMap(raw), 'uid'),
     };
     if (byName.isEmpty) return Text(text, style: style);
-    final names = byName.keys.toList()..sort((a, b) => b.length.compareTo(a.length));
+    final names = byName.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
     final pattern = RegExp('\\b(${names.map(RegExp.escape).join('|')})\\b');
     final spans = <TextSpan>[];
     var end = 0;
     for (final match in pattern.allMatches(text)) {
-      if (match.start > end) spans.add(TextSpan(text: text.substring(end, match.start)));
+      if (match.start > end)
+        spans.add(TextSpan(text: text.substring(end, match.start)));
       final name = match.group(0)!;
-      spans.add(TextSpan(
-        text: name,
-        style: const TextStyle(color: Ink.violetDeep, fontWeight: FontWeight.w700),
-        recognizer: TapGestureRecognizer()..onTap = () => push(context, SocialProfileScreen(uid: byName[name]!)),
-      ));
+      spans.add(
+        TextSpan(
+          text: name,
+          style: const TextStyle(
+            color: Ink.violetDeep,
+            fontWeight: FontWeight.w700,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () =>
+                push(context, SocialProfileScreen(uid: byName[name]!)),
+        ),
+      );
       end = match.end;
     }
     if (end < text.length) spans.add(TextSpan(text: text.substring(end)));
-    return RichText(text: TextSpan(style: DefaultTextStyle.of(context).style.merge(style), children: spans));
+    return RichText(
+      text: TextSpan(
+        style: DefaultTextStyle.of(context).style.merge(style),
+        children: spans,
+      ),
+    );
   }
 }
 
@@ -281,16 +341,30 @@ class PublicRanchView extends StatelessWidget {
           trailing: own
               ? SegmentedButton<bool>(
                   segments: const [
-                    ButtonSegment(value: false, icon: Icon(CupertinoIcons.list_bullet)),
-                    ButtonSegment(value: true, icon: Icon(CupertinoIcons.square_grid_2x2)),
+                    ButtonSegment(
+                      value: false,
+                      icon: Icon(CupertinoIcons.list_bullet),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      icon: Icon(CupertinoIcons.square_grid_2x2),
+                    ),
                   ],
                   selected: {grid},
                   showSelectedIcon: false,
                   onSelectionChanged: (value) async {
-                    await FirebaseFirestore.instance.collection('profiles').doc(uid).set({
-                      'ranchLayout': value.first ? 'grid' : 'list',
-                      'updatedAt': FieldValue.serverTimestamp(),
-                    }, SetOptions(merge: true));
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('profiles')
+                          .doc(uid)
+                          .set({
+                            'ranchLayout': value.first ? 'grid' : 'list',
+                            'updatedAt': FieldValue.serverTimestamp(),
+                          }, SetOptions(merge: true))
+                          .timeout(CloudSyncService.networkTimeout);
+                    } catch (e) {
+                      if (context.mounted) snack(context, accountError(e));
+                    }
                   },
                 )
               : null,
@@ -327,7 +401,8 @@ class PublicRanchView extends StatelessWidget {
                         socialPhotoBytes(photo),
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
-                        errorBuilder: (_, _, _) => const Center(child: CowMark(size: 50)),
+                        errorBuilder: (_, _, _) =>
+                            const Center(child: CowMark(size: 50)),
                       ),
               );
               if (grid) {
@@ -336,10 +411,25 @@ class PublicRanchView extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: SizedBox(width: double.infinity, child: portrait)),
+                      Expanded(
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: portrait,
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      Text(txt(cow.data(), 'name'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text(txt(cow.data(), 'breed'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Ink.muted, fontSize: 12)),
+                      Text(
+                        txt(cow.data(), 'name'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        txt(cow.data(), 'breed'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Ink.muted, fontSize: 12),
+                      ),
                     ],
                   ),
                 );
@@ -350,14 +440,29 @@ class PublicRanchView extends StatelessWidget {
                   children: [
                     SizedBox(width: 76, height: 76, child: portrait),
                     const SizedBox(width: 14),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(txt(cow.data(), 'name'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                      Text(txt(cow.data(), 'breed'), style: const TextStyle(color: Ink.muted)),
-                    ])),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            txt(cow.data(), 'name'),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            txt(cow.data(), 'breed'),
+                            style: const TextStyle(color: Ink.muted),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               );
             }
+
             if (grid) {
               return GridView.builder(
                 shrinkWrap: true,
@@ -372,10 +477,15 @@ class PublicRanchView extends StatelessWidget {
                 itemBuilder: (_, index) => cowCard(snapshot.data!.docs[index]),
               );
             }
-            return Column(children: [
-              for (final cow in snapshot.data!.docs)
-                Padding(padding: const EdgeInsets.only(bottom: 12), child: cowCard(cow)),
-            ]);
+            return Column(
+              children: [
+                for (final cow in snapshot.data!.docs)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: cowCard(cow),
+                  ),
+              ],
+            );
           },
         ),
       ],
@@ -666,20 +776,26 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
             .snapshots(),
         builder: (context, snap) {
           final data = snap.data?.data() ?? const <String, dynamic>{};
-          final displayName = txt(data, 'displayName', txt(data, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')));
+          final displayName = txt(
+            data,
+            'displayName',
+            txt(data, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')),
+          );
           return ListTile(
-          leading: profileAvatar(
-            txt(data, 'photo'),
-            radius: 23,
-          ),
-          title: Text(displayName),
-          subtitle: Text(
-            ranchMember ? bi('Ranch member', 'பண்ணை உறுப்பினர்') : txt(data, 'username'),
-            style: const TextStyle(color: Ink.violetDeep, fontWeight: FontWeight.w600),
-          ),
-          trailing: const Icon(CupertinoIcons.chat_bubble),
-          onTap: () => _open(uid),
-        );
+            leading: profileAvatar(txt(data, 'photo'), radius: 23),
+            title: Text(displayName),
+            subtitle: Text(
+              ranchMember
+                  ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
+                  : txt(data, 'username'),
+              style: const TextStyle(
+                color: Ink.violetDeep,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            trailing: const Icon(CupertinoIcons.chat_bubble),
+            onTap: () => _open(uid),
+          );
         },
       );
   @override
@@ -773,10 +889,23 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                                   Scaffold(
                                     appBar: AppBar(
                                       title: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          Text(bi('Chat', 'அரட்டை'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                                          Text(farmName(), style: const TextStyle(fontSize: 11, color: Ink.violetDeep)),
+                                          Text(
+                                            bi('Chat', 'அரட்டை'),
+                                            style: const TextStyle(
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          Text(
+                                            farmName(),
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Ink.violetDeep,
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -785,7 +914,10 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                                 ),
                               ),
                             for (final uid in personal)
-                              _person(uid, ranchMember: memberIds.contains(uid)),
+                              _person(
+                                uid,
+                                ranchMember: memberIds.contains(uid),
+                              ),
                             if (personal.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.all(24),
@@ -895,12 +1027,18 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     appBar: AppBar(
       titleSpacing: 0,
       title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('profiles').doc(widget.peer).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(widget.peer)
+            .snapshots(),
         builder: (context, profile) {
           final data = profile.data?.data() ?? const <String, dynamic>{};
           return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: CloudSyncService.ready
-                ? CloudSyncService.ranch.collection('members').doc(widget.peer).snapshots()
+                ? CloudSyncService.ranch
+                      .collection('members')
+                      .doc(widget.peer)
+                      .snapshots()
                 : null,
             builder: (context, member) => Row(
               children: [
@@ -910,12 +1048,29 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(txt(data, 'displayName', txt(data, 'username', bi('Chat', 'அரட்டை'))), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                       Text(
-                        member.data?.exists == true ? bi('Ranch member', 'பண்ணை உறுப்பினர்') : txt(data, 'username'),
+                        txt(
+                          data,
+                          'displayName',
+                          txt(data, 'username', bi('Chat', 'அரட்டை')),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: Ink.violetDeep),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        member.data?.exists == true
+                            ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
+                            : txt(data, 'username'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Ink.violetDeep,
+                        ),
                       ),
                     ],
                   ),
@@ -1008,7 +1163,13 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                       controller: _text,
                       enabled: !_busy,
                       maxLength: 2000,
-                      buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                      buildCounter:
+                          (
+                            _, {
+                            required currentLength,
+                            required isFocused,
+                            maxLength,
+                          }) => null,
                       minLines: 1,
                       maxLines: 4,
                       decoration: fieldStyle(bi('Message', 'செய்தி')),
