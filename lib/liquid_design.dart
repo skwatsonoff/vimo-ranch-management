@@ -451,7 +451,11 @@ class GlassPortrait extends StatelessWidget {
                               Color(0x14FFF3E0),
                               Color(0x59FFF1D6),
                             ]
-                          : const [Color(0x00FFFFFF), Color(0x33FFFFFF)],
+                          : const [
+                              Color(0x00FFFFFF),
+                              Color(0x14FFFFFF),
+                              Color(0x33FFFFFF),
+                            ],
                       stops: const [.45, .7, 1],
                     ),
                   ),

@@ -1072,7 +1072,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                             ? bi('Milk provider', 'பால் வழங்குநர்')
                             : bi('Milk buyer', 'பால் வாங்குபவர்'),
                       ),
-                      size: 196,
+                      size: 164,
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -1081,6 +1081,13 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      if (due > .001)
+                        _InfoChip(
+                          icon: CupertinoIcons.money_dollar_circle_fill,
+                          label:
+                              '${supplier ? bi('To pay', 'கொடுக்க') : bi('To collect', 'பெற')} ${money(due)}',
+                          color: supplier ? Ink.amberText : Ink.redText,
+                        ),
                       _InfoChip(
                         icon: supplier
                             ? CupertinoIcons.arrow_down_circle
@@ -1131,49 +1138,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 18),
-                  Glass(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 16,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _PersonStat(
-                            label: due > .001
-                                ? supplier
-                                      ? bi('To pay', 'கொடுக்கவேண்டியது')
-                                      : bi('To collect', 'பெறவேண்டியது')
-                                : bi('Balance', 'நிலுவை'),
-                            value: due > .001
-                                ? money(due)
-                                : bi('Settled', 'தீர்ந்தது'),
-                            color: due > .001
-                                ? supplier
-                                      ? Ink.amberText
-                                      : Ink.redText
-                                : Ink.greenText,
-                          ),
-                        ),
-                        const _StatDivider(),
-                        Expanded(
-                          child: _PersonStat(
-                            label: bi('This month', 'இந்த மாதம்'),
-                            value: '${vendorFieldNumber(monthLitres)} L',
-                          ),
-                        ),
-                        const _StatDivider(),
-                        Expanded(
-                          child: _PersonStat(
-                            label: bi('Price / L', 'விலை / லி'),
-                            value: money(numv(p, 'price', defaultMilkPrice())),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   if (canRecordEntries) ...[
                     SegmentedButton<bool>(
                       showSelectedIcon: false,
@@ -1226,7 +1191,29 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (entryTotal > 0)
+                    ],
+                    TextField(
+                      controller: _paid,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: fieldStyle(
+                        _payment
+                            ? supplier
+                                  ? bi('Amount paid', 'செலுத்திய தொகை')
+                                  : bi('Amount received', 'பெற்ற தொகை')
+                            : bi(
+                                supplier
+                                    ? 'Amount paid now (0 for later)'
+                                    : 'Amount received now (0 for later)',
+                                supplier
+                                    ? 'இப்போது செலுத்தியது (பிறகு என்றால் 0)'
+                                    : 'இப்போது பெற்றது (பிறகு என்றால் 0)',
+                              ),
+                      ),
+                    ),
+                    if (!_payment && entryTotal > 0) ...[
+                      const SizedBox(height: 12),
                         Glass(
                           radius: 22,
                           padding: const EdgeInsets.all(16),
@@ -1262,28 +1249,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                             ],
                           ),
                         ),
-                      const SizedBox(height: 12),
                     ],
-                    TextField(
-                      controller: _paid,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: fieldStyle(
-                        _payment
-                            ? supplier
-                                  ? bi('Amount paid', 'செலுத்திய தொகை')
-                                  : bi('Amount received', 'பெற்ற தொகை')
-                            : bi(
-                                supplier
-                                    ? 'Amount paid now (0 for later)'
-                                    : 'Amount received now (0 for later)',
-                                supplier
-                                    ? 'இப்போது செலுத்தியது (பிறகு என்றால் 0)'
-                                    : 'இப்போது பெற்றது (பிறகு என்றால் 0)',
-                              ),
-                      ),
-                    ),
                     const SizedBox(height: 20),
                     LiquidButton(
                       label: bi('Save entry', 'பதிவைச் சேமி'),
@@ -1293,7 +1259,49 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                       onPressed: _busy ? null : () => _save(p, supplier),
                     ),
                   ],
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 28),
+                  Glass(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 16,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _PersonStat(
+                            label: due > .001
+                                ? supplier
+                                      ? bi('To pay', 'கொடுக்கவேண்டியது')
+                                      : bi('To collect', 'பெறவேண்டியது')
+                                : bi('Balance', 'நிலுவை'),
+                            value: due > .001
+                                ? money(due)
+                                : bi('Settled', 'தீர்ந்தது'),
+                            color: due > .001
+                                ? supplier
+                                      ? Ink.amberText
+                                      : Ink.redText
+                                : Ink.greenText,
+                          ),
+                        ),
+                        const _StatDivider(),
+                        Expanded(
+                          child: _PersonStat(
+                            label: bi('This month', 'இந்த மாதம்'),
+                            value: '${vendorFieldNumber(monthLitres)} L',
+                          ),
+                        ),
+                        const _StatDivider(),
+                        Expanded(
+                          child: _PersonStat(
+                            label: bi('Price / L', 'விலை / லி'),
+                            value: money(numv(p, 'price', defaultMilkPrice())),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                   Text(
                     bi('History', 'பரிவர்த்தனைகள்'),
                     style: const TextStyle(
@@ -1441,7 +1449,12 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _InfoChip({required this.icon, required this.label});
+  final Color color;
+  const _InfoChip({
+    required this.icon,
+    required this.label,
+    this.color = Ink.body,
+  });
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -1454,17 +1467,21 @@ class _InfoChip extends StatelessWidget {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 15, color: Ink.violetDeep),
+        Icon(
+          icon,
+          size: 15,
+          color: color == Ink.body ? Ink.violetDeep : color,
+        ),
         const SizedBox(width: 6),
         Flexible(
           child: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Ink.body,
+              color: color,
             ),
           ),
         ),
