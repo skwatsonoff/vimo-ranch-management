@@ -256,10 +256,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     if (on && kind != 'Market') {
       final home = workspaceTabs(kind).first;
       if (!order.contains(home)) {
-        final replaceable = order.lastIndexWhere(
-          (t) => t != workspaceTabs(purpose).first,
-        );
-        if (replaceable >= 0) order[replaceable] = home;
+        order.insert(math.min(1, order.length), home);
+        while (order.length > navigationSlots) {
+          order.removeLast();
+        }
       }
     }
     setState(() {
