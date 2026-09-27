@@ -427,7 +427,11 @@ class GlassPortrait extends StatelessWidget {
                     shaderCallback: (rect) => const LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.transparent, Colors.black],
+                      colors: [
+                        Colors.transparent,
+                        Colors.transparent,
+                        Colors.black,
+                      ],
                       stops: [0, .5, .76],
                     ).createShader(rect),
                     child: ImageFiltered(

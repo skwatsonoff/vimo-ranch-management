@@ -272,9 +272,24 @@ void main() {
           .first;
       await tester.runAsync(() async {
         await tester.drag(card, const Offset(160, 0));
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        // Wait for the real asynchronous save rather than a fixed delay, which
+        // is too short when the whole suite runs in parallel.
+        for (var i = 0; i < 60; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (vendorPersonDue('Kumar', vendorRows('vendor_entries')) == 0) {
+            break;
+          }
+        }
       });
       await tester.pump(const Duration(milliseconds: 500));
+      // The ride updates its own state after the save completes; give that
+      // continuation real time too before checking the row.
+      for (var i = 0; i < 30 && find.text('Received').evaluate().isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       expect(find.text('Received'), findsOneWidget);
       expect(vendorMilkBalance(vendorRows('vendor_entries')), 7);
       expect(vendorPersonDue('Kumar', vendorRows('vendor_entries')), 0);

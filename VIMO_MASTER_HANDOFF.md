@@ -272,6 +272,27 @@ Validation: GitHub Actions `Flutter checks` (new workflow `.github/workflows/flu
 
 Deploy: `CLAUDE_DEPLOY.bat` in the laptop project clones GitHub `main` into `%TEMP%\vimo_release`, builds web and runs `firebase deploy --only hosting --project my-ranch-sync`; the laptop working tree is not touched. Rules/indexes unchanged.
 
+### 6b. 1.3.1+6 — Chat, vendor reports, ranch pages, animation and social fixes (Claude, 2026-09-27)
+
+| Area | Delivered | Files |
+| --- | --- | --- |
+| Chat alignment | Bubbles align right (mine) / left (others) instead of centring | interface.dart `AppleBubble` |
+| Own chat notifications | Ranch-wide notifications are hidden from their author (bell, history, browser) | main.dart `notificationForMe` |
+| Direct chat | Larger header avatar/name, larger message text | community.dart, interface.dart |
+| Calculations | "1 L × ₹60" formulas removed (person entry total, history rows, ride quick edit) | business.dart, vendor_ride.dart |
+| Person page | Empty app-bar row removed; back/edit sit beside the portrait | business.dart `VendorPersonScreen` |
+| Vendor reports | Redesigned: profit/loss card, milk in / delivered tiles, date-grouped entries with icons, export icon | ranch_inventory.dart `VendorOnlyReports` |
+| Sell / Stock / Reports | Duplicate left headings removed, content moved up; Reports export in the app bar | main.dart `SellScreen`, `ReportsScreen` |
+| Net result | Income left, expense right under the bar; bar clip fixed | main.dart `ProfitBar` |
+| Top-3 cows | Animation controllers were never started; now 7 s seamless loops, painter-only repaints, paused on hidden tabs and reduced motion | main.dart `RankedCowCard`, `AnimalAvatar`, painters |
+| Social | Own posts have no "not interested"; background upload with top progress bar; pull to refresh; "N new posts" pill (light id-only poll every 60 s); feed reloads after posting | social.dart, social_feed.dart |
+| Photos | Tap post photo / profile photo for full view (pinch, double-tap zoom); post photos: ⋮ → Save photo (iPhone share sheet → Save Image; other browsers download) | social.dart `SocialPhotoViewer`, web_runtime_web.dart |
+| Comment threads | Threads-style replies with connector lines; reply parent stored as a `replyTo` entry in `mentions` (no rules change) | social.dart |
+| Follow | Follow → Unfollow button, "Follows you" tag, follower notification (device-local, while the app is open or on next launch) | social_profile.dart |
+| Calf icon | Small `CowMark` sizes draw the art once (thin lines) | main.dart `CowMark` |
+
+Validation: analyze no errors/warnings; 88/88 tests (new `test/ui_fixes_test.dart`; ride test now waits for the real async save). Rules/indexes unchanged — hosting deploy only.
+
 ## 7. Open items, limitations and questions
 
 | Item | Actual state / next action if requested |

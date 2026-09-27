@@ -969,7 +969,7 @@ class _ConversationViewState extends State<_ConversationView> {
                   : const [],
               mentionColor: mine ? Colors.white : Ink.violetDeep,
               style: TextStyle(
-                fontSize: 16.5,
+                fontSize: 17.5,
                 height: 1.3,
                 color: mine ? Colors.white : Ink.navy,
               ),
@@ -1319,7 +1319,10 @@ class _ConversationViewState extends State<_ConversationView> {
                                   tooltip: ui('Assign'),
                                   onPressed: _sending
                                       ? null
-                                      : () => push(context, const TaskComposerScreen()),
+                                      : () => push(
+                                          context,
+                                          const TaskComposerScreen(),
+                                        ),
                                   icon: const Icon(
                                     CupertinoIcons.checkmark_square,
                                     size: 25,
@@ -1698,59 +1701,67 @@ class AppleBubble extends StatelessWidget {
     this.pending = false,
   });
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Column(
-      crossAxisAlignment: mine
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
-      children: [
-        if (sender != null && sender!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(left: 14, bottom: 3),
-            child: Text(
-              sender!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: senderColor,
+  Widget build(BuildContext context) => Align(
+    // Parents such as a date-grouped Column give loose width; without this the
+    // bubble shrinks to its content and ends up centred.
+    alignment: mine
+        ? AlignmentDirectional.centerEnd
+        : AlignmentDirectional.centerStart,
+    child: Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: mine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        children: [
+          if (sender != null && sender!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 14, bottom: 3),
+              child: Text(
+                sender!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: senderColor,
+                ),
               ),
             ),
-          ),
-        Container(
-          constraints: BoxConstraints(
-            maxWidth: math.min(420, MediaQuery.sizeOf(context).width * .76),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: BoxDecoration(
-            gradient: mine
-                ? const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF8C6BFF), Ink.violetDeep],
-                  )
-                : null,
-            color: mine ? null : const Color(0xFFE9E9EB),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(20),
-              topRight: const Radius.circular(20),
-              bottomLeft: Radius.circular(mine ? 20 : 6),
-              bottomRight: Radius.circular(mine ? 6 : 20),
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: math.min(420, MediaQuery.sizeOf(context).width * .76),
             ),
-          ),
-          child: Opacity(opacity: pending ? .7 : 1, child: child),
-        ),
-        if (time.isNotEmpty || pending)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 3, 8, 2),
-            child: Text(
-              pending ? bi('Sending…', 'அனுப்புகிறது…') : time,
-              style: const TextStyle(fontSize: 11, color: Ink.faint),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              gradient: mine
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF8C6BFF), Ink.violetDeep],
+                    )
+                  : null,
+              color: mine ? null : const Color(0xFFE9E9EB),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(20),
+                topRight: const Radius.circular(20),
+                bottomLeft: Radius.circular(mine ? 20 : 6),
+                bottomRight: Radius.circular(mine ? 6 : 20),
+              ),
             ),
+            child: Opacity(opacity: pending ? .7 : 1, child: child),
           ),
-      ],
+          if (time.isNotEmpty || pending)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 3, 8, 2),
+              child: Text(
+                pending ? bi('Sending…', 'அனுப்புகிறது…') : time,
+                style: const TextStyle(fontSize: 12, color: Ink.faint),
+              ),
+            ),
+        ],
+      ),
     ),
   );
 }

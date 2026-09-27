@@ -1158,9 +1158,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                               : CupertinoIcons.play_fill,
                           height: 56,
                           radius: 28,
-                          start: _active
-                              ? const Color(0xFFFF7A85)
-                              : Ink.violet,
+                          start: _active ? const Color(0xFFFF7A85) : Ink.violet,
                           end: _active ? Ink.red : Ink.violetDeep,
                           onPressed: _busy || !canRecordEntries
                               ? null
@@ -1318,7 +1316,9 @@ class _VendorRideScreenState extends State<VendorRideScreen>
   }
 
   Future<void> _customize() async {
-    await _open(VendorCustomizeScreen(volume: _volume, storageKey: _storageKey));
+    await _open(
+      VendorCustomizeScreen(volume: _volume, storageKey: _storageKey),
+    );
     if (mounted) {
       setState(
         () => _volume =
@@ -1344,7 +1344,9 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         ? null
                         : () => _open(const VendorPersonForm(kind: 'supplier')),
                     icon: const Icon(CupertinoIcons.add_circled),
-                    label: Text(bi('Add milk provider', 'பால் வழங்குநரைச் சேர்')),
+                    label: Text(
+                      bi('Add milk provider', 'பால் வழங்குநரைச் சேர்'),
+                    ),
                   ),
                 )
               : ListView.separated(
@@ -1477,7 +1479,8 @@ class _VendorRideScreenState extends State<VendorRideScreen>
   List<Widget> _rideList(List<Map<String, dynamic>> rows) {
     final finished = _stops
         .where(
-          (p) => _done.contains(txt(p, 'id')) || _skipped.contains(txt(p, 'id')),
+          (p) =>
+              _done.contains(txt(p, 'id')) || _skipped.contains(txt(p, 'id')),
         )
         .toList();
     final current = _current;
@@ -1631,7 +1634,9 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     final id = txt(p, 'id');
     final current = !preview && _active && _current?['id'] == id;
     final edit = current && _editing == id;
-    final qty = _active ? numv(p, 'quantity') : vendorUsualQuantity(p, _session, rows),
+    final qty = _active
+            ? numv(p, 'quantity')
+            : vendorUsualQuantity(p, _session, rows),
         price = numv(p, 'price', defaultMilkPrice());
     final amount = qty * price, due = vendorPersonDue(id, rows);
     final payDate = vendorPaymentDate(p, _active ? _date : DateTime.now());
@@ -1802,12 +1807,9 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       Padding(
         padding: const EdgeInsets.fromLTRB(6, 8, 6, 12),
         child: Text(
-          '${vendorFieldNumber(litres)} L × ${money(price)} = ${money(litres * price)}'
+          '${bi('Amount', 'தொகை')} ${money(litres * price)}'
           '${due > 0.001 ? '  ·  ${bi('Due', 'நிலுவை')} ${money(due)}' : ''}',
-          style: const TextStyle(
-            color: Ink.body,
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(color: Ink.body, fontWeight: FontWeight.w600),
         ),
       ),
       Row(
@@ -1938,11 +1940,7 @@ class _MilkFlow extends StatelessWidget {
     ),
     child: Text(
       label,
-      style: TextStyle(
-        color: color,
-        fontWeight: FontWeight.w700,
-        fontSize: 13,
-      ),
+      style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13),
     ),
   );
 }
@@ -2026,10 +2024,7 @@ class _ProviderBubble extends StatelessWidget {
               p == null ? label : txt(p, 'name'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
             if (p != null)
               Text(
@@ -2625,7 +2620,8 @@ class VendorRideSummary extends StatelessWidget {
     final top = people.where((p) => score(p) >= 0).firstOrNull;
     // Customers served on credit this ride, with the day they will pay.
     final today = DateTime.now();
-    final later = <({Map<String, dynamic> person, double amount, DateTime on})>[];
+    final later =
+        <({Map<String, dynamic> person, double amount, DateTime on})>[];
     for (final sale in sales) {
       final owed = numv(sale, 'amount') - numv(sale, 'paid');
       if (owed <= .001) continue;
@@ -2643,10 +2639,7 @@ class VendorRideSummary extends StatelessWidget {
       later.add((
         person: person,
         amount: owed,
-        on: vendorPaymentDate(
-          person,
-          today.add(const Duration(days: 1)),
-        ),
+        on: vendorPaymentDate(person, today.add(const Duration(days: 1))),
       ));
     }
     String payDay(DateTime on) {
@@ -2655,6 +2648,7 @@ class VendorRideSummary extends StatelessWidget {
       if (days <= 1) return bi('Pays tomorrow', 'நாளை செலுத்துவார்');
       return '${bi('Pays on', 'செலுத்தும் நாள்')} ${on.day}/${on.month}';
     }
+
     return Scaffold(
       appBar: AppBar(title: Text(bi('Ride summary', 'பயணக் கணக்கு'))),
       body: Shell(
