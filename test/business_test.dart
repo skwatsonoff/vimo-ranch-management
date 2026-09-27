@@ -35,11 +35,20 @@ void main() {
       await savePurpose('Vendor', defaultNavigation('Vendor'));
       expect(navigationOrder().first, 'Vendor');
       expect(purposeChosen, true);
-      await savePurpose('Market', ['Social', 'Chat', 'Vendor', 'Reports']);
-      expect(navigationOrder(), ['Social', 'Chat', 'Vendor', 'Reports']);
+      await savePurpose('Market', ['Social', 'Chat', 'Profile', 'Reports']);
+      expect(navigationOrder(), ['Social', 'Chat', 'Profile', 'Reports']);
       await expectLater(savePurpose('Ranch', ['Ranch']), throwsArgumentError);
+      await expectLater(
+        savePurpose('Market', ['Social', 'Chat', 'Vendor', 'Reports']),
+        throwsArgumentError,
+      );
       expect(navigationOrder().first, 'Social');
-      expect(defaultNavigation('Market').first, 'Vendor');
+      expect(defaultNavigation('Market'), [
+        'Social',
+        'Reports',
+        'Chat',
+        'Profile',
+      ]);
     },
   );
   test(

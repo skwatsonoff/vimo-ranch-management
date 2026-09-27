@@ -1134,7 +1134,7 @@ class _SocialPostState extends State<_SocialPost> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   '${likes.size} ${bi('likes', 'விருப்பங்கள்')}',
                   style: const TextStyle(
                     fontSize: 21,
@@ -1392,8 +1392,8 @@ class _SocialPostState extends State<_SocialPost> {
                         (d) => d.id == FirebaseAuth.instance.currentUser?.uid,
                       ) ??
                       false;
-                  return Wrap(
-                    spacing: 16,
+                  return Row(
+                    spacing: 8,
                     children: [
                       GestureDetector(
                         onLongPress: snapshot.hasData ? _showLikes : null,
@@ -1436,7 +1436,7 @@ class _SocialPostState extends State<_SocialPost> {
                                 : CupertinoIcons.heart,
                             color: liked ? Colors.pink : _blue,
                           ),
-                          label: Text(
+                          label: AppText(
                             '${snapshot.data?.size ?? 0}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
@@ -1461,6 +1461,18 @@ class _SocialPostState extends State<_SocialPost> {
                               color: Ink.body,
                             ),
                           ),
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: bi('Share', 'பகிர்'),
+                        icon: const Icon(
+                          CupertinoIcons.paperplane,
+                          color: _blue,
+                        ),
+                        onPressed: () => showShareSheet(
+                          context,
+                          () async => ShareCard.post(widget.post),
                         ),
                       ),
                     ],

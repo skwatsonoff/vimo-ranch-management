@@ -618,7 +618,7 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                 decoration: fieldStyle(bi('Day of month', 'மாதத்தின் நாள்')),
                 items: [
                   for (var d = 1; d <= 31; d++)
-                    DropdownMenuItem(value: d, child: Text('$d')),
+                    DropdownMenuItem(value: d, child: AppText('$d')),
                 ],
                 onChanged: (d) => setState(() => _monthDay = d!),
               ),
@@ -1198,7 +1198,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                             color: Ink.violetDeep.withValues(alpha: .10),
                             shape: const StadiumBorder(),
                           ),
-                          child: Text(
+                          child: AppText(
                             '${_done.length + _skipped.length}/${_stops.length}',
                             style: const TextStyle(
                               color: Ink.violetDeep,
@@ -1444,7 +1444,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  child: Text(
+                  child: AppText(
                     '${vendorFieldNumber(vendorMilkBalance(rows))} L',
                     style: const TextStyle(
                       fontSize: 34,
@@ -1599,7 +1599,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
           if (!skipped)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: Text(
+              child: AppText(
                 '${vendorFieldNumber(qty)} L',
                 style: const TextStyle(color: Ink.muted),
               ),
@@ -1678,7 +1678,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         color: Ink.violetDeep,
                       ),
                     ),
-                    const Text(
+                    const AppText(
                       ' L',
                       style: TextStyle(
                         fontSize: 13,
@@ -1806,7 +1806,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(6, 8, 6, 12),
-        child: Text(
+        child: AppText(
           '${bi('Amount', 'தொகை')} ${money(litres * price)}'
           '${due > 0.001 ? '  ·  ${bi('Due', 'நிலுவை')} ${money(due)}' : ''}',
           style: const TextStyle(color: Ink.body, fontWeight: FontWeight.w600),
@@ -2515,7 +2515,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx),
-                          child: const Text('OK'),
+                          child: const AppText('OK'),
                         ),
                       ],
                     ),
@@ -2537,7 +2537,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx),
-                          child: const Text('OK'),
+                          child: const AppText('OK'),
                         ),
                       ],
                     ),

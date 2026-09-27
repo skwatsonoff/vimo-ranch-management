@@ -843,8 +843,8 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                 Expanded(
                   child: LiquidSegmentBar(
                     labels: [
-                      bi('Personal chat', 'தனிப்பட்ட அரட்டை'),
-                      bi('Business chat', 'வணிக அரட்டை'),
+                      bi('Personal chat', 'தனிப்பட்ட சாட்'),
+                      bi('Business chat', 'வணிக சாட்'),
                     ],
                     index: _tab,
                     onChanged: (i) => setState(() => _tab = i),
@@ -936,7 +936,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            bi('Chat', 'அரட்டை'),
+                                            bi('Chat', 'சாட்'),
                                             style: const TextStyle(
                                               fontSize: 17,
                                               fontWeight: FontWeight.w700,
@@ -1061,7 +1061,7 @@ class _ChatRow extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        AppText(
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1072,7 +1072,7 @@ class _ChatRow extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
+                        AppText(
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1149,6 +1149,19 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
 
   void _openProfile() => push(context, SocialProfileScreen(uid: widget.peer));
 
+  Widget _messageBody(String text, bool mine) {
+    final shared = ShareCard.decode(text);
+    if (shared != null) return ShareCardBubble(card: shared, mine: mine);
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 18,
+        height: 1.3,
+        color: mine ? Colors.white : Ink.navy,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.white,
@@ -1166,11 +1179,11 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
           final name = txt(
             data,
             'displayName',
-            txt(data, 'username', bi('Chat', 'அரட்டை')),
+            txt(data, 'username', bi('Chat', 'சாட்')),
           );
           return Semantics(
             button: true,
-            label: bi('Open profile', 'சுயவிவரத்தைத் திற'),
+            label: bi('Open profile', 'ப்ரொஃபைலைத் திற'),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _openProfile,
@@ -1256,13 +1269,9 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                         AppleBubble(
                           mine: true,
                           pending: true,
-                          child: Text(
+                          child: _messageBody(
                             txt(asMap(message), 'text'),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              height: 1.3,
-                              color: Colors.white,
-                            ),
+                            true,
                           ),
                         ),
                       for (final d in docs)
@@ -1272,14 +1281,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                             return AppleBubble(
                               mine: mine,
                               time: _clock(d.data()['createdAt']),
-                              child: Text(
-                                txt(d.data(), 'text'),
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  height: 1.3,
-                                  color: mine ? Colors.white : Ink.navy,
-                                ),
-                              ),
+                              child: _messageBody(txt(d.data(), 'text'), mine),
                             );
                           },
                         ),
@@ -1428,26 +1430,28 @@ class MilkOriginScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          Text('${numv(row, 'quantity').toStringAsFixed(2)} L'),
-                          Text('${txt(row, 'date')} · ${txt(row, 'time')}'),
+                          AppText(
+                            '${numv(row, 'quantity').toStringAsFixed(2)} L',
+                          ),
+                          AppText('${txt(row, 'date')} · ${txt(row, 'time')}'),
                           if (purchase)
-                            Text(
+                            AppText(
                               '${bi('Supplier', 'வழங்குநர்')}: ${txt(row, 'personName')}',
                             ),
                           if (!purchase)
-                            Text(
+                            AppText(
                               '${bi('Cow / source', 'மாடு / மூலம்')}: ${txt(source, 'cow', txt(row, 'sourceCow', txt(row, 'personName')))}',
                             ),
                           if (!purchase)
-                            Text(
+                            AppText(
                               '${txt(source, 'date', txt(row, 'sourceDate'))} ${txt(source, 'session', txt(row, 'sourceSession'))}',
                             ),
                           if (purchase)
-                            Text(
+                            AppText(
                               '${bi('Price per litre', 'லிட்டர் விலை')}: ${money(numv(row, 'price'))}',
                             ),
                           if (purchase)
-                            Text(
+                            AppText(
                               '${bi('Total', 'மொத்தம்')}: ${money(numv(row, 'amount'))} · ${bi('Paid', 'செலுத்தியது')}: ${money(numv(row, 'paid'))}',
                             ),
                           if (txt(row, 'notes').isNotEmpty)

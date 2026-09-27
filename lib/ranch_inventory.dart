@@ -433,7 +433,7 @@ class _MoneyLine extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -442,7 +442,7 @@ class _MoneyLine extends StatelessWidget {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Text(
+                child: AppText(
                   value,
                   style: const TextStyle(
                     fontSize: 17,
@@ -484,7 +484,7 @@ class _VendorReportTile extends StatelessWidget {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Text(
+                child: AppText(
                   value,
                   style: const TextStyle(
                     fontSize: 21,
@@ -493,7 +493,7 @@ class _VendorReportTile extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
+              AppText(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

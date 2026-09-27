@@ -6,12 +6,18 @@ bool get tamilUi =>
 String ui(String value) {
   if (value == 'Vaikol') return bi('Straw', 'வைக்கோல்');
   if (value == 'Thavudu') return bi('Bran', 'தவிடு');
-  if (tamilUi) return _tamilLabels[value] ?? localizedAnimalLabel(value);
-  final reverse = {
-    for (final entry in _tamilLabels.entries) entry.value: entry.key,
-  };
-  return reverse[value] ?? localizedAnimalLabel(value);
+  if (tamilUi) {
+    return _tamilModern[value] ??
+        _tamilLabels[value] ??
+        localizedAnimalLabel(value);
+  }
+  return _englishFromTamil[value] ?? localizedAnimalLabel(value);
 }
+
+final Map<String, String> _englishFromTamil = {
+  for (final entry in _tamilLabels.entries) entry.value: entry.key,
+  for (final entry in _tamilModern.entries) entry.value: entry.key,
+};
 
 // Keep display labels separate from stored names, roles and record values.
 const _tamilLabels = <String, String>{
@@ -93,7 +99,7 @@ const _tamilLabels = <String, String>{
   "Export Reports": "அறிக்கைகளை ஏற்றுமதி செய்",
   "Nothing to report yet": "அறிக்கைக்கான பதிவுகள் இல்லை",
   "Animals, milk, stock, sales, expenses, visits and settings in one file":
-      "கால்நடை, பால், இருப்பு, விற்பனை, செலவு, மருத்துவம் மற்றும் அமைப்புகள் ஒரே கோப்பில்",
+      "கால்நடை, பால், இருப்பு, விற்பனை, செலவு, மருத்துவம் மற்றும் செட்டிங்ஸ் ஒரே கோப்பில்",
   "Stock, others, doctor, purchase and loss":
       "இருப்பு, இதர செலவு, மருத்துவம், கொள்முதல் மற்றும் இழப்பு",
   "Everything, as a JSON file you can restore later":
@@ -950,12 +956,15 @@ class _ConversationViewState extends State<_ConversationView> {
         txt(message, 'messageType') == 'voice' &&
         (txt(message, 'audioData').isNotEmpty ||
             txt(message, 'audioUrl').isNotEmpty);
+    final shared = isVoice ? null : ShareCard.decode(txt(message, 'text'));
     return AppleBubble(
       mine: mine,
       sender: mine ? null : sender,
       senderColor: participantColor,
       time: txt(message, 'time'),
-      child: isVoice
+      child: shared != null
+          ? ShareCardBubble(card: shared, mine: mine)
+          : isVoice
           ? _VoiceMessageBubble(
               url: txt(message, 'audioUrl'),
               encodedAudio: txt(message, 'audioData'),
@@ -1522,7 +1531,7 @@ const _helpEntries = <(String, String, String)>[
   (
     'Preferences',
     'Choose your purpose to apply a default layout. In Settings → Preferences, hold a tab and drag it to change its position. The first tab opens on launch.',
-    'பயன்பாட்டு நோக்கத்தைத் தேர்வுசெய்தால் இயல்பான வரிசை அமைக்கப்படும். அமைப்புகள் → விருப்பங்களில் பக்கத்தை அழுத்திப் பிடித்து இழுத்து வரிசையை மாற்றலாம். முதல் பக்கம் தொடக்கத்தில் திறக்கும்.',
+    'பயன்பாட்டு நோக்கத்தைத் தேர்வுசெய்தால் இயல்பான வரிசை அமைக்கப்படும். செட்டிங்ஸ் → விருப்பங்களில் பக்கத்தை அழுத்திப் பிடித்து இழுத்து வரிசையை மாற்றலாம். முதல் பக்கம் தொடக்கத்தில் திறக்கும்.',
   ),
   (
     'Username',
@@ -1557,7 +1566,7 @@ const _helpEntries = <(String, String, String)>[
   (
     'Purpose and preferences',
     'Choose Ranch, Vendor or Market when you first enter VIMO. Settings → Preferences changes the purpose and tab order on this device for your account. The first tab is your starting page. All five areas remain accessible.',
-    'முதலில் தொழுவம், பால் வியாபாரம் அல்லது சந்தையைத் தேர்வு செய்யுங்கள். அமைப்புகள் → விருப்பங்களில் உங்கள் கணக்கிற்கான பயன்பாட்டு நோக்கத்தையும் பக்க வரிசையையும் இந்தச் சாதனத்தில் மாற்றலாம். முதல் பக்கம் தொடக்கப் பக்கமாக இருக்கும். ஐந்து பகுதிகளையும் பயன்படுத்தலாம்.',
+    'முதலில் தொழுவம், பால் வியாபாரம் அல்லது சந்தையைத் தேர்வு செய்யுங்கள். செட்டிங்ஸ் → விருப்பங்களில் உங்கள் கணக்கிற்கான பயன்பாட்டு நோக்கத்தையும் பக்க வரிசையையும் இந்தச் சாதனத்தில் மாற்றலாம். முதல் பக்கம் தொடக்கப் பக்கமாக இருக்கும். ஐந்து பகுதிகளையும் பயன்படுத்தலாம்.',
   ),
   (
     'Dashboard',

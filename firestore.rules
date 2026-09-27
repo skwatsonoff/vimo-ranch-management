@@ -37,6 +37,7 @@ service cloud.firestore {
           'pregnancyStartDate',
           'pregnancyInjection',
           'milkingStopDate',
+          'workLog',
           'cloudId',
           'deviceKey',
           'updatedAtMillis',
@@ -235,6 +236,24 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
         allow read, update, delete: if false;
       }
+    }
+
+    // Public part of an animal shared into a chat: only a photo. Name, breed
+    // and age travel inside the message itself; ranch records never do.
+    match /shared_cards/{cardId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerUid', 'kind', 'photo', 'photoUrl', 'createdAt'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.kind == 'animal'
+        && request.resource.data.photo is string && request.resource.data.photo.size() <= 300000
+        && (request.resource.data.photo == '' || request.resource.data.photo.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$'))
+        && request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() <= 1000
+        && (request.resource.data.photoUrl == '' || request.resource.data.photoUrl.matches('^https://.+$'))
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /direct_chats/{chat} {

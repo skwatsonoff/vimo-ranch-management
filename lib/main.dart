@@ -57,6 +57,10 @@ part 'community.dart';
 part 'vendor_stock_separation.dart';
 part 'vendor_ride.dart';
 part 'device_workspaces.dart';
+part 'animal_roles.dart';
+part 'onboarding.dart';
+part 'share.dart';
+part 'tamil_strings.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -2043,7 +2047,7 @@ InputDecoration fieldStyle(
   );
 
   return InputDecoration(
-    labelText: ui(label),
+    labelText: label.isEmpty ? null : ui(label),
     floatingLabelBehavior: FloatingLabelBehavior.always,
     floatingLabelStyle: const TextStyle(
       color: Ink.muted,
@@ -2399,6 +2403,11 @@ const List<String> breeds = [
   'Gir',
   'Sahiwal',
   'Red Sindhi',
+  'Pulikulam',
+  'Umbalachery',
+  'Bargur',
+  'Alambadi',
+  'Malai Maadu',
   'Native Cow',
   'Other',
 ];
@@ -2592,7 +2601,7 @@ String compactDateTime(String iso) {
   if (d == null) return iso;
   final now = DateTime.now();
   if (d.year == now.year && d.month == now.month && d.day == now.day) {
-    return 'Today ${two(d.hour)}:${two(d.minute)}';
+    return '${bi('Today', 'இன்று')} ${two(d.hour)}:${two(d.minute)}';
   }
   return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
 }
@@ -2747,7 +2756,9 @@ bool isActiveAnimal(Map<String, dynamic> animal) =>
 List<String> cowNames() {
   final seen = <String>{};
   final result = <String>[];
+  // Milk, mothers and pregnancy only ever involve female cows.
   for (final animal in animalsBy('cow')) {
+    if (txt(animal, 'gender', 'Female') == 'Male') continue;
     final name = txt(animal, 'name').trim();
     if (name.isNotEmpty && seen.add(name.toLowerCase())) result.add(name);
   }
@@ -2845,7 +2856,7 @@ String ageTextLocal(Map<String, dynamic> a) {
     if (m > 0) bi('$m Months', '$m மாதம்'),
     if (d > 0) bi('$d Days', '$d நாள்'),
   ];
-  return parts.isEmpty ? bi('Not set', 'அமைக்கவில்லை') : parts.join(' ');
+  return parts.isEmpty ? bi('Unknown', 'தெரியாது') : parts.join(' ');
 }
 
 String ageText(Map<String, dynamic> a) {
@@ -3203,6 +3214,7 @@ List<Map<String, dynamic>> topCowRankings({
 }) {
   final list = <Map<String, dynamic>>[];
   for (final cow in animalsBy('cow')) {
+    if (txt(cow, 'gender', 'Female') == 'Male') continue;
     list.add({...cow, 'rankMilk': cowMilkForPeriod(txt(cow, 'name'), period)});
   }
   list.sort((a, b) {
@@ -3419,7 +3431,10 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
 
   for (final r in boxRows('milk_records')) {
     list.add({
-      'title': 'Milk recorded for ${txt(r, 'cow')}',
+      'title': bi(
+        'Milk recorded for ${localizedAnimalLabel(txt(r, 'cow'))}',
+        '${localizedAnimalLabel(txt(r, 'cow'))} பால் பதிவு',
+      ),
       'sub': '${txt(r, 'date')} \u2022 ${txt(r, 'time')}',
       'value': '${numv(r, 'quantity').toStringAsFixed(1)} L',
       'icon': Icons.water_drop_rounded,
@@ -3469,7 +3484,10 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
   }
   for (final r in boxRows('doctor_records')) {
     list.add({
-      'title': 'Health record for ${txt(r, 'cow')}',
+      'title': bi(
+        'Health record for ${localizedAnimalLabel(txt(r, 'cow'))}',
+        '${localizedAnimalLabel(txt(r, 'cow'))} மருத்துவப் பதிவு',
+      ),
       'sub': '${txt(r, 'type')} \u2022 ${txt(r, 'date')}',
       'value': money(numv(r, 'cost')),
       'icon': Icons.medical_services_rounded,
@@ -3539,7 +3557,7 @@ Future<String?> chooseDate(BuildContext context, String current) async {
 //  PART 5 — CLOUD SYNC
 // =============================================================================
 
-enum RanchGateMode { active, onboarding, waiting }
+enum RanchGateMode { active, onboarding, waiting, personal }
 
 class RanchGateState {
   final RanchGateMode mode;
@@ -3580,9 +3598,11 @@ class RanchAccessService {
     return 'Ranch Member';
   }
 
-  static Future<void> clearLocalRanchData() async {
+  static Future<void> clearLocalRanchData({bool keepRecords = false}) async {
     await CollaborationRealtimeSyncService.stop();
     await DeviceWorkspaces.preserve();
+    // Personal (no-ranch) records move into the ranch the user creates/joins.
+    if (keepRecords) return;
     AutoSyncService.beginRemoteWrite();
     try {
       for (final boxName in backupBoxNames) {
@@ -3813,6 +3833,11 @@ class RanchAccessService {
       return const RanchGateState(RanchGateMode.onboarding);
     }
     await _prepareUserSession();
+    // The purpose picked before sign-up becomes this account's preference.
+    final intro = settingText('introPurpose', '');
+    if (!purposeChosen && workspaceKinds.contains(intro)) {
+      await savePurpose(intro, defaultNavigation(intro));
+    }
 
     final localId = ranchId();
     if (localId.isNotEmpty) {
@@ -3851,11 +3876,20 @@ class RanchAccessService {
           ? pendingRanchId()
           : txt(profile ?? <String, dynamic>{}, 'pendingRanchId'),
     );
+    final ranchFirst = purposeChosen
+        ? appPurpose == 'Ranch'
+        : settingText('introPurpose', 'Ranch') == 'Ranch';
     if (pending.isNotEmpty) {
       await setSetting('pendingRanchId', pending);
-      return RanchGateState(RanchGateMode.waiting, ranchId: pending);
+      if (ranchFirst) {
+        return RanchGateState(RanchGateMode.waiting, ranchId: pending);
+      }
     }
-    return const RanchGateState(RanchGateMode.onboarding);
+    if (ranchFirst) return const RanchGateState(RanchGateMode.onboarding);
+    // A personal workspace: this account's own records on this device.
+    await DeviceWorkspaces.restore();
+    await setSetting('currentRole', 'Admin');
+    return const RanchGateState(RanchGateMode.personal);
   }
 
   static Future<void> createRanch({
@@ -3863,6 +3897,7 @@ class RanchAccessService {
     required String farm,
     required String owner,
     required String place,
+    String phone = '',
   }) async {
     final current = user;
     if (current == null) throw StateError('Please sign in again');
@@ -3876,7 +3911,12 @@ class RanchAccessService {
     await db.runTransaction((transaction) async {
       final existing = await transaction.get(registry);
       if (existing.exists) {
-        throw StateError('Ranch ID "$id" is already taken');
+        throw StateError(
+          bi(
+            'Ranch ID "$id" is already taken',
+            '"$id" என்ற Ranch ID ஏற்கெனவே எடுக்கப்பட்டுள்ளது',
+          ),
+        );
       }
       final now = FieldValue.serverTimestamp();
       transaction.set(registry, {
@@ -3892,6 +3932,7 @@ class RanchAccessService {
         'farmNameFold': farm.toLowerCase(),
         'ownerName': owner,
         'place': place,
+        'phone': phone,
         'ownerUid': current.uid,
         'createdAt': now,
         'updatedAt': now,
@@ -3915,10 +3956,11 @@ class RanchAccessService {
       }, SetOptions(merge: true));
     });
 
-    await clearLocalRanchData();
+    await clearLocalRanchData(keepRecords: ranchId().isEmpty);
     await setSetting('farmName', farm);
     await setSetting('ownerName', owner);
     await setSetting('place', place);
+    await setSetting('ranchPhone', phone);
     await activate(id, {
       'name': owner,
       'role': 'Admin',
@@ -3937,9 +3979,16 @@ class RanchAccessService {
     final validation = ranchIdValidationError(id);
     if (validation != null) throw StateError(validation);
     final registry = await db.collection('ranch_ids').doc(id).get();
-    if (!registry.exists) throw StateError('No ranch exists with ID "$id"');
+    if (!registry.exists) {
+      throw StateError(
+        bi(
+          'No ranch exists with ID "$id"',
+          '"$id" என்ற Ranch ID-ல் தொழுவம் இல்லை',
+        ),
+      );
+    }
 
-    await clearLocalRanchData();
+    await clearLocalRanchData(keepRecords: ranchId().isEmpty);
     final batch = db.batch();
     batch.set(requestRef(id, current.uid), {
       'uid': current.uid,
@@ -6537,7 +6586,15 @@ class AuthGate extends StatelessWidget {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => _browserRuntime.dismissBootSplash(),
           );
-          return const LoginScreen();
+          // First launch walks through Welcome, Language and Purpose before
+          // the sign-in screen appears.
+          return ValueListenableBuilder<Box<dynamic>>(
+            valueListenable: Hive.box(
+              'settings',
+            ).listenable(keys: const ['introCompleted']),
+            builder: (_, _, _) =>
+                introCompleted ? const LoginScreen() : const IntroFlow(),
+          );
         }
         return const RanchAccessGate();
       },
@@ -6559,6 +6616,13 @@ class _RanchAccessGateState extends State<RanchAccessGate> {
   void initState() {
     super.initState();
     _reload();
+    ranchGateRevision.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    ranchGateRevision.removeListener(_refresh);
+    super.dispose();
   }
 
   void _reload() {
@@ -6571,7 +6635,7 @@ class _RanchAccessGateState extends State<RanchAccessGate> {
   }
 
   void _refresh() {
-    setState(_reload);
+    if (mounted) setState(_reload);
   }
 
   @override
@@ -6608,6 +6672,8 @@ class _RanchAccessGateState extends State<RanchAccessGate> {
           RanchGateMode.onboarding => RanchOnboardingScreen(
             onComplete: _refresh,
           ),
+          // Vendor and Market accounts work without a ranch.
+          RanchGateMode.personal => const MainShell(),
         };
       },
     );
@@ -6751,23 +6817,34 @@ class _MemberAwareShellState extends State<MemberAwareShell> {
 }
 
 class RanchOnboardingScreen extends StatefulWidget {
-  final VoidCallback onComplete;
-  const RanchOnboardingScreen({super.key, required this.onComplete});
+  final VoidCallback? onComplete;
+
+  /// Opened from inside the app (Preferences or the Ranch tab) rather than as
+  /// the first screen after sign-up.
+  final bool pageMode;
+  final int initialMode;
+  const RanchOnboardingScreen({
+    super.key,
+    this.onComplete,
+    this.pageMode = false,
+    this.initialMode = 0,
+  });
 
   @override
   State<RanchOnboardingScreen> createState() => _RanchOnboardingScreenState();
 }
 
 class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
-  String _purpose = 'Ranch';
   final _farm = TextEditingController();
   final _owner = TextEditingController();
   final _place = TextEditingController();
   final _createId = TextEditingController();
   final _joinName = TextEditingController();
   final _joinId = TextEditingController();
+  final _ranchPhone = TextEditingController();
+  bool _sameNumber = true;
   Timer? _availabilityTimer;
-  int _mode = 0;
+  late int _mode = widget.initialMode.clamp(0, 1);
   bool _busy = false;
   bool? _available;
   String _availabilityText = '';
@@ -6776,10 +6853,21 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
   void initState() {
     super.initState();
     final current = FirebaseAuth.instance.currentUser;
-    final suggested = current == null
+    final suggested = accountFullName.isNotEmpty
+        ? accountFullName
+        : current == null
         ? ''
         : RanchAccessService.displayNameFor(current);
     _joinName.text = suggested;
+    _owner.text = suggested;
+    _place.text = accountPlace;
+    _sameNumber = accountPhone.isNotEmpty;
+  }
+
+  void _done() {
+    widget.onComplete?.call();
+    refreshRanchGate();
+    if (widget.pageMode && mounted) Navigator.of(context).maybePop();
   }
 
   @override
@@ -6791,6 +6879,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
     _createId.dispose();
     _joinName.dispose();
     _joinId.dispose();
+    _ranchPhone.dispose();
     super.dispose();
   }
 
@@ -6847,6 +6936,16 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
         snack(context, 'Choose an available Ranch ID');
         return;
       }
+      final phone = _sameNumber && accountPhone.isNotEmpty
+          ? accountPhone
+          : normalizePhone(_ranchPhone.text);
+      if (!validPhone(phone)) {
+        snack(
+          context,
+          bi('Enter the ranch mobile number', 'தொழுவ மொபைல் எண்ணை எழுதவும்'),
+        );
+        return;
+      }
       setState(() => _busy = true);
       try {
         if (accountUsername.isEmpty) {
@@ -6858,9 +6957,12 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
           farm: farm,
           owner: owner,
           place: _place.text.trim(),
+          phone: phone,
         );
-        await savePurpose(_purpose, defaultNavigation(_purpose));
-        widget.onComplete();
+        if (!purposeChosen) {
+          await savePurpose('Ranch', defaultNavigation('Ranch'));
+        }
+        _done();
       } catch (error) {
         if (mounted) {
           snack(context, '$error'.replaceFirst('Bad state: ', ''));
@@ -6880,7 +6982,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
     setState(() => _busy = true);
     try {
       await RanchAccessService.requestToJoin(requestedId: id, name: name);
-      widget.onComplete();
+      _done();
     } catch (error) {
       if (mounted) snack(context, '$error'.replaceFirst('Bad state: ', ''));
     } finally {
@@ -6892,6 +6994,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Ink.canvasTop,
+      appBar: widget.pageMode ? AppBar(leading: const _BackButton()) : null,
       body: Shell(
         child: SafeArea(
           child: Center(
@@ -6907,10 +7010,10 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                 children: [
                   const Center(child: BrandMark(size: Gold.s89)),
                   const SizedBox(height: Gold.s13),
-                  const AppText(
-                    'Set up your VIMO workspace',
+                  AppText(
+                    bi('Set up your ranch', 'உங்கள் தொழுவத்தை அமைக்கவும்'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Ink.navy,
                       fontSize: Gold.t27,
                       fontWeight: FontWeight.w700,
@@ -6934,54 +7037,6 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                   ),
                   const SizedBox(height: Gold.s21),
                   if (_mode == 0) ...[
-                    AppText(
-                      bi(
-                        'What will you use VIMO for?',
-                        'VIMO செயலியை எதற்காகப் பயன்படுத்தப் போகிறீர்கள்?',
-                      ),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: _purpose,
-                      decoration: fieldStyle(
-                        bi('Purpose', 'பயன்பாட்டு நோக்கம்'),
-                      ),
-                      items: [
-                        DropdownMenuItem(
-                          value: 'Ranch',
-                          child: AppText(
-                            bi(
-                              'Ranch · Animal care',
-                              'தொழுவம் · கால்நடை பராமரிப்பு',
-                            ),
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Vendor',
-                          child: AppText(
-                            bi(
-                              'Vendor · Milk business',
-                              'வியாபாரி · பால் வணிகம்',
-                            ),
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Market',
-                          child: AppText(
-                            bi(
-                              'Market · Sales and stock',
-                              'சந்தை · விற்பனை மற்றும் இருப்பு',
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) => setState(() => _purpose = value!),
-                    ),
-                    const SizedBox(height: Gold.s21),
                     TextField(
                       controller: _farm,
                       textCapitalization: TextCapitalization.words,
@@ -7007,6 +7062,76 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                         'Place (optional)',
                         icon: Icons.place_outlined,
                       ),
+                    ),
+                    const SizedBox(height: Gold.s13),
+                    Glass(
+                      radius: Gold.r21,
+                      padding: const EdgeInsets.fromLTRB(
+                        Gold.s16,
+                        Gold.s5,
+                        Gold.s8,
+                        Gold.s5,
+                      ),
+                      elevation: 0.5,
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.phone_iphone_rounded,
+                            color: Ink.violet,
+                            size: Gold.t21,
+                          ),
+                          const SizedBox(width: Gold.s13),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  bi(
+                                    'Use my mobile number for the ranch',
+                                    'தொழுவத்திற்கும் என் மொபைல் எண்',
+                                  ),
+                                  style: const TextStyle(
+                                    color: Ink.navy,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (accountPhone.isNotEmpty)
+                                  Text(
+                                    accountPhone,
+                                    style: const TextStyle(
+                                      color: Ink.muted,
+                                      fontSize: Gold.t13,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          CupertinoSwitch(
+                            value: _sameNumber && accountPhone.isNotEmpty,
+                            activeTrackColor: Ink.violetDeep,
+                            onChanged: accountPhone.isEmpty
+                                ? null
+                                : (v) => setState(() => _sameNumber = v),
+                          ),
+                        ],
+                      ),
+                    ),
+                    AnimatedSize(
+                      duration: Gold.base,
+                      curve: Gold.ease,
+                      child: _sameNumber && accountPhone.isNotEmpty
+                          ? const SizedBox(width: double.infinity)
+                          : Padding(
+                              padding: const EdgeInsets.only(top: Gold.s13),
+                              child: TextField(
+                                controller: _ranchPhone,
+                                keyboardType: TextInputType.phone,
+                                decoration: fieldStyle(
+                                  bi('Ranch mobile number', 'தொழுவ மொபைல் எண்'),
+                                  icon: Icons.phone_rounded,
+                                ),
+                              ),
+                            ),
                     ),
                     const SizedBox(height: Gold.s13),
                     TextField(
@@ -7078,12 +7203,14 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                     busy: _busy,
                     onPressed: _submit,
                   ),
-                  const SizedBox(height: Gold.s13),
-                  GhostButton(
-                    label: 'Sign Out',
-                    icon: Icons.logout_rounded,
-                    onPressed: () => FirebaseAuth.instance.signOut(),
-                  ),
+                  if (!widget.pageMode) ...[
+                    const SizedBox(height: Gold.s13),
+                    GhostButton(
+                      label: 'Sign Out',
+                      icon: Icons.logout_rounded,
+                      onPressed: () => FirebaseAuth.instance.signOut(),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -7416,7 +7543,14 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      if (mounted) snack(context, 'Reset link sent to $email');
+      if (mounted)
+        snack(
+          context,
+          bi(
+            'Reset link sent to $email',
+            '$email-க்கு பாஸ்வேர்டு மாற்றும் இணைப்பு அனுப்பப்பட்டது',
+          ),
+        );
     } on FirebaseAuthException catch (e) {
       if (mounted) snack(context, _friendlyError(e));
     }
@@ -7645,164 +7779,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class SignupScreen extends StatefulWidget {
-  const SignupScreen({super.key});
-
-  @override
-  State<SignupScreen> createState() => _SignupScreenState();
-}
-
-class _SignupScreenState extends State<SignupScreen> {
-  final _username = TextEditingController();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-  final _confirm = TextEditingController();
-  bool _busy = false;
-  bool _obscure = true;
-
-  @override
-  void dispose() {
-    _username.dispose();
-    _email.dispose();
-    _password.dispose();
-    _confirm.dispose();
-    super.dispose();
-  }
-
-  Future<void> _createAccount() async {
-    final email = _email.text.trim();
-    final password = _password.text;
-    if (email.isEmpty || !email.contains('@')) {
-      snack(context, 'Please enter a valid email');
-      return;
-    }
-    if (password.length < 6) {
-      snack(context, 'Password needs at least 6 characters');
-      return;
-    }
-    if (password != _confirm.text) {
-      snack(context, 'Passwords do not match');
-      return;
-    }
-    if (!validUsername(normalizeUsername(_username.text))) {
-      snack(
-        context,
-        bi('Choose a valid username', 'சரியான பயனர்பெயரைத் தேர்வுசெய்யவும்'),
-      );
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      if (!await UsernameService.available(_username.text)) {
-        throw StateError(
-          bi('Username unavailable', 'பயனர்பெயர் கிடைக்கவில்லை'),
-        );
-      }
-      if (kIsWeb) {
-        try {
-          await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
-        } catch (_) {
-          /* Storage restrictions must not disable Firebase itself. */
-        }
-      }
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-      }
-      await UsernameService.save(_username.text);
-      if (mounted) {
-        snack(context, 'Account created');
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-    } on FirebaseAuthException catch (error) {
-      if (!mounted) return;
-      final message = switch (error.code) {
-        'email-already-in-use' =>
-          'That email already has an account. Please sign in',
-        'invalid-email' => 'That email address does not look right',
-        'weak-password' => 'Please choose a stronger password',
-        'network-request-failed' => 'No network. Check your connection',
-        _ => error.message ?? 'Could not create the account',
-      };
-      snack(context, message);
-    } catch (error) {
-      if (mounted) snack(context, '$error'.replaceFirst('Bad state: ', ''));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FormPage(
-      title: 'Create Account',
-      children: [
-        const Center(child: BrandMark(size: Gold.s89)),
-        const SizedBox(height: Gold.s21),
-        const AppText(
-          'Create your VIMO account',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Ink.navy,
-            fontSize: Gold.t21,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: Gold.s21),
-        UsernameField(controller: _username),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _email,
-          keyboardType: TextInputType.emailAddress,
-          autofillHints: const [AutofillHints.newUsername],
-          textInputAction: TextInputAction.next,
-          decoration: fieldStyle('Email', icon: Icons.mail_outline_rounded),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _password,
-          obscureText: _obscure,
-          autofillHints: const [AutofillHints.newPassword],
-          textInputAction: TextInputAction.next,
-          decoration: fieldStyle(
-            'Create Password',
-            icon: Icons.lock_outline_rounded,
-            suffix: IconButton(
-              onPressed: () => setState(() => _obscure = !_obscure),
-              icon: Icon(
-                _obscure
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _confirm,
-          obscureText: _obscure,
-          autofillHints: const [AutofillHints.newPassword],
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _createAccount(),
-          decoration: fieldStyle(
-            'Confirm Password',
-            icon: Icons.verified_user_outlined,
-          ),
-        ),
-        const SizedBox(height: Gold.s21),
-        LiquidButton(
-          label: 'Create Account',
-          icon: Icons.person_add_alt_1_rounded,
-          busy: _busy,
-          onPressed: _createAccount,
-        ),
-      ],
-    );
-  }
-}
-
 // -----------------------------------------------------------------------------
 //  Main shell
 // -----------------------------------------------------------------------------
@@ -7909,8 +7885,10 @@ class RanchNotificationService {
     if (nowMinutes < dueMinutes || nowMinutes > dueMinutes + 4) return;
     await addRanchNotification(
       title: 'Daily data entry reminder',
-      message:
-          'Yesterday you entered ranch data at $reminderTime. Today’s entry is due now.',
+      message: bi(
+        'Yesterday you entered ranch data at $reminderTime. Today’s entry is due now.',
+        'நேற்று $reminderTime-க்குப் பதிவு செய்தீர்கள். இன்றைய பதிவு இப்போது செய்ய வேண்டும்.',
+      ),
       type: 'reminder',
       targetUser: currentUserName(),
       sourceId: 'daily-${todayDate()}-${currentUserName()}',
@@ -8065,7 +8043,8 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     AutoSyncService.scheduleSync(reason: 'voice message');
     await addRanchNotification(
       title: '${currentUserName()} sent a voice message',
-      message: 'Voice message • ${voiceDurationLabel(durationSeconds)}',
+      message:
+          '${bi('Voice message', 'குரல் செய்தி')} • ${voiceDurationLabel(durationSeconds)}',
       type: 'chat',
       sourceId: messageId,
     );
@@ -8828,41 +8807,29 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     if (!purposeChosen) return const PreferencesScreen(onboarding: true);
     final order = navigationOrder();
+    // Until the account belongs to a ranch, the Ranch tab offers to create
+    // one or join with an existing Ranch ID.
+    final needsRanch = firebaseReady && !vimoPreviewMode && ranchId().isEmpty;
     final pageMap = <String, Widget>{
-      'Ranch': RanchWorkspace(onOpenCard: _openCard),
+      'Ranch': needsRanch
+          ? const RanchSetupPrompt()
+          : RanchWorkspace(onOpenCard: _openCard),
       'Vendor': const VendorWorkspace(),
       'Social': const SocialScreen(),
       'Chat': const CommunityChatsScreen(),
       'Reports': const VendorOnlyReports(),
       'Profile': const SocialProfileScreen(),
     };
-    const items = <String, _NavItem>{
-      'Ranch': _NavItem(
-        'Ranch',
-        CupertinoIcons.house_fill,
-        CupertinoIcons.house,
-      ),
-      'Vendor': _NavItem(
-        'Vendor',
-        CupertinoIcons.drop_fill,
-        CupertinoIcons.drop,
-      ),
-      'Social': _NavItem('Social', CupertinoIcons.globe, CupertinoIcons.globe),
-      'Reports': _NavItem(
-        'Reports',
-        Icons.analytics_rounded,
-        Icons.analytics_outlined,
-      ),
-      'Profile': _NavItem(
-        'Profile',
-        CupertinoIcons.person_fill,
-        CupertinoIcons.person,
-      ),
-      'Chat': _NavItem(
-        'Chat',
-        CupertinoIcons.chat_bubble_2_fill,
-        CupertinoIcons.chat_bubble_2,
-      ),
+    final items = <String, _NavItem>{
+      for (final id in businessTabs)
+        id: _NavItem(id, navLabel(id), navIcon(id), switch (id) {
+          'Ranch' => CupertinoIcons.house,
+          'Vendor' => CupertinoIcons.drop,
+          'Reports' => Icons.analytics_outlined,
+          'Social' => CupertinoIcons.globe,
+          'Chat' => CupertinoIcons.chat_bubble_2,
+          _ => CupertinoIcons.person,
+        }),
     };
     final pages = order.map((id) => pageMap[id]!).toList();
     final navItems = order.map((id) => items[id]!).toList();
@@ -8884,7 +8851,7 @@ class _MainShellState extends State<MainShell> {
           leadingWidth: 64,
           leading: Semantics(
             button: true,
-            label: bi('Profile', 'சுயவிவரம்'),
+            label: bi('Profile', 'ப்ரொஃபைல்'),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => push(context, const SocialProfileScreen()),
@@ -8897,14 +8864,12 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
           ),
-          title: AppText(
+          title: Text(
             order[tab] == 'Social'
-                ? 'VIMO People'
-                : order[tab] == 'Chat' ||
-                      order[tab] == 'Vendor' ||
-                      order[tab] == 'Reports'
-                ? ui(order[tab])
-                : '${appName()} ${ui(order[tab])}',
+                ? bi('VIMO People', 'VIMO மக்கள்')
+                : order[tab] == 'Ranch' || order[tab] == 'Profile'
+                ? '${appName()} ${navLabel(order[tab])}'
+                : navLabel(order[tab]),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -9078,10 +9043,11 @@ class _NavBar extends StatelessWidget {
 }
 
 class _NavItem {
+  final String id;
   final String label;
   final IconData? active;
   final IconData? idle;
-  const _NavItem(this.label, this.active, this.idle);
+  const _NavItem(this.id, this.label, this.active, this.idle);
 }
 
 class _NavCell extends StatelessWidget {
@@ -9115,7 +9081,7 @@ class _NavCell extends StatelessWidget {
           children: [
             SizedBox(
               height: Gold.s27,
-              child: item.label == 'Vendor'
+              child: item.id == 'Vendor'
                   ? MilkVendorIcon(size: 31, color: color)
                   : item.active == null
                   ? CowHoofIcon(size: 28, color: color)
@@ -9126,7 +9092,7 @@ class _NavCell extends StatelessWidget {
                     ),
             ),
             const SizedBox(height: Gold.s3),
-            AppText(
+            Text(
               item.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -9786,8 +9752,14 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                       ),
                       AppText(
                         years > 0
-                            ? 'Turns $years today'
-                            : 'Born today \u2022 welcome',
+                            ? bi(
+                                'Turns $years today',
+                                'இன்று $years வயது ஆகிறது',
+                              )
+                            : bi(
+                                'Born today \u2022 welcome',
+                                'இன்று பிறந்தது \u2022 வரவேற்கிறோம்',
+                              ),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: Gold.t13,
@@ -10561,8 +10533,14 @@ class PlainAnimalCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: Gold.s2),
-                AppText(
-                  txt(a, 'breed', 'Unknown breed'),
+                Text(
+                  [
+                    ui(txt(a, 'breed', 'Unknown breed')),
+                    if (isMaleAnimal(a))
+                      maleUseOf(a).isEmpty
+                          ? bi('Male', 'ஆண்')
+                          : maleUseLabel(maleUseOf(a)),
+                  ].join(' \u2022 '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -10572,14 +10550,10 @@ class PlainAnimalCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: Gold.s2),
-                AppText(
-                  tamilUi
-                      ? (isCow
-                            ? 'வயது ${ageShort(a)} \u2022 பண்ணையில் ${durationText(txt(a, 'arrivalDate'))}'
-                            : 'வயது ${ageShort(a)} \u2022 தாய் ${txt(a, 'mother', 'தெரியவில்லை')}')
-                      : (isCow
-                            ? 'Age ${ageShort(a)} \u2022 In farm ${durationText(txt(a, 'arrivalDate'))}'
-                            : 'Age ${ageShort(a)} \u2022 Mother ${txt(a, 'mother', 'Unknown')}'),
+                Text(
+                  isCow || isMaleAnimal(a)
+                      ? '${bi('Age', 'வயது')} ${ageShort(a) == '--' ? bi('unknown', 'தெரியாது') : ageShort(a)} \u2022 ${bi('In farm', 'தொழுவத்தில்')} ${txt(a, 'arrivalDate').isEmpty ? bi('unknown', 'தெரியாது') : durationText(txt(a, 'arrivalDate'))}'
+                      : '${bi('Age', 'வயது')} ${ageShort(a) == '--' ? bi('unknown', 'தெரியாது') : ageShort(a)} \u2022 ${bi('Mother', 'தாய்')} ${ui(txt(a, 'mother', 'Unknown Mother'))}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -10665,7 +10639,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
   add(
     txt(animal, 'dob'),
     'Born',
-    'Birthday of $name',
+    bi('Birthday of $name', '$name பிறந்தநாள்'),
     Icons.cake_rounded,
     Ink.violet,
   );
@@ -10707,6 +10681,15 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       time: txt(r, 'time'),
     );
   }
+  for (final e in workLogOf(animal)) {
+    add(
+      txt(e, 'date'),
+      workEntryTitle(e),
+      workEntryDetail(e),
+      workEntryIcon(e),
+      workEntryColor(e),
+    );
+  }
   for (final r in calvingRows().where(
     (r) => txt(r, 'mother') == name || txt(r, 'calfName') == name,
   )) {
@@ -10737,8 +10720,10 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
     final now = DateTime.now();
     add(
       '${now.year}-${now.month.toString().padLeft(2, '0')}-01',
-      'Rank #$rank · ${rankLabel(rank)}',
-      months == 1 ? 'Maintained for 1 month' : 'Maintained for $months months',
+      '${bi('Rank', 'தரம்')} #$rank · ${ui(rankLabel(rank))}',
+      months == 1
+          ? bi('Maintained for 1 month', '1 மாதம் தொடர்ந்தது')
+          : bi('Maintained for $months months', '$months மாதங்கள் தொடர்ந்தது'),
       Icons.workspace_premium_rounded,
       rankColor(rank),
       trailing: '$months ${months == 1 ? 'month' : 'months'}',
@@ -10931,9 +10916,24 @@ class AnimalProfileScreen extends StatefulWidget {
 
 class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   int _tab = 0;
-  List<String> get _tabs => tamilUi
-      ? const ['விவரம்', 'மருத்துவம்', 'பால்', 'டைம்லைன்']
-      : const ['Overview', 'Health', 'Milk', 'Timeline'];
+
+  /// Tab identities for this animal. A male never has a Milk tab; its role
+  /// (breeding, jallikattu or cart work) takes that place instead.
+  List<String> _tabIds(Map<String, dynamic> a) => isMaleAnimal(a)
+      ? ['overview', 'health', if (maleUseOf(a).isNotEmpty) 'role', 'timeline']
+      : const ['overview', 'health', 'milk', 'timeline'];
+
+  String _tabLabel(String id, Map<String, dynamic> a) => switch (id) {
+    'overview' => bi('Overview', 'விவரம்'),
+    'health' => bi('Health', 'மருத்துவம்'),
+    'milk' => bi('Milk', 'பால்'),
+    'role' => switch (maleUseOf(a)) {
+      'Breeding' => bi('Breeding', 'இனப்பெருக்கம்'),
+      'Jallikattu' => bi('Jallikattu', 'ஜல்லிக்கட்டு'),
+      _ => bi('Work', 'வேலை'),
+    },
+    _ => bi('Timeline', 'காலவரிசை'),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -10967,8 +10967,11 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           builder: (_, _, _) => ValueListenableBuilder<Box<dynamic>>(
             valueListenable: Hive.box('doctor_records').listenable(),
             builder: (_, _, _) {
+              final tabIds = _tabIds(a);
+              final tabId = tabIds[_tab.clamp(0, tabIds.length - 1)];
+              final male = isMaleAnimal(a);
               Widget content;
-              if (_tab == 0) {
+              if (tabId == 'overview') {
                 content = _overview(
                   context,
                   a,
@@ -10977,15 +10980,17 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   pregnantDate,
                   stopDate,
                 );
-              } else if (_tab == 1) {
+              } else if (tabId == 'health') {
                 content = _health(
                   name,
-                  pregnantDate,
-                  stopDate,
+                  male ? '' : pregnantDate,
+                  male ? '' : stopDate,
                   txt(a, 'pregnancyInjection'),
                 );
-              } else if (_tab == 2) {
+              } else if (tabId == 'milk') {
                 content = _milk(name);
+              } else if (tabId == 'role') {
+                content = MaleRolePanel(animalKey: widget.animalKey, animal: a);
               } else {
                 content = _timeline(a);
               }
@@ -10995,12 +11000,23 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 extendBodyBehindAppBar: false,
                 appBar: AppBar(
                   title: AppText(
-                    tamilUi
+                    male
+                        ? (isCow
+                              ? bi('Bull Profile', 'காளை விவரம்')
+                              : bi('Bull Calf Profile', 'காளைக் கன்று விவரம்'))
+                        : tamilUi
                         ? (isCow ? 'மாடு விவரம்' : 'கன்று விவரம்')
                         : (isCow ? 'Cow Profile' : 'Calf Profile'),
                   ),
                   leading: const _BackButton(),
                   actions: [
+                    if (firebaseReady && signedInUid.isNotEmpty)
+                      IconButton(
+                        tooltip: bi('Share', 'பகிர்'),
+                        icon: const Icon(CupertinoIcons.share),
+                        onPressed: () =>
+                            showShareSheet(context, () => buildAnimalShare(a)),
+                      ),
                     if (canEditAnimals) ...[
                       _ProfileMenu(
                         animalKey: widget.animalKey,
@@ -11030,7 +11046,12 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                       const SizedBox(height: Gold.s8),
                       Reveal(index: 0, child: _header(context, a, isCow, name)),
                       const SizedBox(height: Gold.s16),
-                      Reveal(index: 1, child: _tabBar()),
+                      Reveal(
+                        index: 1,
+                        child: _tabBar([
+                          for (final id in tabIds) _tabLabel(id, a),
+                        ]),
+                      ),
                       const SizedBox(height: Gold.s16),
                       Reveal(index: 2, child: content),
                     ],
@@ -11101,7 +11122,14 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 ),
                 const SizedBox(height: Gold.s3),
                 AppText(
-                  '${txt(a, 'breed', 'Unknown breed')} \u2022 ${txt(a, 'gender', isCow ? 'Female' : 'Not set')}',
+                  [
+                    ui(txt(a, 'breed', 'Unknown breed')),
+                    isMaleAnimal(a)
+                        ? (isCow
+                              ? bi('Bull', 'காளை')
+                              : bi('Bull calf', 'காளைக் கன்று'))
+                        : (isCow ? bi('Cow', 'பசு') : bi('Heifer', 'கிடேரி')),
+                  ].join(' \u2022 '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -11126,9 +11154,15 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   runSpacing: Gold.s5,
                   children: [
                     _Chip(label: status, color: statusColor(status)),
+                    if (isMaleAnimal(a) && maleUseOf(a).isNotEmpty)
+                      _Chip(
+                        label: maleUseLabel(maleUseOf(a)),
+                        color: maleUseColor(maleUseOf(a)),
+                      ),
                     if (rank > 0)
                       _Chip(
-                        label: 'Rank #$rank \u2022 ${rankLabel(rank)}',
+                        label:
+                            '${bi('Rank', 'தரம்')} #$rank \u2022 ${ui(rankLabel(rank))}',
                         color: rankColor(rank),
                       ),
                     if (isBirthdayToday(a))
@@ -11143,15 +11177,15 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
     );
   }
 
-  Widget _tabBar() {
+  Widget _tabBar(List<String> labels) {
     return Glass(
       radius: Gold.r21,
       blur: Gold.s13,
       padding: const EdgeInsets.all(Gold.s5),
       elevation: 0.62,
       child: LiquidSegmentBar(
-        labels: _tabs,
-        index: _tab,
+        labels: labels,
+        index: _tab.clamp(0, labels.length - 1),
         onChanged: (value) => setState(() => _tab = value),
       ),
     );
@@ -11215,9 +11249,70 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
     final latestMilk = latestActivityFrom(milkForCow);
     final lastMilk = latestMilk == null ? 0.0 : numv(latestMilk, 'quantity');
 
+    final male = isMaleAnimal(a);
+    final metrics = male ? maleMetrics(a) : const <MaleMetric>[];
     return Column(
       children: [
-        if (isCow) ...[
+        if (male && metrics.isNotEmpty) ...[
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            crossAxisSpacing: Gold.s13,
+            mainAxisSpacing: Gold.s13,
+            childAspectRatio: Gold.phi,
+            children: [
+              for (final m in metrics) _metric(m.$1, m.$2, m.$3, m.$4),
+            ],
+          ),
+          const SizedBox(height: Gold.s16),
+        ],
+        if (male && maleUseOf(a).isEmpty) ...[
+          Glass(
+            radius: Gold.r21,
+            padding: const EdgeInsets.all(Gold.s16),
+            elevation: 0.62,
+            onTap: canEditAnimals
+                ? () => push(
+                    context,
+                    AddAnimalScreen(
+                      type: txt(a, 'type'),
+                      animalKey: widget.animalKey,
+                    ),
+                  )
+                : null,
+            child: Row(
+              children: [
+                const Icon(Icons.help_outline_rounded, color: Ink.violet),
+                const SizedBox(width: Gold.s13),
+                Expanded(
+                  child: Text(
+                    bi(
+                      'Choose what this bull calf is raised for to track its training and work.',
+                      'பயிற்சி, வேலைகளைக் கண்காணிக்க இந்தக் காளைக் கன்றின் பயன்பாட்டைத் தேர்வு செய்யவும்.',
+                    ),
+                    style: const TextStyle(
+                      color: Ink.body,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: Gold.s16),
+        ],
+        if (male && maleReadiness(a) != null) ...[
+          InfoRow(
+            title: bi('Growth', 'வளர்ச்சி'),
+            value: maleReadiness(a)!,
+            icon: Icons.trending_up_rounded,
+            color: Ink.green,
+          ),
+          const SizedBox(height: Gold.s13),
+        ],
+        if (isCow && !male) ...[
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -11262,16 +11357,19 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           icon: Icons.medical_services_rounded,
           color: Ink.blue,
         ),
-        if (pregnantDate.isNotEmpty) ...[
+        if (!male && pregnantDate.isNotEmpty) ...[
           const SizedBox(height: Gold.s13),
           InfoRow(
             title: 'Pregnancy Duration',
-            value: '${daysSince(pregnantDate)} days',
+            value: bi(
+              '${daysSince(pregnantDate)} days',
+              '${daysSince(pregnantDate)} நாள்',
+            ),
             icon: Icons.favorite_rounded,
             color: Ink.amber,
           ),
         ],
-        if (stopDate.isNotEmpty) ...[
+        if (!male && stopDate.isNotEmpty) ...[
           const SizedBox(height: Gold.s13),
           InfoRow(
             title: 'Milking Stopped',
@@ -11311,7 +11409,28 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           ),
         ],
         const SizedBox(height: Gold.s21),
-        if (isCow) ...[
+        if (male && maleUseOf(a).isNotEmpty && canRecordEntries) ...[
+          LiquidButton(
+            label: switch (maleUseOf(a)) {
+              'Breeding' => bi('Record service', 'கருவூட்டலைப் பதிவு செய்'),
+              'Jallikattu' => bi(
+                'Record training or event',
+                'பயிற்சி / போட்டியைப் பதிவு செய்',
+              ),
+              _ => bi('Record work', 'வேலையைப் பதிவு செய்'),
+            },
+            icon: maleUseIcon(maleUseOf(a)),
+            onPressed: () => push(
+              context,
+              MaleWorkEntryScreen(
+                animalKey: widget.animalKey,
+                use: maleUseOf(a),
+              ),
+            ),
+          ),
+          const SizedBox(height: Gold.s13),
+        ],
+        if (isCow && !male) ...[
           LiquidButton(
             label: tamilUi ? 'பால் பதிவு செய்' : 'Add Milk Record',
             icon: Icons.add_rounded,
@@ -11336,7 +11455,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             page: DoctorScreen(animalKey: widget.animalKey),
           ),
         ),
-        if (isCow && pregnantDate.isNotEmpty && stopDate.isEmpty) ...[
+        if (!male && isCow && pregnantDate.isNotEmpty && stopDate.isEmpty) ...[
           const SizedBox(height: Gold.s13),
           LiquidButton(
             label: tamilUi ? 'பால் கறப்பதை நிறுத்து' : 'Stop Milking',
@@ -11355,7 +11474,13 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 'milkingStopDate': todayDate(),
               });
               if (!context.mounted) return;
-              snack(context, 'Milking stopped for $name');
+              snack(
+                context,
+                bi(
+                  'Milking stopped for $name',
+                  '${localizedAnimalLabel(name)} கறவை நிறுத்தப்பட்டது',
+                ),
+              );
             },
           ),
         ],
@@ -11905,8 +12030,12 @@ class AgeSelector extends StatelessWidget {
   final int days;
   final void Function(int y, int m, int d) onChanged;
 
+  /// Field heading; empty when a surrounding row already names the field.
+  final String? label;
+
   const AgeSelector({
     super.key,
+    this.label,
     required this.enabled,
     required this.years,
     required this.months,
@@ -11953,7 +12082,7 @@ class AgeSelector extends StatelessWidget {
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
           decoration: fieldStyle(
-            enabled ? 'Age' : 'Age calculated from date of birth',
+            label ?? (enabled ? 'Age' : 'Age calculated from date of birth'),
             icon: Icons.cake_outlined,
           ),
           items: [
@@ -11985,30 +12114,40 @@ class AddAnimalScreen extends StatefulWidget {
 
 class _AddAnimalScreenState extends State<AddAnimalScreen> {
   final _name = TextEditingController();
-  final _nameEnglish = TextEditingController();
-  final _nameTamil = TextEditingController();
   final _dob = TextEditingController();
   final _purchase = TextEditingController();
   final _arrival = TextEditingController(text: todayDate());
   final _notes = TextEditingController();
-  final _imageUrl = TextEditingController();
+  final _serviceFee = TextEditingController();
+  final _trainer = TextEditingController();
+  final _fitness = TextEditingController();
+  final _dailyRate = TextEditingController();
 
   String _imageData = '';
+  String _imageUrl = '';
   String _breed = breeds.first;
   String _mother = 'Unknown Mother';
   String _source = 'Existing';
   String _gender = 'Female';
+  String _maleUse = '';
+  String _pair = '';
+  bool _outsideService = false;
+  bool _dobUnknown = false;
+  bool _ageUnknown = false;
+  bool _arrivalUnknown = false;
   int _y = 0, _m = 0, _d = 0;
   bool _saving = false;
   bool _pickingPhoto = false;
 
   bool get _edit => widget.animalKey != null;
+  bool get _isCow => widget.type == 'cow';
+  bool get _male => _gender == 'Male';
 
   @override
   void initState() {
     super.initState();
 
-    if (widget.type == 'calf') {
+    if (!_isCow) {
       _source = 'Born';
       _dob.text = todayDate();
       _arrival.text = todayDate();
@@ -12018,13 +12157,13 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
       final raw = Hive.box('animals').get(widget.animalKey);
       if (raw != null) {
         final a = asMap(raw);
-        _name.text = txt(a, 'name');
-        _nameEnglish.text = txt(
-          a,
-          'nameEnglish',
-          nameInLanguage(_name.text, false),
-        );
-        _nameTamil.text = txt(a, 'nameTamil', nameInLanguage(_name.text, true));
+        // The field shows the spelling for the current language. The stored
+        // `name` stays the record identity, so milk and health history remain
+        // linked even when the display spelling is corrected.
+        final explicit = txt(a, tamilUi ? 'nameTamil' : 'nameEnglish');
+        _name.text = explicit.isNotEmpty
+            ? explicit
+            : nameInLanguage(txt(a, 'name'), tamilUi);
         _breed = breeds.contains(txt(a, 'breed'))
             ? txt(a, 'breed')
             : breeds.first;
@@ -12032,98 +12171,165 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         _y = toInt(a['ageYears']);
         _m = toInt(a['ageMonths']);
         _d = toInt(a['ageDays']);
+        _dobUnknown = a['dobUnknown'] == true;
+        _ageUnknown = a['ageUnknown'] == true;
+        _arrivalUnknown = a['arrivalUnknown'] == true;
         _mother = motherNames().contains(txt(a, 'mother'))
             ? txt(a, 'mother')
             : 'Unknown Mother';
-        _source = txt(a, 'source', widget.type == 'calf' ? 'Born' : 'Existing');
+        _source = txt(a, 'source', _isCow ? 'Existing' : 'Born');
         final storedGender = txt(a, 'gender', 'Female');
         _gender = const ['Female', 'Male'].contains(storedGender)
             ? storedGender
             : 'Female';
-        _arrival.text = txt(a, 'arrivalDate', todayDate());
+        _maleUse = maleUseOf(a);
+        _arrival.text = _arrivalUnknown
+            ? ''
+            : txt(a, 'arrivalDate', todayDate());
         _purchase.text = numv(a, 'purchaseAmount') > 0
             ? numv(a, 'purchaseAmount').toStringAsFixed(0)
             : '';
         _notes.text = txt(a, 'notes');
-        _imageUrl.text = txt(a, 'imageUrl');
+        _imageUrl = txt(a, 'imageUrl');
         _imageData = txt(a, 'imageData');
+        if (numv(a, 'serviceFee') > 0) {
+          _serviceFee.text = numv(a, 'serviceFee').toStringAsFixed(0);
+        }
+        _outsideService = a['outsideService'] == true;
+        _trainer.text = txt(a, 'trainerName');
+        _fitness.text = txt(a, 'fitnessValidTill');
+        _pair = txt(a, 'pairPartner');
+        if (numv(a, 'dailyRate') > 0) {
+          _dailyRate.text = numv(a, 'dailyRate').toStringAsFixed(0);
+        }
       }
     }
+    if (_isCow && _male && _maleUse.isEmpty) _maleUse = maleUses.first;
   }
 
   @override
   void dispose() {
-    _name.dispose();
-    _nameEnglish.dispose();
-    _nameTamil.dispose();
-    _dob.dispose();
-    _purchase.dispose();
-    _arrival.dispose();
-    _notes.dispose();
-    _imageUrl.dispose();
+    for (final c in [
+      _name,
+      _dob,
+      _purchase,
+      _arrival,
+      _notes,
+      _serviceFee,
+      _trainer,
+      _fitness,
+      _dailyRate,
+    ]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  bool _isDuplicate(String candidate) {
+  bool _isDuplicate(String candidate, String identity) {
+    final wanted = candidate.toLowerCase();
     for (final a in animals(all: true)) {
       if (_edit && a['key'] == widget.animalKey) continue;
-      if (txt(a, 'name').toLowerCase() == candidate.toLowerCase()) return true;
+      if (txt(a, 'name') == identity && _edit) continue;
+      for (final field in const ['name', 'nameTamil', 'nameEnglish']) {
+        if (txt(a, field).trim().toLowerCase() == wanted) return true;
+      }
     }
     return false;
   }
 
+  /// Other active bulls that can pull a cart together with this one.
+  List<String> _pairOptions(String self) => [
+    for (final a in animals())
+      if (isMaleAnimal(a) &&
+          maleUseOf(a) == 'Cart' &&
+          txt(a, 'name') != self &&
+          txt(a, 'name').isNotEmpty)
+        txt(a, 'name'),
+  ];
+
   Future<void> _save() async {
+    if (_saving) return;
     if (!canEditAnimals) {
       snack(context, 'Only admins and editors can save animal details');
       return;
     }
-    final name = _name.text.trim();
-    if (name.isEmpty) {
-      snack(context, 'Please enter a name');
+    final typed = _name.text.trim();
+    if (typed.isEmpty) {
+      snack(context, bi('Please enter a name', 'பெயரை எழுதவும்'));
       return;
     }
-    if (_isDuplicate(name)) {
-      snack(context, 'An animal named "$name" already exists');
+    if (_isCow && _male && _maleUse.isEmpty) {
+      snack(
+        context,
+        bi(
+          'Choose what this bull is used for',
+          'காளையின் பயன்பாட்டைத் தேர்வு செய்யவும்',
+        ),
+      );
+      return;
+    }
+    final raw = _edit
+        ? asMap(Hive.box('animals').get(widget.animalKey))
+        : <String, dynamic>{};
+    final identity = _edit && txt(raw, 'name').isNotEmpty
+        ? txt(raw, 'name')
+        : typed;
+    if (_isDuplicate(typed, identity)) {
+      snack(
+        context,
+        bi(
+          'An animal named "$typed" already exists',
+          '"$typed" என்ற பெயரில் ஏற்கெனவே ஒரு கால்நடை உள்ளது',
+        ),
+      );
       return;
     }
 
     setState(() => _saving = true);
     try {
-      final raw = _edit
-          ? asMap(Hive.box('animals').get(widget.animalKey))
-          : <String, dynamic>{};
       final amount = toDouble(_purchase.text);
-      final arrival = _arrival.text.trim().isEmpty
-          ? todayDate()
-          : _arrival.text.trim();
-      final hasDob = _dob.text.trim().isNotEmpty;
+      final arrival = _arrivalUnknown ? '' : _arrival.text.trim();
+      final dob = _dobUnknown ? '' : _dob.text.trim();
+      final hasDob = dob.isNotEmpty;
+      final ageUnknown = !hasDob && _ageUnknown;
+      final languageKey = tamilUi ? 'nameTamil' : 'nameEnglish';
+      final otherKey = tamilUi ? 'nameEnglish' : 'nameTamil';
+      final male = _male;
+      final use = male ? _maleUse : '';
 
       final data = <String, dynamic>{
         'type': widget.type,
-        'name': name,
-        'nameEnglish': _nameEnglish.text.trim().isEmpty
-            ? nameInLanguage(name, false)
-            : _nameEnglish.text.trim(),
-        'nameTamil': _nameTamil.text.trim().isEmpty
-            ? nameInLanguage(name, true)
-            : _nameTamil.text.trim(),
+        'name': identity,
+        languageKey: typed,
+        otherKey: _edit ? txt(raw, otherKey) : '',
         'id': _edit ? txt(raw, 'id') : nextId(widget.type),
         'breed': _breed,
-        'dob': _dob.text.trim(),
-        'ageYears': hasDob ? 0 : _y,
-        'ageMonths': hasDob ? 0 : _m,
-        'ageDays': hasDob ? 0 : _d,
+        'dob': dob,
+        'dobUnknown': _dobUnknown,
+        'ageYears': hasDob || ageUnknown ? 0 : _y,
+        'ageMonths': hasDob || ageUnknown ? 0 : _m,
+        'ageDays': hasDob || ageUnknown ? 0 : _d,
+        'ageUnknown': ageUnknown,
         'status': _edit ? txt(raw, 'status', 'Active') : 'Active',
-        'mother': widget.type == 'calf' ? _mother : '',
+        'mother': _isCow ? txt(raw, 'mother') : _mother,
         'arrivalDate': arrival,
+        'arrivalUnknown': _arrivalUnknown,
         'source': _source,
         'purchaseAmount': amount,
-        'gender': widget.type == 'calf' ? _gender : 'Female',
-        'pregnancyStartDate': _edit ? txt(raw, 'pregnancyStartDate') : '',
-        'pregnancyInjection': _edit ? txt(raw, 'pregnancyInjection') : '',
-        'milkingStopDate': _edit ? txt(raw, 'milkingStopDate') : '',
+        'gender': _gender,
+        'maleUse': use,
+        // A male never carries pregnancy or lactation state.
+        'pregnancyStartDate': male ? '' : txt(raw, 'pregnancyStartDate'),
+        'pregnancyInjection': male ? '' : txt(raw, 'pregnancyInjection'),
+        'milkingStopDate': male ? '' : txt(raw, 'milkingStopDate'),
+        'serviceFee': use == 'Breeding' ? toDouble(_serviceFee.text) : 0.0,
+        'outsideService': use == 'Breeding' && _outsideService,
+        'trainerName': use == 'Jallikattu' ? _trainer.text.trim() : '',
+        'fitnessValidTill': use == 'Jallikattu' ? _fitness.text.trim() : '',
+        'pairPartner': use == 'Cart' ? _pair : '',
+        'dailyRate': use == 'Cart' ? toDouble(_dailyRate.text) : 0.0,
         'notes': _notes.text.trim(),
-        'imageUrl': _imageUrl.text.trim(),
+        'imageUrl': _imageData.isNotEmpty ? '' : _imageUrl,
         'imageData': _imageData,
         // Keep the original author on an edit rather than reassigning the record.
         'addedBy': _edit
@@ -12138,10 +12344,10 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         await Hive.box('animals').add(data);
         if (_source == 'Purchased' && amount > 0) {
           await Hive.box('purchase_records').add({
-            'animal': name,
-            'type': widget.type == 'cow' ? 'Cow Purchase' : 'Calf Purchase',
+            'animal': identity,
+            'type': _isCow ? 'Cow Purchase' : 'Calf Purchase',
             'amount': amount,
-            'date': arrival,
+            'date': arrival.isEmpty ? todayDate() : arrival,
             'notes': _notes.text.trim(),
             'addedBy': currentUserName(),
             'createdAt': DateTime.now().toIso8601String(),
@@ -12158,180 +12364,356 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
     }
   }
 
-  Widget _photoPicker(bool isCow) {
-    Widget preview;
-    final url = _imageUrl.text.trim();
-
-    if (_imageData.startsWith('data:image')) {
-      preview = ClipPath(
-        clipper: const SquircleClipper(Gold.r21),
-        child: Image.memory(
-          base64Decode(_imageData.split(',').last),
-          width: Gold.s89,
-          height: Gold.s89,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => const CowMark(size: Gold.s89),
-        ),
-      );
-    } else if (url.startsWith('http://') || url.startsWith('https://')) {
-      preview = ClipPath(
-        clipper: const SquircleClipper(Gold.r21),
-        child: Image.network(
-          url,
-          width: Gold.s89,
-          height: Gold.s89,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => const CowMark(size: Gold.s89),
-        ),
-      );
-    } else {
-      preview = const CowMark(size: Gold.s89);
+  Future<void> _pickPhoto() async {
+    if (_pickingPhoto) return;
+    setState(() => _pickingPhoto = true);
+    try {
+      final picked = await pickImageDataUrl();
+      if (!mounted) return;
+      if (picked == null) {
+        snack(
+          context,
+          'No photo selected. Please allow Photos access and try again',
+        );
+        return;
+      }
+      setState(() {
+        _imageData = picked;
+        _imageUrl = '';
+      });
+    } catch (_) {
+      if (mounted) snack(context, 'Could not open Photos. Please try again');
+    } finally {
+      if (mounted) setState(() => _pickingPhoto = false);
     }
+  }
 
-    return Glass(
-      radius: Gold.r27,
-      padding: const EdgeInsets.all(Gold.s16),
-      elevation: 0.62,
-      child: Row(
-        children: [
-          SizedBox(width: Gold.s89, height: Gold.s89, child: preview),
-          const SizedBox(width: Gold.s16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AppText(
-                  isCow ? 'Cow Photo' : 'Calf Photo',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Ink.navy,
-                    fontSize: Gold.t13,
-                  ),
-                ),
-                const SizedBox(height: Gold.s8),
-                GhostButton(
-                  label: _pickingPhoto ? 'Opening Photos...' : 'Select Photo',
-                  icon: _pickingPhoto
-                      ? Icons.hourglass_top_rounded
-                      : Icons.photo_camera_rounded,
-                  onPressed: _pickingPhoto
-                      ? null
-                      : () async {
-                          setState(() => _pickingPhoto = true);
-                          try {
-                            final picked = await pickImageDataUrl();
-                            if (!mounted) return;
-                            if (picked == null) {
-                              snack(
-                                context,
-                                'No photo selected. Please allow Photos access and try again',
-                              );
-                              return;
-                            }
-                            setState(() {
-                              _imageData = picked;
-                              _imageUrl.clear();
-                            });
-                            snack(context, 'Photo selected');
-                          } catch (_) {
-                            if (mounted) {
-                              snack(
-                                context,
-                                'Could not open Photos. Please try again',
-                              );
-                            }
-                          } finally {
-                            if (mounted) {
-                              setState(() => _pickingPhoto = false);
-                            }
-                          }
-                        },
-                ),
-                if (_imageData.isNotEmpty || _imageUrl.text.isNotEmpty) ...[
-                  const SizedBox(height: Gold.s5),
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _imageData = '';
-                      _imageUrl.clear();
-                    }),
-                    child: const AppText(
-                      'Remove photo',
-                      style: TextStyle(
-                        color: Ink.red,
-                        fontWeight: FontWeight.w600,
-                        fontSize: Gold.t11,
+  Widget _photoHero(String currentId) {
+    const size = Gold.s89 + Gold.s34 + Gold.s21;
+    Widget image = const CowMark(size: size * .58);
+    if (_imageData.startsWith('data:image')) {
+      image = Image.memory(
+        base64Decode(_imageData.split(',').last),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (_, _, _) => const CowMark(size: size * .58),
+      );
+    } else if (_imageUrl.startsWith('http://') ||
+        _imageUrl.startsWith('https://')) {
+      image = Image.network(
+        _imageUrl,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const CowMark(size: size * .58),
+      );
+    }
+    final hasPhoto = _imageData.isNotEmpty || _imageUrl.isNotEmpty;
+    return Column(
+      children: [
+        Semantics(
+          button: true,
+          label: bi('Choose photo', 'புகைப்படம் தேர்வு செய்'),
+          child: Pressable(
+            radius: Gold.r55,
+            onTap: _pickPhoto,
+            child: SizedBox(
+              width: size + Gold.s8,
+              height: size + Gold.s8,
+              child: Stack(
+                children: [
+                  Center(
+                    child: Container(
+                      width: size,
+                      height: size,
+                      decoration: ShapeDecoration(
+                        shape: const SquircleBorder(
+                          radius: Gold.r55,
+                          side: BorderSide(color: Colors.white, width: 3),
+                        ),
+                        color: Ink.lavender,
+                        shadows: [
+                          BoxShadow(
+                            color: Ink.violetDeep.withValues(alpha: .16),
+                            blurRadius: Gold.s34,
+                            offset: const Offset(0, Gold.s13),
+                          ),
+                        ],
                       ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Center(child: image),
+                    ),
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: Gold.s34 + Gold.s8,
+                      height: Gold.s34 + Gold.s8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Ink.violetDeep,
+                        border: Border.all(color: Colors.white, width: 3),
+                      ),
+                      child: _pickingPhoto
+                          ? const Padding(
+                              padding: EdgeInsets.all(Gold.s8),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              CupertinoIcons.camera_fill,
+                              color: Colors.white,
+                              size: Gold.t16 + 2,
+                            ),
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: Gold.s8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Gold.s13,
+                vertical: Gold.s5,
+              ),
+              decoration: ShapeDecoration(
+                shape: const SquircleBorder(radius: Gold.r13),
+                color: Ink.violet.withValues(alpha: .12),
+              ),
+              child: AppText(
+                '#$currentId',
+                style: const TextStyle(
+                  color: Ink.violetDeep,
+                  fontWeight: FontWeight.w700,
+                  fontSize: Gold.t13,
+                ),
+              ),
+            ),
+            if (hasPhoto) ...[
+              const SizedBox(width: Gold.s13),
+              GestureDetector(
+                onTap: () => setState(() {
+                  _imageData = '';
+                  _imageUrl = '';
+                }),
+                child: Text(
+                  bi('Remove photo', 'புகைப்படத்தை நீக்கு'),
+                  style: const TextStyle(
+                    color: Ink.red,
+                    fontWeight: FontWeight.w700,
+                    fontSize: Gold.t13,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _roleFields(String self) {
+    switch (_maleUse) {
+      case 'Breeding':
+        return [
+          TextField(
+            controller: _serviceFee,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: fieldStyle(
+              bi('Service fee (optional)', 'கருவூட்டல் கட்டணம் (விருப்பம்)'),
+              icon: Icons.sell_outlined,
+            ),
+          ),
+          const SizedBox(height: Gold.s13),
+          Glass(
+            radius: Gold.r21,
+            padding: const EdgeInsets.fromLTRB(
+              Gold.s16,
+              Gold.s5,
+              Gold.s8,
+              Gold.s5,
+            ),
+            elevation: 0.5,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    bi(
+                      'Available for outside cows',
+                      'வெளி மாடுகளுக்கும் கருவூட்டல் செய்யலாம்',
+                    ),
+                    style: const TextStyle(
+                      color: Ink.navy,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                CupertinoSwitch(
+                  value: _outsideService,
+                  activeTrackColor: Ink.violetDeep,
+                  onChanged: (v) => setState(() => _outsideService = v),
+                ),
               ],
             ),
           ),
-        ],
-      ),
-    );
+        ];
+      case 'Jallikattu':
+        return [
+          TextField(
+            controller: _trainer,
+            textCapitalization: TextCapitalization.words,
+            decoration: fieldStyle(
+              bi('Trainer name (optional)', 'பயிற்சியாளர் பெயர் (விருப்பம்)'),
+              icon: Icons.sports_rounded,
+            ),
+          ),
+          const SizedBox(height: Gold.s13),
+          DateField(
+            controller: _fitness,
+            label: bi(
+              'Fitness certificate valid till',
+              'உடல் தகுதிச் சான்று செல்லுபடி தேதி',
+            ),
+            clearable: true,
+            onChanged: () => setState(() {}),
+          ),
+        ];
+      case 'Cart':
+        final pairs = _pairOptions(self);
+        return [
+          if (pairs.isNotEmpty) ...[
+            DropdownButtonFormField<String>(
+              initialValue: pairs.contains(_pair) ? _pair : '',
+              isExpanded: true,
+              borderRadius: BorderRadius.circular(Gold.r21),
+              decoration: fieldStyle(
+                bi('Pair partner (optional)', 'ஜோடி மாடு (விருப்பம்)'),
+                icon: Icons.link_rounded,
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: '',
+                  child: Text(bi('No pair', 'ஜோடி இல்லை')),
+                ),
+                for (final n in pairs)
+                  DropdownMenuItem(value: n, child: AppText(n)),
+              ],
+              onChanged: (v) => setState(() => _pair = v ?? ''),
+            ),
+            const SizedBox(height: Gold.s13),
+          ],
+          TextField(
+            controller: _dailyRate,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: fieldStyle(
+              bi('Usual rate per day (optional)', 'ஒரு நாள் கூலி (விருப்பம்)'),
+              icon: Icons.sell_outlined,
+            ),
+          ),
+        ];
+    }
+    return const [];
   }
 
   @override
   Widget build(BuildContext context) {
-    final isCow = widget.type == 'cow';
+    final isCow = _isCow;
     final sources = isCow
         ? const ['Existing', 'Purchased']
         : const ['Born', 'Purchased'];
     if (!sources.contains(_source)) _source = sources.first;
-    final hasDob = _dob.text.trim().isNotEmpty;
+    final hasDob = !_dobUnknown && _dob.text.trim().isNotEmpty;
+    final raw = _edit
+        ? asMap(Hive.box('animals').get(widget.animalKey) ?? {})
+        : <String, dynamic>{};
+    final currentId = _edit ? txt(raw, 'id') : nextId(widget.type);
+    final self = txt(raw, 'name');
 
-    final currentId = _edit
-        ? txt(asMap(Hive.box('animals').get(widget.animalKey) ?? {}), 'id')
-        : nextId(widget.type);
+    final nameLabel = isCow
+        ? (_male
+              ? bi('Bull name', 'காளையின் பெயர்')
+              : bi('Cow name', 'மாட்டின் பெயர்'))
+        : bi('Calf name', 'கன்றின் பெயர்');
+    final genderLabels = isCow
+        ? [bi('Cow · Female', 'பசு · பெண்'), bi('Bull · Male', 'காளை · ஆண்')]
+        : [
+            bi('Heifer · Female', 'கிடேரி · பெண்'),
+            bi('Bull calf · Male', 'காளைக் கன்று · ஆண்'),
+          ];
 
     return FormPage(
       title: _edit
-          ? (isCow ? 'Edit Cow' : 'Edit Calf')
-          : (isCow ? 'Add Cow' : 'Add Calf'),
+          ? (isCow
+                ? (_male ? bi('Edit Bull', 'காளையைத் திருத்து') : 'Edit Cow')
+                : 'Edit Calf')
+          : (isCow
+                ? (_male ? bi('Add Bull', 'காளையைச் சேர்') : 'Add Cow')
+                : 'Add Calf'),
       children: [
-        Glass(
-          radius: Gold.r21,
-          padding: const EdgeInsets.all(Gold.s16),
-          elevation: 0.62,
-          child: Row(
-            children: [
-              const Icon(
-                Icons.badge_outlined,
-                color: Ink.violet,
-                size: Gold.t21,
-              ),
-              const SizedBox(width: Gold.s13),
-              AppText(
-                'ID  $currentId',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Ink.navy,
-                  fontSize: Gold.t13,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: Gold.s13),
+        _photoHero(currentId),
+        const SizedBox(height: Gold.s21),
         TextField(
           controller: _name,
           textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.next,
           decoration: fieldStyle(
-            isCow ? 'Cow Name' : 'Calf Name',
+            nameLabel,
             icon: Icons.drive_file_rename_outline_rounded,
           ),
         ),
-        TextField(
-          controller: _nameEnglish,
-          decoration: fieldStyle(bi('Name in English', 'ஆங்கிலப் பெயர்')),
-        ),
-        const SizedBox(height: 13),
-        TextField(
-          controller: _nameTamil,
-          decoration: fieldStyle(bi('Name in Tamil', 'தமிழ்ப் பெயர்')),
-        ),
         const SizedBox(height: Gold.s13),
+        Glass(
+          radius: Gold.r21,
+          blur: Gold.s13,
+          padding: const EdgeInsets.all(Gold.s5),
+          elevation: 0.62,
+          child: LiquidSegmentBar(
+            labels: genderLabels,
+            index: _male ? 1 : 0,
+            onChanged: (value) => setState(() {
+              _gender = value == 1 ? 'Male' : 'Female';
+              if (_male && isCow && _maleUse.isEmpty) {
+                _maleUse = maleUses.first;
+              }
+            }),
+          ),
+        ),
+        AnimatedSize(
+          duration: Gold.base,
+          curve: Gold.ease,
+          alignment: Alignment.topCenter,
+          child: _male
+              ? Padding(
+                  padding: const EdgeInsets.only(top: Gold.s21),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      MaleUsePicker(
+                        value: _maleUse,
+                        calf: !isCow,
+                        onChanged: (v) => setState(() => _maleUse = v),
+                      ),
+                      if (_roleFields(self).isNotEmpty) ...[
+                        const SizedBox(height: Gold.s5),
+                        ..._roleFields(self),
+                      ],
+                    ],
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+        const SizedBox(height: Gold.s21),
         DropdownButtonFormField<String>(
           initialValue: _breed,
           isExpanded: true,
@@ -12350,39 +12732,51 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           padding: const EdgeInsets.all(Gold.s5),
           elevation: 0.62,
           child: LiquidSegmentBar(
-            labels: sources,
+            labels: [for (final s in sources) ui(s)],
             index: math.max(0, sources.indexOf(_source)),
             onChanged: (value) => setState(() {
               _source = sources[value];
-              if (widget.type == 'calf' &&
-                  _source == 'Born' &&
-                  _dob.text.isEmpty) {
+              if (!isCow && _source == 'Born' && _dob.text.isEmpty) {
                 _dob.text = todayDate();
+                _dobUnknown = false;
               }
             }),
           ),
         ),
-        const SizedBox(height: Gold.s13),
-        DateField(
-          controller: _dob,
-          label: 'Date of Birth',
-          clearable: true,
-          onChanged: () => setState(() {}),
+        const SizedBox(height: Gold.s21),
+        UnknownToggleField(
+          label: bi('Date of birth', 'பிறந்த தேதி'),
+          unknown: _dobUnknown,
+          onUnknownChanged: (v) => setState(() => _dobUnknown = v),
+          child: DateField(
+            controller: _dob,
+            label: '',
+            clearable: true,
+            onChanged: () => setState(() {}),
+          ),
         ),
-        const SizedBox(height: Gold.s13),
-        AgeSelector(
-          enabled: !hasDob,
-          years: _y,
-          months: _m,
-          days: _d,
-          onChanged: (y, m, d) => setState(() {
-            _y = y;
-            _m = m;
-            _d = d;
-          }),
-        ),
+        if (!hasDob) ...[
+          const SizedBox(height: Gold.s16),
+          UnknownToggleField(
+            label: bi('Age', 'வயது'),
+            unknown: _ageUnknown,
+            onUnknownChanged: (v) => setState(() => _ageUnknown = v),
+            child: AgeSelector(
+              label: '',
+              enabled: true,
+              years: _y,
+              months: _m,
+              days: _d,
+              onChanged: (y, m, d) => setState(() {
+                _y = y;
+                _m = m;
+                _d = d;
+              }),
+            ),
+          ),
+        ],
         if (!isCow) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Gold.s16),
           DropdownButtonFormField<String>(
             initialValue: motherNames().contains(_mother)
                 ? _mother
@@ -12399,27 +12793,20 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             ],
             onChanged: (v) => setState(() => _mother = v ?? _mother),
           ),
-          const SizedBox(height: Gold.s13),
-          DropdownButtonFormField<String>(
-            initialValue: _gender,
-            isExpanded: true,
-            borderRadius: BorderRadius.circular(Gold.r21),
-            decoration: fieldStyle('Gender', icon: Icons.wc_rounded),
-            items: const [
-              DropdownMenuItem<String>(
-                value: 'Female',
-                child: AppText('Female'),
-              ),
-              DropdownMenuItem<String>(value: 'Male', child: AppText('Male')),
-            ],
-            onChanged: (v) => setState(() => _gender = v ?? _gender),
-          ),
         ],
-        const SizedBox(height: Gold.s13),
-        DateField(
-          controller: _arrival,
-          label: 'Farm Arrival / Purchase Date',
-          onChanged: () => setState(() {}),
+        const SizedBox(height: Gold.s16),
+        UnknownToggleField(
+          label: bi('Farm arrival date', 'தொழுவத்திற்கு வந்த தேதி'),
+          unknown: _arrivalUnknown,
+          onUnknownChanged: (v) => setState(() {
+            _arrivalUnknown = v;
+            if (!v && _arrival.text.isEmpty) _arrival.text = todayDate();
+          }),
+          child: DateField(
+            controller: _arrival,
+            label: '',
+            onChanged: () => setState(() {}),
+          ),
         ),
         if (_source == 'Purchased') ...[
           const SizedBox(height: Gold.s13),
@@ -12433,17 +12820,6 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           ),
         ],
         const SizedBox(height: Gold.s13),
-        _photoPicker(isCow),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _imageUrl,
-          decoration: fieldStyle(
-            'Photo URL (optional)',
-            icon: Icons.link_rounded,
-          ),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: Gold.s13),
         TextField(
           controller: _notes,
           maxLines: 4,
@@ -12452,7 +12828,11 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
-          label: _edit ? 'Save Changes' : (isCow ? 'Save Cow' : 'Save Calf'),
+          label: _edit
+              ? 'Save Changes'
+              : (isCow
+                    ? (_male ? bi('Save Bull', 'காளையைச் சேமி') : 'Save Cow')
+                    : 'Save Calf'),
           icon: Icons.check_rounded,
           busy: _saving,
           onPressed: _save,
@@ -12555,7 +12935,10 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         if (quantity > available) {
           snack(
             context,
-            'Only ${available.toStringAsFixed(1)} ${stockUnit(item)} of $item is available',
+            bi(
+              'Only ${available.toStringAsFixed(1)} ${stockUnit(item)} of $item is available',
+              '${ui(item)} ${available.toStringAsFixed(1)} ${stockUnit(item)} மட்டுமே உள்ளது',
+            ),
           );
           return;
         }
@@ -12946,7 +13329,11 @@ class _DoctorScreenState extends State<DoctorScreen> {
       AutoSyncService.scheduleSync(reason: 'doctor visit saved');
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
-      if (mounted) snack(context, 'Could not save: $error');
+      if (mounted)
+        snack(
+          context,
+          '${bi('Could not save', 'சேமிக்க முடியவில்லை')}: $error',
+        );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -12968,9 +13355,15 @@ class _DoctorScreenState extends State<DoctorScreen> {
       );
     }
     final animal = asMap(raw);
+    final female = !isMaleAnimal(animal);
+    if (!female) _visit = 0;
 
     return FormPage(
-      title: tamilUi ? 'மருத்துவர் / சினை பதிவு' : 'Add Doctor Visit',
+      title: !female
+          ? bi('Add Doctor Visit', 'மருத்துவர் பதிவு')
+          : tamilUi
+          ? 'மருத்துவர் / சினை பதிவு'
+          : 'Add Doctor Visit',
       children: [
         Glass(
           radius: Gold.r21,
@@ -13003,20 +13396,22 @@ class _DoctorScreenState extends State<DoctorScreen> {
             ],
           ),
         ),
-        const SizedBox(height: Gold.s13),
-        Glass(
-          radius: Gold.r21,
-          blur: Gold.s13,
-          padding: const EdgeInsets.all(Gold.s5),
-          elevation: 0.62,
-          child: LiquidSegmentBar(
-            labels: tamilUi
-                ? const ['மருத்துவம்', 'சினை ஊசி']
-                : const ['Problem', 'Pregnancy Injection'],
-            index: _visit,
-            onChanged: (value) => setState(() => _visit = value),
+        if (female) ...[
+          const SizedBox(height: Gold.s13),
+          Glass(
+            radius: Gold.r21,
+            blur: Gold.s13,
+            padding: const EdgeInsets.all(Gold.s5),
+            elevation: 0.62,
+            child: LiquidSegmentBar(
+              labels: tamilUi
+                  ? const ['மருத்துவம்', 'சினை ஊசி']
+                  : const ['Problem', 'Pregnancy Injection'],
+              index: _visit,
+              onChanged: (value) => setState(() => _visit = value),
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: Gold.s13),
         if (_visit == 0) ...[
           TextField(
@@ -13141,7 +13536,13 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
       all: true,
     ).any((a) => txt(a, 'name').toLowerCase() == calfName.toLowerCase());
     if (taken) {
-      snack(context, 'An animal named "$calfName" already exists');
+      snack(
+        context,
+        bi(
+          'An animal named "$calfName" already exists',
+          '"$calfName" என்ற பெயரில் ஏற்கெனவே ஒரு கால்நடை உள்ளது',
+        ),
+      );
       return;
     }
 
@@ -13261,7 +13662,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
               const SizedBox(width: Gold.s13),
               Expanded(
                 child: AppText(
-                  'Mother  $motherName',
+                  '${bi('Mother', 'தாய்')}  ${localizedAnimalLabel(motherName)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -13346,6 +13747,9 @@ List<Map<String, dynamic>> ranchCustomers() {
 class PregnantCowsScreen extends StatelessWidget {
   const PregnantCowsScreen({super.key});
 
+  /// Average cattle gestation length used for the expected calving date.
+  static const gestationDays = 283;
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Ink.canvasTop,
@@ -13357,36 +13761,231 @@ class PregnantCowsScreen extends StatelessWidget {
     body: ValueListenableBuilder<Box<dynamic>>(
       valueListenable: Hive.box('animals').listenable(),
       builder: (_, _, _) {
-        final cows = animals()
-            .where(
-              (animal) =>
-                  txt(animal, 'gender', 'Female') == 'Female' &&
-                  txt(animal, 'pregnancyStartDate').isNotEmpty &&
-                  txt(animal, 'status', 'Active') == 'Active',
-            )
-            .toList();
-        return Shell(
-          child: cows.isEmpty
-              ? Center(
-                  child: EmptyNote(
-                    icon: Icons.favorite_border_rounded,
-                    title: tamilUi ? 'இல்லை' : 'None',
-                    message: tamilUi
-                        ? 'இப்போது சினை மாடுகள் இல்லை.'
-                        : 'There are no pregnant cows right now.',
-                  ),
+        final cows =
+            animals()
+                .where(
+                  (animal) =>
+                      txt(animal, 'gender', 'Female') == 'Female' &&
+                      txt(animal, 'pregnancyStartDate').isNotEmpty &&
+                      txt(animal, 'status', 'Active') == 'Active',
                 )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(21, 21, 21, 55),
-                  itemCount: cows.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, index) =>
-                      PlainAnimalCard(animal: cows[index]),
+                .toList()
+              ..sort(
+                (a, b) => txt(
+                  a,
+                  'pregnancyStartDate',
+                ).compareTo(txt(b, 'pregnancyStartDate')),
+              );
+        return Shell(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: Gold.contentWidth + Gold.s89,
+              ),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  Gold.s21,
+                  Gold.s13,
+                  Gold.s21,
+                  Gold.s55,
                 ),
+                children: [
+                  _PregnancySummary(count: cows.length),
+                  const SizedBox(height: Gold.s16),
+                  if (cows.isEmpty)
+                    SizedBox(
+                      width: double.infinity,
+                      child: EmptyNote(
+                        icon: Icons.favorite_border_rounded,
+                        title: bi('No pregnant cows', 'சினை மாடுகள் இல்லை'),
+                        message: bi(
+                          'Record a pregnancy injection from a cow profile to see her here.',
+                          'மாட்டின் profile-ல் சினை ஊசியைப் பதிவு செய்தால் இங்கே தெரியும்.',
+                        ),
+                      ),
+                    )
+                  else
+                    for (final cow in cows)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: Gold.s13),
+                        child: _PregnancyCard(animal: cow),
+                      ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     ),
   );
+}
+
+class _PregnancySummary extends StatelessWidget {
+  final int count;
+  const _PregnancySummary({required this.count});
+
+  @override
+  Widget build(BuildContext context) => Glass(
+    radius: Gold.r27,
+    padding: const EdgeInsets.all(Gold.s21),
+    elevation: 0.9,
+    child: Row(
+      children: [
+        Container(
+          width: Gold.s55,
+          height: Gold.s55,
+          decoration: const ShapeDecoration(
+            shape: SquircleBorder(radius: Gold.r21),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Ink.violet, Ink.violetDeep],
+            ),
+          ),
+          child: const Icon(
+            Icons.favorite_rounded,
+            color: Colors.white,
+            size: Gold.t27,
+          ),
+        ),
+        const SizedBox(width: Gold.s16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppText(
+                '$count',
+                style: const TextStyle(
+                  color: Ink.navy,
+                  fontSize: Gold.t34,
+                  fontWeight: FontWeight.w800,
+                  height: 1.05,
+                ),
+              ),
+              Text(
+                bi(
+                  count == 1 ? 'Pregnant cow' : 'Pregnant cows',
+                  'சினை மாடுகள்',
+                ),
+                style: const TextStyle(
+                  color: Ink.muted,
+                  fontSize: Gold.t13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PregnancyCard extends StatelessWidget {
+  final Map<String, dynamic> animal;
+  const _PregnancyCard({required this.animal});
+
+  @override
+  Widget build(BuildContext context) {
+    final start = DateTime.tryParse(txt(animal, 'pregnancyStartDate'));
+    final days = start == null
+        ? 0
+        : daysSince(txt(animal, 'pregnancyStartDate'));
+    const total = PregnantCowsScreen.gestationDays;
+    final progress = (days / total).clamp(0.0, 1.0);
+    final due = start?.add(const Duration(days: total));
+    final left = total - days;
+    final dueText = due == null
+        ? ''
+        : '${due.year}-${two(due.month)}-${two(due.day)}';
+    return Glass(
+      radius: Gold.r27,
+      padding: const EdgeInsets.all(Gold.s16),
+      elevation: 0.8,
+      onTap: () => push(context, AnimalProfileScreen(animalKey: animal['key'])),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              AnimalAvatar(animal: animal, radius: Gold.s27),
+              const SizedBox(width: Gold.s13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppText(
+                      txt(animal, 'name'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: Gold.t16,
+                        fontWeight: FontWeight.w700,
+                        color: Ink.navy,
+                      ),
+                    ),
+                    const SizedBox(height: Gold.s2),
+                    Text(
+                      [
+                        ui(txt(animal, 'breed', 'Unknown breed')),
+                        if (txt(animal, 'pregnancyInjection').isNotEmpty)
+                          ui(txt(animal, 'pregnancyInjection')),
+                      ].join(' \u2022 '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Ink.muted,
+                        fontSize: Gold.t11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Ink.faint),
+            ],
+          ),
+          const SizedBox(height: Gold.s13),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(Gold.r8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: Gold.s8,
+              color: left <= 14 ? Ink.amber : Ink.violetDeep,
+              backgroundColor: Ink.violet.withValues(alpha: .12),
+            ),
+          ),
+          const SizedBox(height: Gold.s8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  bi('Day $days of $total', '$total-ல் $days-வது நாள்'),
+                  style: const TextStyle(
+                    color: Ink.body,
+                    fontSize: Gold.t13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (dueText.isNotEmpty)
+                Text(
+                  left > 0
+                      ? bi('Due $dueText', 'கன்று ஈனும் தேதி $dueText')
+                      : bi('Due now', 'கன்று ஈனும் நேரம்'),
+                  style: TextStyle(
+                    color: left <= 14 ? Ink.amberText : Ink.violetDeep,
+                    fontSize: Gold.t13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _GlobalSwipeBack extends StatefulWidget {
@@ -13865,7 +14464,10 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
               title: AppText(
                 calfCount == 1
                     ? 'Sell 1 calf together'
-                    : 'Sell $calfCount calves together',
+                    : bi(
+                        'Sell $calfCount calves together',
+                        '$calfCount கன்றுகளையும் சேர்த்து விற்கவும்',
+                      ),
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: Gold.t13,
@@ -14908,7 +15510,10 @@ class _SellScreenState extends State<SellScreen> {
                         ? bi('Save own use', 'சொந்த பயன்பாட்டை சேமி')
                         : tamilUi
                         ? 'பால் விற்பனையை சேமி'
-                        : 'Save ${_types[_type]} Sale',
+                        : bi(
+                            'Save ${_types[_type]} Sale',
+                            '${ui(_types[_type])} விற்பனையைச் சேமி',
+                          ),
                     icon: Icons.check_circle_rounded,
                     start: Ink.green,
                     end: const Color(0xFF1B7A4A),
@@ -15079,9 +15684,9 @@ class RecordListScreen extends StatelessWidget {
                         icon: Icons.water_drop_rounded,
                         color: Ink.violet,
                         details: [
-                          'Session: ${txt(list[i], 'session')}',
-                          'Milk: ${numv(list[i], 'quantity').toStringAsFixed(1)} L',
-                          'Notes: ${txt(list[i], 'notes', '-')}',
+                          '${bi('Session', 'நேரம்')}: ${ui(txt(list[i], 'session'))}',
+                          '${bi('Milk', 'பால்')}: ${numv(list[i], 'quantity').toStringAsFixed(1)} L',
+                          '${bi('Notes', 'குறிப்பு')}: ${txt(list[i], 'notes', '-')}',
                         ],
                       )
                     : DataCard(
@@ -15091,9 +15696,9 @@ class RecordListScreen extends StatelessWidget {
                         icon: Icons.payments_rounded,
                         color: Ink.red,
                         details: [
-                          'Details: ${cleanFoodLabel(txt(list[i], 'foodLabel', txt(list[i], 'type', txt(list[i], 'reason', '-'))))}',
-                          'Amount: ${money(amountOf(list[i]))}',
-                          'Notes: ${txt(list[i], 'notes', '-')}',
+                          '${bi('Details', 'விவரம்')}: ${cleanFoodLabel(txt(list[i], 'foodLabel', txt(list[i], 'type', txt(list[i], 'reason', '-'))))}',
+                          '${bi('Amount', 'தொகை')}: ${money(amountOf(list[i]))}',
+                          '${bi('Notes', 'குறிப்பு')}: ${txt(list[i], 'notes', '-')}',
                         ],
                       ),
               ),
@@ -15315,8 +15920,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   const SizedBox(height: Gold.s8),
                   AppText(
                     net >= 0
-                        ? 'Profit for ${_period.toLowerCase()}'
-                        : 'Loss for ${_period.toLowerCase()}',
+                        ? bi(
+                            'Profit for ${_period.toLowerCase()}',
+                            '${ui(_period)} லாபம்',
+                          )
+                        : bi(
+                            'Loss for ${_period.toLowerCase()}',
+                            '${ui(_period)} நஷ்டம்',
+                          ),
                     style: const TextStyle(
                       color: Ink.muted,
                       fontSize: 14,
@@ -15553,7 +16164,7 @@ class _ProfitLegend extends StatelessWidget {
       FittedBox(
         fit: BoxFit.scaleDown,
         alignment: end ? Alignment.centerRight : Alignment.centerLeft,
-        child: Text(
+        child: AppText(
           value,
           style: const TextStyle(
             fontSize: Gold.t16,
@@ -16364,7 +16975,11 @@ class SettingsScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: Gold.s5),
                             AppText(
-                              farmName(),
+                              ranchId().isEmpty && firebaseReady
+                                  ? (accountFullName.isNotEmpty
+                                        ? accountFullName
+                                        : currentUserName())
+                                  : farmName(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -16373,7 +16988,8 @@ class SettingsScreen extends StatelessWidget {
                                 color: Ink.body,
                               ),
                             ),
-                            if (ranchDetails().isNotEmpty)
+                            if (ranchId().isNotEmpty &&
+                                ranchDetails().isNotEmpty)
                               AppText(
                                 ranchDetails(),
                                 maxLines: 1,
@@ -16424,34 +17040,36 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _ActionRow(
                     icon: CupertinoIcons.at,
-                    label: bi('Profile', 'சுயவிவரம்'),
+                    label: bi('Profile', 'ப்ரொஃபைல்'),
                     onTap: () => push(context, const SocialProfileScreen()),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
-              Reveal(index: 1, child: const SectionTitle(title: 'Ranch')),
-              Reveal(
-                index: 2,
-                child: _SettingLink(
-                  title: 'App Settings',
-                  subtitle: 'Farm name, owner, currency and milk price',
-                  icon: Icons.tune_rounded,
-                  color: Ink.violet,
-                  onTap: () => push(context, const AppSettingsScreen()),
+              if (ranchId().isNotEmpty || !firebaseReady) ...[
+                Reveal(index: 1, child: const SectionTitle(title: 'Ranch')),
+                Reveal(
+                  index: 2,
+                  child: _SettingLink(
+                    title: 'App Settings',
+                    subtitle: 'Farm name, owner, currency and milk price',
+                    icon: Icons.tune_rounded,
+                    color: Ink.violet,
+                    onTap: () => push(context, const AppSettingsScreen()),
+                  ),
                 ),
-              ),
-              Reveal(
-                index: 3,
-                child: _SettingLink(
-                  title: 'Family Users',
-                  subtitle: 'Admin, Editor and Data Entry access',
-                  icon: Icons.groups_rounded,
-                  color: Ink.blue,
-                  onTap: () => push(context, const FamilyUsersScreen()),
+                Reveal(
+                  index: 3,
+                  child: _SettingLink(
+                    title: 'Family Users',
+                    subtitle: 'Admin, Editor and Data Entry access',
+                    icon: Icons.groups_rounded,
+                    color: Ink.blue,
+                    onTap: () => push(context, const FamilyUsersScreen()),
+                  ),
                 ),
-              ),
-              const SizedBox(height: Gold.s16),
+                const SizedBox(height: Gold.s16),
+              ],
               Reveal(index: 4, child: const SectionTitle(title: 'Data')),
               Reveal(
                 index: 5,
@@ -16886,7 +17504,10 @@ class FamilyUsersScreen extends StatelessWidget {
         builder: (ctx, setLocal) => AlertDialog(
           shape: const SquircleBorder(radius: Gold.r27),
           title: AppText(
-            'Manage ${txt(member, 'name', 'member')}',
+            bi(
+              'Manage ${txt(member, 'name', 'member')}',
+              '${txt(member, 'name', 'உறுப்பினர்')} - நிர்வகி',
+            ),
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           content: Column(
@@ -16943,7 +17564,14 @@ class FamilyUsersScreen extends StatelessWidget {
     try {
       if (action == 'save') {
         await RanchAccessService.updateMemberRole(ranchId(), memberUid, role);
-        if (context.mounted) snack(context, 'Permission updated to $role');
+        if (context.mounted)
+          snack(
+            context,
+            bi(
+              'Permission updated to $role',
+              'அனுமதி ${ui(role)} ஆக மாற்றப்பட்டது',
+            ),
+          );
       } else {
         final confirm = await showDialog<bool>(
           context: context,
@@ -17532,7 +18160,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
         );
       }
     } catch (e) {
-      if (mounted) snack(context, 'Failed: $e');
+      if (mounted) snack(context, '${bi('Failed', 'தோல்வி')}: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
