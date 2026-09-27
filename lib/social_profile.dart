@@ -167,6 +167,18 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
     appBar: AppBar(
       backgroundColor: Colors.transparent,
       actions: [
+        if (uid.isNotEmpty)
+          IconButton(
+            tooltip: bi('Share profile', 'ப்ரொஃபைலைப் பகிர்'),
+            icon: const Icon(CupertinoIcons.share),
+            onPressed: () => showShareSheet(context, () async {
+              final snap = await FirebaseFirestore.instance
+                  .collection('profiles')
+                  .doc(uid)
+                  .get();
+              return ShareCard.profile(uid, snap.data() ?? const {});
+            }),
+          ),
         if (own)
           IconButton(
             tooltip: ui('Settings'),

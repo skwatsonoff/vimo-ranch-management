@@ -207,7 +207,7 @@ class ReportDetailsScreen extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text(
+                      AppText(
                         '${txt(row, 'date')} · ${txt(row, 'time')} ${ui(txt(row, 'session'))}',
                         style: const TextStyle(color: Ink.muted),
                       ),
@@ -364,7 +364,7 @@ class RecordFullDetailsScreen extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 6,
-                    child: Text(
+                    child: AppText(
                       '${entry.value}',
                       textAlign: TextAlign.right,
                       style: const TextStyle(

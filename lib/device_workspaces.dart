@@ -14,8 +14,8 @@ class DeviceWorkspaces {
   static String get scope =>
       '${settingText('firebaseUid', 'local')}:${ranchId()}';
   static Future<void> preserve() async {
-    if (ranchId().isEmpty ||
-        Hive.box('settings').get('activeDeviceWorkspace') == '') {
+    // Personal (no-ranch) workspaces are archived as well, under "uid:".
+    if (Hive.box('settings').get('activeDeviceWorkspace') == '') {
       return;
     }
     final store = await _archive;

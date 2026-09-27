@@ -293,6 +293,27 @@ Deploy: `CLAUDE_DEPLOY.bat` in the laptop project clones GitHub `main` into `%TE
 
 Validation: analyze no errors/warnings; 88/88 tests (new `test/ui_fixes_test.dart`; ride test now waits for the real async save). Rules/indexes unchanged — hosting deploy only.
 
+### 6c. 1.4.0+7 — Bulls, first launch, workspaces, sharing and Tamil (Claude, 2026-09-27)
+
+| Area | Delivered | Files |
+| --- | --- | --- |
+| Add animal | One name field in the current language (stored `name` stays the identity; `nameTamil`/`nameEnglish` hold spellings), photo picker at the top, photo-URL field removed, Unknown switches for birth date, age and farm arrival (`dobUnknown`, `ageUnknown`, `arrivalUnknown`), gender for cows and calves | main.dart `AddAnimalScreen`, animal_roles.dart `UnknownToggleField` |
+| Bulls | Male → "What do you use this bull for?" Breeding / Jallikattu / Cart & farm work (`maleUse`). Males never appear in milk, mother, ranking or pregnancy lists; doctor screen hides pregnancy. Profile tabs Overview · Health · role · Timeline with role metrics and a `workLog` on the animal: services + result + fee (success rate), training + events + prizes + fitness certificate, work days + hours + earnings + rest. Bull calves may be "Not decided" and show readiness age | animal_roles.dart, main.dart |
+| First launch | Welcome → Language → Purpose (Ranch/Vendor/Market) before sign-in (`introCompleted`, `introPurpose`); devices that signed in before skip it | onboarding.dart `IntroFlow`, main.dart `AuthGate` |
+| Sign-up | Full name, VIMO ID, mobile, town/district, optional photo. Mobile stays private in `users/{uid}`; name/place/photo go to the public profile | onboarding.dart `SignupScreen` |
+| Ranch only for Ranch | Only Ranch-purpose accounts see create/join after sign-up. Vendor/Market get `RanchGateMode.personal` (local Admin, no ranch). Turning Ranch on later asks Create / Join; the Ranch tab shows the same prompt or the waiting-approval card. Personal records are kept when a ranch is created or joined | main.dart `RanchAccessService.resolve`, onboarding.dart `RanchSetupPrompt`, device_workspaces.dart |
+| Ranch create | Ranch mobile: "Use my mobile number" switch or a different number (`ranches/{id}.phone`) | main.dart `RanchOnboardingScreen` |
+| Preferences | iOS switches per workspace (`workspaces` list), Market = Social · Reports · Chat · Profile, four fixed slots + "More tabs" to drag in (or tap to place), "Sync with ranch people" without Firebase wording | business.dart |
+| Sharing | Share button on posts, profiles and animal profiles → ranch group (members only) and people. Cards travel as message text; ranch members open the real animal profile, others see photo/name/breed/age via `shared_cards/{id}` | share.dart, firestore.rules |
+| Pregnant cows | Full-width page, count header, gestation progress and due date | main.dart `PregnantCowsScreen` |
+| Tamil | ~450 more interface strings in everyday Tamil (`_tamilModern`), plain `Text('…')` converted to `AppText`, dynamic messages via `bi()` | tamil_strings.dart, interface.dart |
+
+Validation: analyze no errors/warnings; 97/97 Flutter tests (new `test/roles_navigation_test.dart`); 129 Firestore rules checks in the demo emulator (new shared-card and private-phone checks); GitHub Actions `Flutter checks` green. Browser screenshots at 390px checked onboarding, Add Bull, Bull profile, Preferences (English and Tamil).
+
+Deploy needs rules too: `firebase deploy --only hosting,firestore:rules --project my-ranch-sync` (`VIMO_DEPLOY.bat` does this from `main`).
+
+**Released 2026-09-27 15:28 JST** by the user with a `VIMO_DEPLOY.bat` pointed at branch `claude/beautiful-euler-2v4ayi` (hosting + firestore:rules, "Deploy complete"). PR #4 into `main` is still open: until it is merged, a deploy from `main` (`CLAUDE_DEPLOY.bat`) would publish the older 1.3.1 app. The rules compiler warnings at lines 372–380 are in the pre-existing `validRanchEntry` helper, not new.
+
 ## 7. Open items, limitations and questions
 
 | Item | Actual state / next action if requested |

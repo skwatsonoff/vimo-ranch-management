@@ -511,7 +511,7 @@ class GlassPortrait extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
+                      AppText(
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -532,7 +532,7 @@ class GlassPortrait extends StatelessWidget {
                         ),
                       ),
                       if (subtitle.isNotEmpty)
-                        Text(
+                        AppText(
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -572,7 +572,7 @@ class VimoScript extends StatelessWidget {
   const VimoScript({super.key, this.size = 52, this.color = Ink.violetDark});
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
-    child: Text(
+    child: AppText(
       'Vimo',
       style: TextStyle(
         fontFamily: 'Parisienne',

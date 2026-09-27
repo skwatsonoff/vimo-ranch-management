@@ -9,68 +9,190 @@ const businessTabs = [
   'Chat',
   'Profile',
 ];
+const workspaceKinds = ['Ranch', 'Vendor', 'Market'];
+
+/// The bottom bar always has exactly four destinations.
+const navigationSlots = 4;
+
 String get _profileKey =>
     firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? 'local' : 'local';
 Map<String, dynamic> get purposeProfile =>
     asMap(asMap(settingValue('purposeProfiles', {}))[_profileKey] ?? {});
-bool get purposeChosen =>
-    ['Ranch', 'Vendor', 'Market'].contains(purposeProfile['purpose']);
+bool get purposeChosen => workspaceKinds.contains(purposeProfile['purpose']);
 String get appPurpose => txt(purposeProfile, 'purpose', 'Ranch');
-bool get secondaryWorkspaceEnabled =>
-    purposeProfile['secondaryEnabled'] == true;
+
+/// The workspace that pairs with a purpose in the older two-mode settings.
+String _legacySecondary(String purpose) =>
+    purpose == 'Ranch' ? 'Vendor' : 'Ranch';
+
+List<String> _cleanWorkspaces(String purpose, Iterable<dynamic> raw) {
+  final set = {purpose, ...raw.whereType<String>()};
+  return [
+    for (final w in workspaceKinds)
+      if (set.contains(w)) w,
+  ];
+}
+
+/// Workspaces switched on for this account. The chosen purpose is always on.
+List<String> get enabledWorkspaces {
+  final raw = purposeProfile['workspaces'];
+  if (raw is List) return _cleanWorkspaces(appPurpose, raw);
+  return _cleanWorkspaces(appPurpose, [
+    if (purposeProfile['secondaryEnabled'] == true)
+      _legacySecondary(appPurpose),
+  ]);
+}
+
+bool get secondaryWorkspaceEnabled => enabledWorkspaces.length > 1;
+bool workspaceEnabled(String kind) => enabledWorkspaces.contains(kind);
+
+/// True when this account uses the Ranch workspace, before or after sign-in.
+bool get accountWantsRanch => purposeChosen
+    ? workspaceEnabled('Ranch')
+    : settingText('introPurpose', 'Ranch') == 'Ranch';
+
+List<String> workspaceTabs(String kind) => switch (kind) {
+  'Vendor' => const ['Vendor', 'Reports', 'Social', 'Chat'],
+  'Market' => const ['Social', 'Reports', 'Chat', 'Profile'],
+  _ => const ['Ranch', 'Social', 'Chat', 'Profile'],
+};
+
+/// Every destination the enabled workspaces offer, in a stable order.
+List<String> availableTabs(List<String> workspaces) {
+  final set = {for (final w in workspaces) ...workspaceTabs(w)};
+  return [
+    for (final t in businessTabs)
+      if (set.contains(t)) t,
+  ];
+}
+
+List<String> _workspacesFor(
+  String purpose,
+  bool secondaryEnabled,
+  List<String>? workspaces,
+) => workspaces != null
+    ? _cleanWorkspaces(purpose, workspaces)
+    : _cleanWorkspaces(purpose, [
+        if (secondaryEnabled) _legacySecondary(purpose),
+      ]);
+
 List<String> defaultNavigation(
   String purpose, {
   bool secondaryEnabled = false,
-}) => switch (purpose) {
-  'Vendor' || 'Market' =>
-    secondaryEnabled
-        ? ['Vendor', 'Ranch', 'Reports', 'Social']
-        : ['Vendor', 'Reports', 'Social', 'Chat'],
-  _ =>
-    secondaryEnabled
-        ? ['Ranch', 'Vendor', 'Social', 'Chat']
-        : ['Ranch', 'Social', 'Chat', 'Profile'],
-};
-List<String> navigationOrder() {
-  final allowed = defaultNavigation(
-    appPurpose,
-    secondaryEnabled: secondaryWorkspaceEnabled,
-  );
-  final raw = purposeProfile['order'];
-  final saved = raw is List
-      ? raw.where((id) => businessTabs.contains(id)).toList()
-      : null;
-  if (saved is List &&
-      saved.length == allowed.length &&
-      saved.toSet().containsAll(allowed)) {
-    return saved.cast<String>();
+  List<String>? workspaces,
+}) {
+  final list = _workspacesFor(purpose, secondaryEnabled, workspaces);
+  if (list.length == 1) return List.of(workspaceTabs(purpose));
+  // Home of the chosen purpose first, then the other workspaces' homes, then
+  // the purpose's own remaining destinations.
+  final order = <String>[];
+  void add(String tab) {
+    if (order.length < navigationSlots && !order.contains(tab)) order.add(tab);
   }
-  return allowed;
+
+  add(workspaceTabs(purpose).first);
+  for (final w in list) {
+    if (w != 'Market') add(workspaceTabs(w).first);
+  }
+  for (final t in workspaceTabs(purpose)) {
+    add(t);
+  }
+  for (final t in availableTabs(list)) {
+    add(t);
+  }
+  return order;
+}
+
+bool _validOrder(List<dynamic> order, List<String> available) =>
+    order.length == navigationSlots &&
+    order.toSet().length == navigationSlots &&
+    order.every(available.contains);
+
+List<String> navigationOrder() {
+  final workspaces = enabledWorkspaces;
+  final available = availableTabs(workspaces);
+  final raw = purposeProfile['order'];
+  if (raw is List && _validOrder(raw, available)) {
+    // Older single-workspace saves must not quietly surface another workspace.
+    final legacy = purposeProfile['workspaces'] is! List;
+    final foreign = raw.any((t) => !workspaceTabs(appPurpose).contains(t));
+    if (!(legacy && !secondaryWorkspaceEnabled && foreign)) {
+      return raw.cast<String>();
+    }
+  }
+  return defaultNavigation(appPurpose, workspaces: workspaces);
 }
 
 Future<void> savePurpose(
   String purpose,
   List<String> order, {
   bool secondaryEnabled = false,
+  List<String>? workspaces,
 }) async {
-  final allowed = defaultNavigation(
-    purpose,
-    secondaryEnabled: secondaryEnabled,
-  );
-  if (!['Ranch', 'Vendor', 'Market'].contains(purpose) ||
-      order.length != allowed.length ||
-      !order.toSet().containsAll(allowed)) {
+  if (!workspaceKinds.contains(purpose)) {
+    throw ArgumentError('Invalid preferences');
+  }
+  final list = _workspacesFor(purpose, secondaryEnabled, workspaces);
+  if (!_validOrder(order, availableTabs(list))) {
     throw ArgumentError('Invalid preferences');
   }
   await setSetting('purposeProfiles', {
     ...asMap(settingValue('purposeProfiles', {})),
     _profileKey: {
       'purpose': purpose,
-      'order': order,
-      'secondaryEnabled': secondaryEnabled,
+      'order': List<String>.of(order),
+      'workspaces': list,
+      'secondaryEnabled': list.length > 1,
     },
   });
 }
+
+String workspaceTitle(String kind) => switch (kind) {
+  'Vendor' => bi('Vendor', 'பால் வியாபாரம்'),
+  'Market' => bi('Market', 'சந்தை'),
+  _ => bi('Ranch', 'தொழுவம்'),
+};
+
+String workspaceSubtitle(String kind) => switch (kind) {
+  'Vendor' => bi(
+    'Buy milk and deliver to homes and shops',
+    'பால் வாங்கி வீடுகளுக்கும் கடைகளுக்கும் விற்பனை',
+  ),
+  'Market' => bi(
+    'People, posts, chats and reports',
+    'மக்கள், பதிவுகள், சாட், அறிக்கைகள்',
+  ),
+  _ => bi(
+    'Care for your cows and manage the ranch',
+    'மாடுகளைப் பராமரித்துத் தொழுவத்தை நிர்வகிக்கலாம்',
+  ),
+};
+
+Widget workspaceIcon(String kind, {required Color color, double size = 26}) =>
+    switch (kind) {
+      'Vendor' => MilkVendorIcon(size: size + 6, color: color),
+      'Market' => Icon(CupertinoIcons.bag_fill, color: color, size: size),
+      _ => Icon(CupertinoIcons.house_fill, color: color, size: size),
+    };
+
+String navLabel(String tab) => switch (tab) {
+  'Ranch' => bi('Ranch', 'தொழுவம்'),
+  'Vendor' => bi('Vendor', 'வியாபாரம்'),
+  'Reports' => bi('Reports', 'ரிப்போர்ட்'),
+  'Social' => bi('Social', 'சமூகம்'),
+  'Chat' => bi('Chat', 'சாட்'),
+  'Profile' => bi('Profile', 'ப்ரொஃபைல்'),
+  _ => tab,
+};
+
+IconData navIcon(String tab) => switch (tab) {
+  'Ranch' => CupertinoIcons.house_fill,
+  'Vendor' => CupertinoIcons.drop_fill,
+  'Reports' => Icons.analytics_rounded,
+  'Social' => CupertinoIcons.globe,
+  'Chat' => CupertinoIcons.chat_bubble_2_fill,
+  _ => CupertinoIcons.person_fill,
+};
 
 class PreferencesScreen extends StatefulWidget {
   final bool onboarding;
@@ -80,202 +202,505 @@ class PreferencesScreen extends StatefulWidget {
 }
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
-  late String _purpose = appPurpose;
-  late List<String> _order = navigationOrder();
-  late bool _secondary = secondaryWorkspaceEnabled;
+  late String _purpose = purposeChosen
+      ? appPurpose
+      : settingText('introPurpose', 'Ranch');
+  late List<String> _workspaces = purposeChosen
+      ? enabledWorkspaces
+      : [_purpose];
+  late List<String> _order = purposeChosen
+      ? navigationOrder()
+      : defaultNavigation(_purpose);
   bool _saving = false;
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Ink.canvasTop,
-    appBar: AppBar(
-      title: AppText(widget.onboarding ? 'Welcome to VIMO' : 'Preferences'),
-      automaticallyImplyLeading: !widget.onboarding,
-    ),
-    body: Shell(
-      child: ListView(
-        padding: const EdgeInsets.all(21),
-        children: [
-          Text(
-            bi('Made for your everyday.', 'உங்கள் அன்றாட வேலைகளுக்காக.'),
-            style: const TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -1,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            bi(
-              'What will you use VIMO for?',
-              'VIMO செயலியை எதற்காகப் பயன்படுத்தப் போகிறீர்கள்?',
-            ),
-            style: const TextStyle(fontSize: 18),
-          ),
-          const SizedBox(height: 20),
-          _InsetGroup(
-            children: [
-              for (final item in <(String, String, IconData)>[
-                (
-                  'Ranch',
-                  bi(
-                    'Care for animals and manage your ranch',
-                    'மாட்டுத் தொழுவம் மற்றும் கால்நடை பராமரிப்பு',
-                  ),
-                  CupertinoIcons.house,
-                ),
-                (
-                  'Vendor',
-                  bi(
-                    'Buy milk and deliver to homes and shops',
-                    'பால் வாங்கி வீடுகள், கடைகளுக்கு விற்பனை',
-                  ),
-                  CupertinoIcons.drop,
-                ),
-                (
-                  'Market',
-                  bi(
-                    'Sales, stock and business reports',
-                    'விற்பனை, இருப்பு மற்றும் வணிக அறிக்கைகள்',
-                  ),
-                  CupertinoIcons.bag,
-                ),
-              ])
-                ListTile(
-                  leading: item.$1 == 'Vendor'
-                      ? MilkVendorIcon(
-                          size: 34,
-                          color: _purpose == item.$1 ? Colors.white : _blue,
-                        )
-                      : Icon(
-                          item.$3,
-                          color: _purpose == item.$1 ? Colors.white : _blue,
-                        ),
-                  title: AppText(item.$1),
-                  subtitle: Text(item.$2),
-                  selected: _purpose == item.$1,
-                  selectedTileColor: Ink.violetDeep,
-                  selectedColor: Colors.white,
-                  onTap: () => setState(() {
-                    _purpose = item.$1;
-                    _secondary = false;
-                    _order = defaultNavigation(_purpose);
-                  }),
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            bi(
-              'You can enable the other workspace later in Settings → Preferences.',
-              'மற்ற பணிப்பகுதியை பின்னர் அமைப்புகள் → விருப்பங்களில் இயக்கலாம்.',
-            ),
-            style: const TextStyle(color: Ink.muted),
-          ),
-          if (!widget.onboarding) ...[
-            const SizedBox(height: 18),
-            SwitchListTile.adaptive(
-              title: Text(
-                _purpose == 'Ranch'
-                    ? bi(
-                        'I also sell milk · Enable Vendor',
-                        'பாலும் விற்கிறேன் · விற்பனையாளர் பகுதி',
-                      )
-                    : bi(
-                        'I have cows too · Enable Ranch',
-                        'மாடுகளும் உள்ளன · தொழுவம் பகுதி',
-                      ),
-              ),
-              value: _secondary,
-              onChanged: (value) => setState(() {
-                _secondary = value;
-                _order = defaultNavigation(_purpose, secondaryEnabled: value);
-              }),
-            ),
-            SwitchListTile.adaptive(
-              title: Text(
-                bi(
-                  'Sync with my ranch members',
-                  'என் தொழுவ உறுப்பினர்களுடன் ஒத்திசைவு',
-                ),
-              ),
-              subtitle: Text(
-                bi(
-                  'Entries stay on this device. Enable to share with the same ranch through Firebase.',
-                  'பதிவுகள் இந்த சாதனத்தில் சேமிக்கப்படும். அதே தொழுவத்துடன் Firebase மூலம் பகிர இயக்கவும்.',
-                ),
-              ),
-              value: CloudSyncService.sharedDataEnabled,
-              onChanged: (value) async {
-                await setSetting('workspaceSyncEnabled', value);
-                await CollaborationRealtimeSyncService.stop();
-                if (value) {
-                  AutoSyncService.markDirty(reason: 'enable ranch sharing');
-                }
-                await CollaborationRealtimeSyncService.ensureStarted();
-                if (mounted) setState(() {});
-              },
-            ),
-            const SizedBox(height: 28),
-            Text(
-              bi('Tab order', 'பக்க வரிசை'),
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              itemCount: _order.length,
-              onReorderItem: (oldIndex, newIndex) => setState(() {
-                _order.insert(newIndex, _order.removeAt(oldIndex));
-              }),
-              itemBuilder: (context, i) => ReorderableDelayedDragStartListener(
-                key: ValueKey(_order[i]),
-                index: i,
-                child: Glass(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: EdgeInsets.zero,
-                  child: ListTile(
-                    title: AppText(_order[i]),
-                    leading: Text((i + 1).toString()),
-                    trailing: const Icon(CupertinoIcons.line_horizontal_3),
-                  ),
+
+  List<String> get _extras => [
+    for (final t in availableTabs(_workspaces))
+      if (!_order.contains(t)) t,
+  ];
+
+  Future<void> _persist() async {
+    try {
+      await savePurpose(_purpose, _order, workspaces: _workspaces);
+    } catch (_) {
+      if (mounted) snack(context, ui('Unable to save. Try again.'));
+    }
+  }
+
+  Future<void> _toggleWorkspace(String kind, bool on) async {
+    if (!on && _workspaces.length == 1) {
+      snack(
+        context,
+        bi(
+          'Keep at least one workspace on',
+          'குறைந்தது ஒரு பகுதியாவது இயக்கத்தில் இருக்க வேண்டும்',
+        ),
+      );
+      return;
+    }
+    final next = [
+      for (final w in workspaceKinds)
+        if (w == kind ? on : _workspaces.contains(w)) w,
+    ];
+    final purpose = next.contains(_purpose) ? _purpose : next.first;
+    final available = availableTabs(next);
+    final fallback = defaultNavigation(purpose, workspaces: next);
+    final order = <String>[
+      for (final t in _order)
+        if (available.contains(t)) t,
+    ];
+    for (final t in [...fallback, ...available]) {
+      if (order.length >= navigationSlots) break;
+      if (!order.contains(t)) order.add(t);
+    }
+    // A newly enabled workspace should appear on the bar straight away.
+    if (on && kind != 'Market') {
+      final home = workspaceTabs(kind).first;
+      if (!order.contains(home)) {
+        order.insert(math.min(1, order.length), home);
+        while (order.length > navigationSlots) {
+          order.removeLast();
+        }
+      }
+    }
+    setState(() {
+      _workspaces = next;
+      _purpose = purpose;
+      _order = order;
+    });
+    await _persist();
+    if (on && kind == 'Ranch' && ranchId().isEmpty && mounted) {
+      await promptRanchSetup(context);
+    }
+  }
+
+  void _dropOnSlot(int slot, String tab) {
+    setState(() {
+      final from = _order.indexOf(tab);
+      if (from == slot) return;
+      if (from >= 0) {
+        _order[from] = _order[slot];
+        _order[slot] = tab;
+      } else {
+        _order[slot] = tab;
+      }
+    });
+    HapticFeedback.selectionClick();
+    unawaited(_persist());
+  }
+
+  Future<void> _chooseSlotFor(String tab) async {
+    final slot = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(21, 0, 21, 8),
+              child: Text(
+                bi('Replace which tab?', 'எந்த tab-க்குப் பதிலாக வைக்கலாம்?'),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
+            for (var i = 0; i < _order.length; i++)
+              ListTile(
+                leading: Icon(navIcon(_order[i]), color: _blue),
+                title: Text(navLabel(_order[i])),
+                trailing: AppText(
+                  '${i + 1}',
+                  style: const TextStyle(color: Ink.muted),
+                ),
+                onTap: () => Navigator.pop(sheet, i),
+              ),
+            const SizedBox(height: 8),
           ],
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _saving
-                ? null
-                : () async {
-                    setState(() => _saving = true);
-                    try {
-                      await savePurpose(
-                        _purpose,
-                        _order,
-                        secondaryEnabled: _secondary,
-                      );
-                      if (context.mounted && !widget.onboarding) {
-                        Navigator.pop(context);
-                      }
-                    } catch (_) {
-                      if (context.mounted) {
-                        snack(context, ui('Unable to save. Try again.'));
-                      }
-                    } finally {
-                      if (mounted) setState(() => _saving = false);
-                    }
-                  },
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: AppText(widget.onboarding ? 'Get started' : 'Save'),
-            ),
-          ),
-        ],
+        ),
+      ),
+    );
+    if (slot != null) _dropOnSlot(slot, tab);
+  }
+
+  Widget _sectionTitle(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    child: Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        color: Ink.muted,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        letterSpacing: .4,
       ),
     ),
   );
+
+  Widget _footnote(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    child: AppText(
+      text,
+      style: const TextStyle(color: Ink.muted, fontSize: 13, height: 1.4),
+    ),
+  );
+
+  Widget _workspaceRow(String kind) {
+    final on = _workspaces.contains(kind);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: ShapeDecoration(
+              shape: const SquircleBorder(radius: 11),
+              color: on ? Ink.violetDeep : Ink.violet.withValues(alpha: .12),
+            ),
+            child: Center(
+              child: workspaceIcon(
+                kind,
+                color: on ? Colors.white : _blue,
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  workspaceTitle(kind),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: Ink.navy,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  workspaceSubtitle(kind),
+                  style: const TextStyle(color: Ink.muted, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          CupertinoSwitch(
+            value: on,
+            activeTrackColor: Ink.violetDeep,
+            onChanged: (v) => _toggleWorkspace(kind, v),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabChip(String tab, {bool dragging = false, bool muted = false}) =>
+      Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: ShapeDecoration(
+            shape: SquircleBorder(
+              radius: 16,
+              side: BorderSide(
+                color: muted ? const Color(0x33788298) : Colors.white,
+              ),
+            ),
+            color: dragging
+                ? Ink.violetDeep
+                : Colors.white.withValues(alpha: muted ? .40 : .78),
+            shadows: dragging
+                ? [
+                    BoxShadow(
+                      color: Ink.violetDeep.withValues(alpha: .28),
+                      blurRadius: 21,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              tab == 'Vendor'
+                  ? MilkVendorIcon(
+                      size: 24,
+                      color: dragging ? Colors.white : _blue,
+                    )
+                  : Icon(
+                      navIcon(tab),
+                      size: 19,
+                      color: dragging ? Colors.white : _blue,
+                    ),
+              const SizedBox(width: 8),
+              Text(
+                navLabel(tab),
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: dragging ? Colors.white : Ink.navy,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _slot(int i) => DragTarget<String>(
+    onWillAcceptWithDetails: (d) => d.data != _order[i],
+    onAcceptWithDetails: (d) => _dropOnSlot(i, d.data),
+    builder: (context, candidate, _) {
+      final hovering = candidate.isNotEmpty;
+      final tab = _order[i];
+      return AnimatedContainer(
+        duration: Gold.fast,
+        curve: Gold.ease,
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: ShapeDecoration(
+          shape: SquircleBorder(
+            radius: 18,
+            side: BorderSide(
+              color: hovering ? Ink.violetDeep : Colors.white,
+              width: hovering ? 1.5 : 1,
+            ),
+          ),
+          color: hovering
+              ? Ink.violet.withValues(alpha: .10)
+              : Colors.white.withValues(alpha: .62),
+        ),
+        child: LongPressDraggable<String>(
+          data: tab,
+          delay: const Duration(milliseconds: 180),
+          hapticFeedbackOnStart: true,
+          feedback: _tabChip(tab, dragging: true),
+          childWhenDragging: Opacity(opacity: .35, child: _slotRow(i, tab)),
+          child: _slotRow(i, tab),
+        ),
+      );
+    },
+  );
+
+  Widget _slotRow(int i, String tab) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    child: Row(
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: const ShapeDecoration(
+            shape: SquircleBorder(radius: 8),
+            color: Ink.lavender,
+          ),
+          child: AppText(
+            '${i + 1}',
+            style: const TextStyle(
+              color: Ink.violetDeep,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        tab == 'Vendor'
+            ? MilkVendorIcon(size: 26, color: _blue)
+            : Icon(navIcon(tab), size: 21, color: _blue),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            navLabel(tab),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Ink.navy,
+            ),
+          ),
+        ),
+        const Icon(CupertinoIcons.line_horizontal_3, color: Ink.faint),
+      ],
+    ),
+  );
+
+  Widget _purposeChoice() => Column(
+    children: [
+      for (final kind in workspaceKinds) ...[
+        _ChoiceCard(
+          selected: _purpose == kind,
+          title: workspaceTitle(kind),
+          subtitle: workspaceSubtitle(kind),
+          leading: workspaceIcon(
+            kind,
+            color: _purpose == kind ? Colors.white : Ink.violetDeep,
+            size: 22,
+          ),
+          onTap: () => setState(() {
+            _purpose = kind;
+            _workspaces = [kind];
+            _order = defaultNavigation(kind);
+          }),
+        ),
+        const SizedBox(height: 13),
+      ],
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final extras = _extras;
+    final showSync = _workspaces.contains('Ranch') && ranchId().isNotEmpty;
+    return Scaffold(
+      backgroundColor: Ink.canvasTop,
+      appBar: AppBar(
+        title: Text(
+          widget.onboarding
+              ? bi('Welcome to VIMO', 'VIMO-க்கு வரவேற்கிறோம்')
+              : bi('Preferences', 'விருப்பங்கள்'),
+        ),
+        automaticallyImplyLeading: !widget.onboarding,
+      ),
+      body: Shell(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+          children: [
+            if (widget.onboarding) ...[
+              Text(
+                bi(
+                  'What will you use VIMO for?',
+                  'VIMO-வை எதற்காகப் பயன்படுத்தப் போகிறீர்கள்?',
+                ),
+                style: const TextStyle(
+                  fontSize: 27,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -.6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                bi(
+                  'You can switch on more later in Settings → Preferences.',
+                  'மற்ற பகுதிகளைப் பின்னர் செட்டிங்ஸ் → விருப்பங்களில் இயக்கலாம்.',
+                ),
+                style: const TextStyle(color: Ink.muted, fontSize: 15),
+              ),
+              const SizedBox(height: 21),
+              _purposeChoice(),
+              const SizedBox(height: 28),
+              LiquidButton(
+                label: bi('Get started', 'தொடங்கலாம்'),
+                busy: _saving,
+                onPressed: () async {
+                  setState(() => _saving = true);
+                  await _persist();
+                  if (mounted) setState(() => _saving = false);
+                },
+              ),
+            ] else ...[
+              _sectionTitle(bi('Workspaces', 'பணிப் பகுதிகள்')),
+              _InsetGroup(
+                children: [for (final k in workspaceKinds) _workspaceRow(k)],
+              ),
+              _footnote(
+                bi(
+                  'Switch on everything you use. Your records stay safe when a workspace is off.',
+                  'நீங்கள் பயன்படுத்தும் அனைத்தையும் இயக்கலாம். ஒரு பகுதியை அணைத்தாலும் பதிவுகள் பாதுகாப்பாக இருக்கும்.',
+                ),
+              ),
+              if (showSync) ...[
+                const SizedBox(height: 28),
+                _InsetGroup(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              bi(
+                                'Sync with ranch people',
+                                'தொழுவ உறுப்பினர்களுடன் ஒத்திசை',
+                              ),
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                color: Ink.navy,
+                              ),
+                            ),
+                          ),
+                          CupertinoSwitch(
+                            value: CloudSyncService.sharedDataEnabled,
+                            activeTrackColor: Ink.violetDeep,
+                            onChanged: (value) async {
+                              await setSetting('workspaceSyncEnabled', value);
+                              await CollaborationRealtimeSyncService.stop();
+                              if (value) {
+                                AutoSyncService.markDirty(
+                                  reason: 'enable ranch sharing',
+                                );
+                              }
+                              await CollaborationRealtimeSyncService.ensureStarted();
+                              if (mounted) setState(() {});
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 28),
+              _sectionTitle(bi('Tab order', 'Tab வரிசை')),
+              for (var i = 0; i < _order.length; i++) _slot(i),
+              _footnote(
+                bi(
+                  'Hold and drag to rearrange your four tabs.',
+                  'அழுத்திப் பிடித்து இழுத்து நான்கு tab-களின் வரிசையை மாற்றலாம்.',
+                ),
+              ),
+              if (extras.isNotEmpty) ...[
+                const SizedBox(height: 28),
+                _sectionTitle(bi('More tabs', 'மேலும் tab-கள்')),
+                DragTarget<String>(
+                  onWillAcceptWithDetails: (_) => false,
+                  builder: (context, _, _) => Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final tab in extras)
+                        Draggable<String>(
+                          data: tab,
+                          feedback: _tabChip(tab, dragging: true),
+                          childWhenDragging: Opacity(
+                            opacity: .35,
+                            child: _tabChip(tab, muted: true),
+                          ),
+                          child: GestureDetector(
+                            onTap: () => _chooseSlotFor(tab),
+                            child: _tabChip(tab, muted: true),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                _footnote(
+                  bi(
+                    'Drag a tab onto the list above, or tap it to choose its place.',
+                    'ஒரு tab-ஐ மேலே உள்ள பட்டியலுக்கு இழுக்கவும், அல்லது தொட்டு இடத்தைத் தேர்வு செய்யவும்.',
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 List<Map<String, dynamic>> vendorRows(String box) => Hive.box(box)
@@ -558,7 +983,7 @@ class _VendorScreenState extends State<VendorScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    AppText(
                       '${vendorMilkBalance(rows).toStringAsFixed(2)} ${bi('L', 'லி')}',
                       style: const TextStyle(
                         fontSize: 42,
@@ -608,7 +1033,7 @@ class _VendorScreenState extends State<VendorScreen> {
               ),
               if (due.isNotEmpty) ...[
                 const SizedBox(height: 20),
-                Text(
+                AppText(
                   '${ui(session)} · ${bi('Deliveries remaining', 'மீதமுள்ள விநியோகங்கள்')}',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
@@ -700,7 +1125,7 @@ class _VendorScreenState extends State<VendorScreen> {
                         radius: 22,
                       ),
                       title: Text(txt(p, 'name')),
-                      subtitle: Text(
+                      subtitle: AppText(
                         '${txt(p, 'place')}\n${currencySymbol()}${vendorPersonDue(txt(p, 'id'), rows).toStringAsFixed(2)} ${bi('outstanding', 'நிலுவை')}',
                       ),
                       isThreeLine: true,
@@ -755,7 +1180,7 @@ class VendorStockScreen extends StatelessWidget {
               onTap: () => push(context, const MilkOriginScreen()),
               child: Glass(
                 padding: const EdgeInsets.all(24),
-                child: Text(
+                child: AppText(
                   '${vendorMilkBalance(rows).toStringAsFixed(2)} L',
                   style: const TextStyle(
                     fontSize: 42,
@@ -772,8 +1197,8 @@ class VendorStockScreen extends StatelessWidget {
               ListTile(
                 onTap: () => push(context, MilkOriginScreen(entry: r)),
                 title: AppText(txt(r, 'personName')),
-                subtitle: Text('${txt(r, 'date')} · ${txt(r, 'time')}'),
-                trailing: Text(
+                subtitle: AppText('${txt(r, 'date')} · ${txt(r, 'time')}'),
+                trailing: AppText(
                   '${['collection', 'purchase'].contains(r['kind']) || (r['kind'] == 'ranch' && numv(r, 'quantity') >= 0) ? '+' : '−'}${numv(r, 'quantity').abs().toStringAsFixed(2)} L',
                   style: TextStyle(
                     color:
@@ -873,7 +1298,7 @@ class _BusinessMetric extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
+      AppText(
         value,
         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
       ),
@@ -1162,7 +1587,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                               CupertinoIcons.chat_bubble_fill,
                               size: 18,
                             ),
-                            label: const Text('WhatsApp'),
+                            label: const AppText('WhatsApp'),
                           ),
                         ],
                       ),
@@ -1507,7 +1932,7 @@ class _InfoChip extends StatelessWidget {
         Icon(icon, size: 15, color: color == Ink.body ? Ink.violetDeep : color),
         const SizedBox(width: 6),
         Flexible(
-          child: Text(
+          child: AppText(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1536,7 +1961,7 @@ class _PersonStat extends StatelessWidget {
     children: [
       FittedBox(
         fit: BoxFit.scaleDown,
-        child: Text(
+        child: AppText(
           value,
           style: TextStyle(
             fontSize: 19,
@@ -1546,7 +1971,7 @@ class _PersonStat extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 3),
-      Text(
+      AppText(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -1578,7 +2003,7 @@ class _TotalLine extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       Expanded(
-        child: Text(
+        child: AppText(
           label,
           style: TextStyle(
             color: strong ? Ink.navy : Ink.muted,
@@ -1586,7 +2011,7 @@ class _TotalLine extends StatelessWidget {
           ),
         ),
       ),
-      Text(
+      AppText(
         value,
         style: TextStyle(
           fontSize: strong ? 20 : 16,
