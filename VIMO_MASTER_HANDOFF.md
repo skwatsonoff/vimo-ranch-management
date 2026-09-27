@@ -312,6 +312,8 @@ Validation: analyze no errors/warnings; 97/97 Flutter tests (new `test/roles_nav
 
 Deploy needs rules too: `firebase deploy --only hosting,firestore:rules --project my-ranch-sync` (`VIMO_DEPLOY.bat` does this from `main`).
 
+**Released 2026-09-27 15:28 JST** by the user with a `VIMO_DEPLOY.bat` pointed at branch `claude/beautiful-euler-2v4ayi` (hosting + firestore:rules, "Deploy complete"). PR #4 into `main` is still open: until it is merged, a deploy from `main` (`CLAUDE_DEPLOY.bat`) would publish the older 1.3.1 app. The rules compiler warnings at lines 372–380 are in the pre-existing `validRanchEntry` helper, not new.
+
 ## 7. Open items, limitations and questions
 
 | Item | Actual state / next action if requested |
