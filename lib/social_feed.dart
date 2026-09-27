@@ -69,9 +69,16 @@ SocialPostRecord? decodeSocialPost(dynamic row) {
 /// Reusing a Listen stream can retain an older request.time and reject a new
 /// time-bound feed query. Ranch sync and chat keep their realtime listeners.
 class SocialFeed {
+  /// The newest few post ids and authors only (no photo or voice payload),
+  /// used to notice new posts without downloading the whole feed again.
+  static Future<List<SocialPostRecord>> latest({int limit = 5}) =>
+      load(limit: limit, fields: const ['authorUid', 'authorName']);
+
   static Future<List<SocialPostRecord>> load({
     String? authorUid,
     bool own = false,
+    int limit = 60,
+    List<String>? fields,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError(ui('Please sign in again'));
@@ -135,6 +142,12 @@ class SocialFeed {
           headers: headers,
           body: jsonEncode({
             'structuredQuery': {
+              if (fields != null)
+                'select': {
+                  'fields': [
+                    for (final field in fields) {'fieldPath': field},
+                  ],
+                },
               'from': [
                 {'collectionId': 'social_posts'},
               ],
@@ -149,11 +162,12 @@ class SocialFeed {
                   'direction': 'DESCENDING',
                 },
               ],
-              'limit': 60,
+              'limit': limit,
             },
           }),
         )
-        .timeout(CloudSyncService.networkTimeout);
+        // Sixty posts can carry several megabytes of photos on a slow link.
+        .timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       throw FirebaseException(
         plugin: 'cloud_firestore',

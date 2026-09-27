@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
@@ -46,6 +47,55 @@ class BrowserRuntime {
         ),
       );
     } catch (_) {}
+  }
+
+  /// Saves a JPEG to the phone. iPhone/iPad browsers cannot write into
+  /// Photos directly, so they get the system share sheet whose "Save Image"
+  /// puts it in the gallery; other browsers download the file (Android shows
+  /// downloads in the gallery). Call this straight from a tap: Safari only
+  /// opens the share sheet during a user gesture.
+  /// Returns 'saved', 'shared', 'cancelled' or 'failed'.
+  Future<String> saveImage(Uint8List bytes, String fileName) async {
+    try {
+      final blob = web.Blob(
+        <web.BlobPart>[bytes.toJS].toJS,
+        web.BlobPropertyBag(type: 'image/jpeg'),
+      );
+      final navigator = web.window.navigator;
+      final agent = navigator.userAgent;
+      final apple =
+          RegExp('iPhone|iPad|iPod').hasMatch(agent) ||
+          (agent.contains('Macintosh') && navigator.maxTouchPoints > 1);
+      if (apple) {
+        final file = web.File(
+          <web.BlobPart>[blob].toJS,
+          fileName,
+          web.FilePropertyBag(type: 'image/jpeg'),
+        );
+        final data = web.ShareData(files: <web.File>[file].toJS);
+        if (navigator.canShare(data)) {
+          try {
+            await navigator.share(data).toDart;
+            return 'shared';
+          } catch (_) {
+            // Closing the share sheet rejects the promise.
+            return 'cancelled';
+          }
+        }
+      }
+      final url = web.URL.createObjectURL(blob);
+      final link = web.HTMLAnchorElement()
+        ..href = url
+        ..download = fileName
+        ..style.display = 'none';
+      web.document.body?.append(link);
+      link.click();
+      link.remove();
+      Timer(const Duration(seconds: 30), () => web.URL.revokeObjectURL(url));
+      return 'saved';
+    } catch (_) {
+      return 'failed';
+    }
   }
 
   void dismissBootSplash() {

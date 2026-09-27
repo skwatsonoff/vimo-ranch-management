@@ -44,6 +44,74 @@ Uint8List socialPhotoBytes(String source) {
   }
 }
 
+/// A post being published in the background, so the composer can close at
+/// once while a slim bar on the feed shows its progress.
+class SocialUpload {
+  final String id, draftOwner, photo, status, error;
+  final Map<String, dynamic> payload;
+  const SocialUpload({
+    required this.id,
+    required this.draftOwner,
+    required this.payload,
+    this.photo = '',
+    this.status = 'posting',
+    this.error = '',
+  });
+  SocialUpload withStatus(String status, [String error = '']) => SocialUpload(
+    id: id,
+    draftOwner: draftOwner,
+    payload: payload,
+    photo: photo,
+    status: status,
+    error: error,
+  );
+}
+
+class SocialUploadService {
+  const SocialUploadService._();
+  static final current = ValueNotifier<SocialUpload?>(null);
+
+  /// Bumped after each successful post so an open feed reloads.
+  static final published = ValueNotifier<int>(0);
+
+  static Future<void> publish(SocialUpload upload) async {
+    current.value = upload.withStatus('posting');
+    try {
+      final db = FirebaseFirestore.instance;
+      final ref = db.collection('social_posts').doc(upload.id);
+      await db
+          .runTransaction((tx) async {
+            final existing = await tx.get(ref);
+            if (existing.exists) return;
+            tx.set(ref, {
+              ...upload.payload,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          })
+          .timeout(const Duration(seconds: 45));
+      final drafts = asMap(settingValue('socialDrafts', {}));
+      if (txt(asMap(drafts[upload.draftOwner] ?? {}), 'postId') == upload.id) {
+        drafts.remove(upload.draftOwner);
+        await setSetting('socialDrafts', drafts);
+      }
+      if (current.value?.id != upload.id) return;
+      current.value = upload.withStatus('done');
+      published.value++;
+      Timer(const Duration(milliseconds: 2200), () {
+        if (current.value?.id == upload.id && current.value?.status == 'done') {
+          current.value = null;
+        }
+      });
+    } catch (error) {
+      // The draft stays saved, so Retry (or reopening the composer) resends
+      // the same post id without creating a duplicate.
+      if (current.value?.id == upload.id) {
+        current.value = upload.withStatus('failed', accountError(error));
+      }
+    }
+  }
+}
+
 class SocialScreen extends StatefulWidget {
   const SocialScreen({super.key});
   @override
@@ -51,102 +119,587 @@ class SocialScreen extends StatefulWidget {
 }
 
 class _SocialScreenState extends State<SocialScreen> {
-  Future<List<SocialPostRecord>>? _feed;
+  final _scroll = ScrollController();
+  List<SocialPostRecord>? _posts;
+  Object? _error;
+  Timer? _poll;
+  Timer? _toastTimer;
+
+  /// New posts noticed at the top that the list does not show yet.
+  List<SocialPostRecord> _waiting = const [];
+
+  /// Short confirmation after a pull to refresh ("3 new posts").
+  String _toast = '';
+
+  bool get _signedIn =>
+      firebaseReady && FirebaseAuth.instance.currentUser != null;
+
   @override
   void initState() {
     super.initState();
-    _refreshFeed();
-  }
-
-  void _refreshFeed() {
-    _feed = firebaseReady && FirebaseAuth.instance.currentUser != null
-        ? SocialFeed.load()
-        : null;
+    unawaited(_load());
+    _poll = Timer.periodic(const Duration(seconds: 60), (_) => _checkNew());
+    SocialUploadService.published.addListener(_afterPublish);
   }
 
   @override
-  Widget build(BuildContext context) => Shell(
-    child: Column(
-      children: [
-        Expanded(
-          child: _feed == null
-              ? Center(
-                  child: Text(
-                    bi(
-                      'Sign in to connect with the community.',
-                      'சமூகத்துடன் இணைய உள்நுழையவும்.',
-                    ),
-                  ),
-                )
-              : FutureBuilder(
-                  future: _feed,
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            bi(
-                              'The community could not load. Check your connection and reopen Social.',
-                              'சமூகப் பதிவுகளை ஏற்ற முடியவில்லை. இணையத்தைச் சரிபார்த்து மீண்டும் திறக்கவும்.',
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final docs = snapshot.data!;
-                    if (docs.isEmpty) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                CupertinoIcons.person_3,
-                                size: 52,
-                                color: _blue,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                bi(
-                                  'Start a conversation',
-                                  'உரையாடலைத் தொடங்குங்கள்',
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                bi(
-                                  'Share a photo, a voice note or a question with other VIMO members.',
-                                  'புகைப்படம், குரல் குறிப்பு அல்லது கேள்வியை மற்ற VIMO உறுப்பினர்களுடன் பகிருங்கள்.',
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(21, 0, 21, 32),
-                      itemCount: docs.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 16),
-                      itemBuilder: (_, i) =>
-                          _SocialPost(key: ValueKey(docs[i].id), post: docs[i]),
-                    );
-                  },
-                ),
+  void dispose() {
+    _poll?.cancel();
+    _toastTimer?.cancel();
+    SocialUploadService.published.removeListener(_afterPublish);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _afterPublish() {
+    unawaited(_load());
+    if (_scroll.hasClients) {
+      unawaited(
+        _scroll.animateTo(0, duration: Gold.slow, curve: Curves.easeOutCubic),
+      );
+    }
+  }
+
+  Future<void> _load({bool announce = false}) async {
+    if (!_signedIn) return;
+    final before = _posts?.map((p) => p.id).toSet();
+    try {
+      final posts = await SocialFeed.load();
+      if (!mounted) return;
+      final fresh = before == null
+          ? 0
+          : posts.where((p) => !before.contains(p.id)).length;
+      setState(() {
+        _posts = posts;
+        _error = null;
+        _waiting = const [];
+      });
+      if (announce) {
+        _showToast(
+          fresh == 0
+              ? bi('You’re up to date', 'புதிய பதிவுகள் இல்லை')
+              : fresh == 1
+              ? bi('1 new post', '1 புதிய பதிவு')
+              : bi('$fresh new posts', '$fresh புதிய பதிவுகள்'),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = error);
+    }
+  }
+
+  void _showToast(String text) {
+    _toastTimer?.cancel();
+    setState(() => _toast = text);
+    _toastTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (mounted) setState(() => _toast = '');
+    });
+  }
+
+  Future<void> _checkNew() async {
+    final posts = _posts;
+    // Only while this tab is on screen, and only a tiny id-only query.
+    if (!mounted ||
+        posts == null ||
+        !_signedIn ||
+        !TickerMode.valuesOf(context).enabled) {
+      return;
+    }
+    try {
+      final latest = await SocialFeed.latest();
+      if (!mounted) return;
+      final known = posts.map((p) => p.id).toSet();
+      final waiting = latest
+          .where(
+            (p) =>
+                !known.contains(p.id) &&
+                txt(p.data(), 'authorUid') != signedInUid,
+          )
+          .toList();
+      if (waiting.length != _waiting.length) {
+        setState(() => _waiting = waiting);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showWaiting() async {
+    if (_scroll.hasClients) {
+      await _scroll.animateTo(
+        0,
+        duration: Gold.slow,
+        curve: Curves.easeOutCubic,
+      );
+    }
+    await _load();
+  }
+
+  Widget _message(Widget child) => LayoutBuilder(
+    builder: (context, box) => SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: box.maxHeight),
+        child: Center(
+          child: Padding(padding: const EdgeInsets.all(32), child: child),
         ),
-      ],
+      ),
     ),
   );
+
+  Widget _feed() {
+    if (_error != null && _posts == null) {
+      return _message(
+        Text(
+          bi(
+            'The community could not load. Pull down to try again.',
+            'சமூகப் பதிவுகளை ஏற்ற முடியவில்லை. மீண்டும் முயல கீழே இழுக்கவும்.',
+          ),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    final posts = _posts;
+    if (posts == null) {
+      return const Center(child: CupertinoActivityIndicator(radius: 13));
+    }
+    if (posts.isEmpty) {
+      return _message(
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(CupertinoIcons.person_3, size: 52, color: _blue),
+            const SizedBox(height: 16),
+            Text(
+              bi('Start a conversation', 'உரையாடலைத் தொடங்குங்கள்'),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              bi(
+                'Share a photo, a voice note or a question with other VIMO members.',
+                'புகைப்படம், குரல் குறிப்பு அல்லது கேள்வியை மற்ற VIMO உறுப்பினர்களுடன் பகிருங்கள்.',
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView.separated(
+      controller: _scroll,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(21, 8, 21, 120),
+      itemCount: posts.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 16),
+      itemBuilder: (_, i) =>
+          _SocialPost(key: ValueKey(posts[i].id), post: posts[i]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_signedIn) {
+      return Shell(
+        child: Center(
+          child: Text(
+            bi(
+              'Sign in to connect with the community.',
+              'சமூகத்துடன் இணைய உள்நுழையவும்.',
+            ),
+          ),
+        ),
+      );
+    }
+    final pill = _waiting.isNotEmpty
+        ? (_waiting.length == 1
+              ? bi('1 new post', '1 புதிய பதிவு')
+              : bi(
+                  '${_waiting.length} new posts',
+                  '${_waiting.length} புதிய பதிவுகள்',
+                ))
+        : _toast;
+    return Shell(
+      child: Column(
+        children: [
+          const _SocialUploadBar(),
+          Expanded(
+            child: Stack(
+              children: [
+                RefreshIndicator.adaptive(
+                  color: Ink.violetDeep,
+                  onRefresh: () => _load(announce: _posts != null),
+                  child: _feed(),
+                ),
+                Positioned(
+                  top: 8,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: Gold.base,
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween(
+                            begin: const Offset(0, -.6),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      ),
+                      child: pill.isEmpty
+                          ? const SizedBox.shrink()
+                          : _NewPostsPill(
+                              key: ValueKey(pill),
+                              label: pill,
+                              arrow: _waiting.isNotEmpty,
+                              onTap: _waiting.isNotEmpty ? _showWaiting : null,
+                            ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NewPostsPill extends StatelessWidget {
+  final String label;
+  final bool arrow;
+  final VoidCallback? onTap;
+  const _NewPostsPill({
+    super.key,
+    required this.label,
+    required this.arrow,
+    this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      customBorder: const StadiumBorder(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: ShapeDecoration(
+          shape: const StadiumBorder(),
+          gradient: const LinearGradient(colors: [Ink.violet, Ink.violetDeep]),
+          shadows: [
+            BoxShadow(
+              color: Ink.violetDeep.withValues(alpha: .32),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (arrow) ...[
+              const Icon(
+                CupertinoIcons.arrow_up,
+                size: 15,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Slim bar at the top of the feed while a post uploads.
+class _SocialUploadBar extends StatelessWidget {
+  const _SocialUploadBar();
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<SocialUpload?>(
+    valueListenable: SocialUploadService.current,
+    builder: (context, upload, _) => AnimatedSize(
+      duration: Gold.base,
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: upload == null
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: const EdgeInsets.fromLTRB(21, 4, 21, 8),
+              child: Glass(
+                radius: 18,
+                padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: SizedBox.square(
+                        dimension: 36,
+                        child: upload.photo.isNotEmpty
+                            ? Image.memory(
+                                socialPhotoBytes(upload.photo),
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                                cacheWidth: 96,
+                              )
+                            : const ColoredBox(
+                                color: Ink.lavender,
+                                child: Icon(
+                                  CupertinoIcons.text_bubble,
+                                  size: 18,
+                                  color: Ink.violetDeep,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            switch (upload.status) {
+                              'done' => bi('Posted', 'பகிரப்பட்டது'),
+                              'failed' => bi(
+                                'Could not post',
+                                'பகிர முடியவில்லை',
+                              ),
+                              _ => bi('Posting…', 'பகிர்கிறது…'),
+                            },
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: upload.status == 'failed'
+                                  ? Ink.redText
+                                  : Ink.navy,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: upload.status == 'posting'
+                                ? LinearProgressIndicator(
+                                    minHeight: 4,
+                                    color: Ink.violetDeep,
+                                    backgroundColor: Ink.violetDeep.withValues(
+                                      alpha: .12,
+                                    ),
+                                  )
+                                : LinearProgressIndicator(
+                                    minHeight: 4,
+                                    value: 1,
+                                    color: upload.status == 'done'
+                                        ? Ink.green
+                                        : Ink.red,
+                                    backgroundColor: Colors.transparent,
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (upload.status == 'done')
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Icon(
+                          CupertinoIcons.check_mark_circled_solid,
+                          color: Ink.green,
+                        ),
+                      ),
+                    if (upload.status == 'failed') ...[
+                      TextButton(
+                        onPressed: () =>
+                            unawaited(SocialUploadService.publish(upload)),
+                        child: Text(bi('Retry', 'மீண்டும்')),
+                      ),
+                      IconButton(
+                        tooltip: ui('Close'),
+                        icon: const Icon(CupertinoIcons.xmark, size: 18),
+                        onPressed: () =>
+                            SocialUploadService.current.value = null,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+    ),
+  );
+}
+
+/// Full-screen photo with pinch and double-tap zoom. Post photos can be saved
+/// to the phone from the menu; profile pictures are view-only.
+class SocialPhotoViewer extends StatefulWidget {
+  final ImageProvider image;
+  final Uint8List? saveBytes;
+  final Object? heroTag;
+  const SocialPhotoViewer({
+    super.key,
+    required this.image,
+    this.saveBytes,
+    this.heroTag,
+  });
+  @override
+  State<SocialPhotoViewer> createState() => _SocialPhotoViewerState();
+}
+
+class _SocialPhotoViewerState extends State<SocialPhotoViewer> {
+  final _zoom = TransformationController();
+  TapDownDetails? _doubleTap;
+
+  @override
+  void dispose() {
+    _zoom.dispose();
+    super.dispose();
+  }
+
+  void _toggleZoom() {
+    if (_zoom.value.getMaxScaleOnAxis() > 1.01) {
+      _zoom.value = Matrix4.identity();
+      return;
+    }
+    final at = _doubleTap?.localPosition ?? Offset.zero;
+    _zoom.value = Matrix4.identity()
+      ..translateByDouble(-at.dx * 1.5, -at.dy * 1.5, 0, 1)
+      ..scaleByDouble(2.5, 2.5, 1, 1);
+  }
+
+  // Runs straight from the menu tap (no awaits before the browser call) so
+  // iPhone Safari may open its share sheet.
+  void _save() {
+    final bytes = widget.saveBytes;
+    if (bytes == null || bytes.isEmpty) return;
+    final name = 'vimo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    if (kIsWeb) {
+      unawaited(
+        _browserRuntime.saveImage(bytes, name).then((result) {
+          if (!mounted) return;
+          if (result == 'saved') {
+            snack(context, bi('Photo saved', 'புகைப்படம் சேமிக்கப்பட்டது'));
+          } else if (result == 'failed') {
+            snack(
+              context,
+              bi(
+                'Could not save the photo',
+                'புகைப்படத்தைச் சேமிக்க முடியவில்லை',
+              ),
+            );
+          }
+        }),
+      );
+      return;
+    }
+    unawaited(
+      FilePicker.platform
+          .saveFile(
+            dialogTitle: bi('Save photo', 'புகைப்படத்தைச் சேமி'),
+            fileName: name,
+            type: FileType.image,
+            bytes: bytes,
+          )
+          .then((path) {
+            if (mounted && path != null) {
+              snack(context, bi('Photo saved', 'புகைப்படம் சேமிக்கப்பட்டது'));
+            }
+          })
+          .catchError((Object _) {
+            if (mounted) {
+              snack(
+                context,
+                bi(
+                  'Could not save the photo',
+                  'புகைப்படத்தைச் சேமிக்க முடியவில்லை',
+                ),
+              );
+            }
+          }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget photo = Image(
+      image: widget.image,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
+      errorBuilder: (_, _, _) => Center(
+        child: Text(
+          bi('Could not open the photo', 'புகைப்படத்தைத் திறக்க முடியவில்லை'),
+          style: const TextStyle(color: Colors.white),
+        ),
+      ),
+    );
+    if (widget.heroTag != null) {
+      photo = Hero(tag: widget.heroTag!, child: photo);
+    }
+    return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        leading: IconButton(
+          tooltip: ui('Close'),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: .14),
+            foregroundColor: Colors.white,
+          ),
+          icon: const Icon(CupertinoIcons.xmark, size: 20),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        actions: [
+          if (widget.saveBytes != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: PopupMenuButton<String>(
+                tooltip: ui('More'),
+                color: const Color(0xF5FFFFFF),
+                shape: const SquircleBorder(radius: Gold.r21),
+                icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'save',
+                    onTap: _save,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.download_rounded,
+                          color: Ink.violetDeep,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(bi('Save photo', 'புகைப்படத்தைச் சேமி')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      body: GestureDetector(
+        onDoubleTapDown: (details) => _doubleTap = details,
+        onDoubleTap: _toggleZoom,
+        child: InteractiveViewer(
+          transformationController: _zoom,
+          minScale: 1,
+          maxScale: 5,
+          child: SizedBox.expand(child: photo),
+        ),
+      ),
+    );
+  }
 }
 
 class SocialComposer extends StatefulWidget {
@@ -441,40 +994,41 @@ class _SocialComposerState extends State<SocialComposer> {
                     setState(() => _busy = true);
                     try {
                       await UsernameService.refresh();
-                      final db = FirebaseFirestore.instance;
-                      final ref = db.collection('social_posts').doc(_postId);
-                      _postId = ref.id;
-                      _persistDraft();
-                      await db
-                          .runTransaction((tx) async {
-                            final existing = await tx.get(ref);
-                            if (existing.exists) return;
-                            tx.set(ref, {
-                              'authorUid':
-                                  FirebaseAuth.instance.currentUser!.uid,
-                              'ranchId': '',
-                              'authorName': accountUsername,
-                              'authorUsername': accountUsername,
-                              'text': _text.text.trim(),
-                              'mentions': mentionSelections[_text] ?? const [],
-                              'photo': _photo,
-                              'voice': _voice,
-                              'voiceSeconds': _seconds,
-                              'tile': false,
-                              'createdAt': FieldValue.serverTimestamp(),
-                            });
-                          })
-                          .timeout(const Duration(seconds: 20));
-                      _published = true;
-                      final drafts = asMap(settingValue('socialDrafts', {}))
-                        ..remove(_draftOwner);
-                      await setSetting('socialDrafts', drafts);
-                      if (context.mounted) Navigator.pop(context);
                     } catch (error) {
                       if (context.mounted) snack(context, accountError(error));
-                    } finally {
                       if (mounted) setState(() => _busy = false);
+                      return;
                     }
+                    final ref = FirebaseFirestore.instance
+                        .collection('social_posts')
+                        .doc(_postId);
+                    _postId = ref.id;
+                    // The draft (with this post id) stays saved until the
+                    // upload succeeds, so a failure can be retried safely.
+                    _persistDraft();
+                    _published = true;
+                    unawaited(
+                      SocialUploadService.publish(
+                        SocialUpload(
+                          id: ref.id,
+                          draftOwner: _draftOwner,
+                          photo: _photo,
+                          payload: {
+                            'authorUid': FirebaseAuth.instance.currentUser!.uid,
+                            'ranchId': '',
+                            'authorName': accountUsername,
+                            'authorUsername': accountUsername,
+                            'text': _text.text.trim(),
+                            'mentions': mentionSelections[_text] ?? const [],
+                            'photo': _photo,
+                            'voice': _voice,
+                            'voiceSeconds': _seconds,
+                            'tile': false,
+                          },
+                        ),
+                      ),
+                    );
+                    if (context.mounted) Navigator.pop(context);
                   },
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -746,12 +1300,13 @@ class _SocialPostState extends State<_SocialPost> {
                         value: 'likes',
                         child: Text(bi('Who liked this', 'விரும்பியவர்கள்')),
                       ),
-                      PopupMenuItem(
-                        value: 'hide',
-                        child: Text(
-                          bi('I am not interested', 'எனக்கு விருப்பமில்லை'),
+                      if (p['authorUid'] != signedInUid)
+                        PopupMenuItem(
+                          value: 'hide',
+                          child: Text(
+                            bi('I am not interested', 'எனக்கு விருப்பமில்லை'),
+                          ),
                         ),
-                      ),
                       if (p['authorUid'] != signedInUid)
                         PopupMenuItem(
                           value: 'report',
@@ -767,16 +1322,40 @@ class _SocialPostState extends State<_SocialPost> {
               if (photo.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(22),
-                    child: Image.memory(
-                      socialPhotoBytes(photo),
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (_, _, _) => Text(
-                        bi('Photo unavailable', 'புகைப்படம் கிடைக்கவில்லை'),
+                  child: GestureDetector(
+                    onTap: () {
+                      final bytes = socialPhotoBytes(photo);
+                      if (bytes.isEmpty) return;
+                      Navigator.of(context).push(
+                        PageRouteBuilder<void>(
+                          opaque: false,
+                          barrierColor: Colors.black,
+                          transitionDuration: Gold.base,
+                          reverseTransitionDuration: Gold.fast,
+                          pageBuilder: (_, _, _) => SocialPhotoViewer(
+                            image: MemoryImage(bytes),
+                            saveBytes: bytes,
+                            heroTag: 'post-photo-${widget.post.id}',
+                          ),
+                          transitionsBuilder: (_, animation, _, child) =>
+                              FadeTransition(opacity: animation, child: child),
+                        ),
+                      );
+                    },
+                    child: Hero(
+                      tag: 'post-photo-${widget.post.id}',
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: Image.memory(
+                          socialPhotoBytes(photo),
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (_, _, _) => Text(
+                            bi('Photo unavailable', 'புகைப்படம் கிடைக்கவில்லை'),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -898,6 +1477,53 @@ class _SocialPostState extends State<_SocialPost> {
   }
 }
 
+/// The comment a reply answers. Stored inside the reply's mentions list (an
+/// entry with `replyTo`), which the existing comment rules already accept.
+String commentParentId(Map<String, dynamic> comment) {
+  final mentions = comment['mentions'];
+  if (mentions is! List) return '';
+  for (final entry in mentions.whereType<Map>()) {
+    final parent = txt(asMap(entry), 'replyTo');
+    if (parent.isNotEmpty) return parent;
+  }
+  return '';
+}
+
+/// Groups comments into threads: each top-level comment followed by every
+/// reply beneath it (replies to replies stay in the same thread), in time
+/// order.
+List<
+  (
+    QueryDocumentSnapshot<Map<String, dynamic>>,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>>,
+  )
+>
+commentThreads(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  final byId = {for (final d in docs) d.id: d};
+  String rootOf(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    var current = doc;
+    final seen = <String>{};
+    while (seen.add(current.id)) {
+      final parent = byId[commentParentId(current.data())];
+      if (parent == null) break;
+      current = parent;
+    }
+    return current.id;
+  }
+
+  final replies = <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+  final roots = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+  for (final doc in docs) {
+    final root = rootOf(doc);
+    if (root == doc.id) {
+      roots.add(doc);
+    } else {
+      replies.putIfAbsent(root, () => []).add(doc);
+    }
+  }
+  return [for (final root in roots) (root, replies[root.id] ?? const [])];
+}
+
 class _SocialComments extends StatefulWidget {
   final DocumentReference<Map<String, dynamic>> post;
   const _SocialComments({required this.post});
@@ -907,29 +1533,146 @@ class _SocialComments extends StatefulWidget {
 
 class _SocialCommentsState extends State<_SocialComments> {
   final _text = TextEditingController();
+  final _focus = FocusNode();
   bool _busy = false;
+  QueryDocumentSnapshot<Map<String, dynamic>>? _replyTo;
+  final _expanded = <String>{};
   late final _stream = widget.post
       .collection('comments')
       .orderBy('createdAt')
-      .limit(100)
+      .limit(200)
       .snapshots();
   @override
   void dispose() {
     _text.dispose();
+    _focus.dispose();
     super.dispose();
+  }
+
+  String _username(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+      txt(doc.data(), 'authorUsername', txt(doc.data(), 'authorName'));
+
+  void _reply(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final username = _username(doc);
+    final own = txt(doc.data(), 'authorUid') == signedInUid;
+    setState(() => _replyTo = doc);
+    _text.text = own || username.isEmpty ? '' : '$username ';
+    _text.selection = TextSelection.collapsed(offset: _text.text.length);
+    mentionSelections[_text] = [
+      if (!own && username.isNotEmpty)
+        {
+          'uid': txt(doc.data(), 'authorUid'),
+          'username': username,
+          'start': 0,
+          'end': username.length,
+        },
+    ];
+    _focus.requestFocus();
+  }
+
+  Future<void> _send() async {
+    if (_busy || _text.text.trim().isEmpty) return;
+    if (accountUsername.isEmpty) {
+      await push(context, const UsernameScreen());
+      if (!mounted || accountUsername.isEmpty) return;
+    }
+    setState(() => _busy = true);
+    final parent = _replyTo;
+    try {
+      await widget.post.collection('comments').add({
+        'authorUid': FirebaseAuth.instance.currentUser!.uid,
+        'authorName': currentUserName(),
+        'authorUsername': accountUsername,
+        'ranchId': ranchId(),
+        'text': _text.text.trim(),
+        'mentions': [
+          ...?mentionSelections[_text],
+          if (parent != null)
+            {
+              'uid': txt(parent.data(), 'authorUid'),
+              'username': '',
+              'replyTo': parent.id,
+            },
+        ].take(20).toList(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      _text.clear();
+      mentionSelections[_text] = const [];
+      if (mounted) {
+        setState(() {
+          if (parent != null) {
+            _expanded.add(parent.id);
+            final root = commentParentId(parent.data());
+            if (root.isNotEmpty) _expanded.add(root);
+          }
+          _replyTo = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) snack(context, ui('Unable to save. Try again.'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  List<Widget> _thread(
+    QueryDocumentSnapshot<Map<String, dynamic>> root,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> replies,
+  ) {
+    final open = _expanded.contains(root.id) || replies.length <= 2;
+    final shown = open ? replies : replies.take(1).toList();
+    return [
+      _SocialCommentCard(
+        key: ValueKey(root.id),
+        comment: root,
+        onReply: () => _reply(root),
+        threadBelow: replies.isNotEmpty,
+      ),
+      for (final (i, reply) in shown.indexed)
+        _SocialCommentCard(
+          key: ValueKey(reply.id),
+          comment: reply,
+          reply: true,
+          onReply: () => _reply(reply),
+          threadBelow: i < shown.length - 1 || shown.length < replies.length,
+        ),
+      if (shown.length < replies.length)
+        Padding(
+          padding: const EdgeInsets.only(left: 50, bottom: 6),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Ink.muted,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+              ),
+              onPressed: () => setState(() => _expanded.add(root.id)),
+              child: Text(
+                bi(
+                  'View ${replies.length - shown.length} more replies',
+                  'மேலும் ${replies.length - shown.length} பதில்கள்',
+                ),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ),
+      const SizedBox(height: 6),
+    ];
   }
 
   @override
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.only(top: 8),
-    padding: const EdgeInsets.only(top: 8),
+    padding: const EdgeInsets.only(top: 12),
     decoration: const BoxDecoration(
       border: Border(top: BorderSide(color: Color(0x167B61D1))),
     ),
     child: Column(
       children: [
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 320),
+          constraints: const BoxConstraints(maxHeight: 440),
           child: StreamBuilder(
             stream: _stream,
             builder: (context, snapshot) {
@@ -944,48 +1687,80 @@ class _SocialCommentsState extends State<_SocialComments> {
                 );
               }
               if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CupertinoActivityIndicator()),
+                );
               }
               if (snapshot.data!.docs.isEmpty) {
-                return Center(
-                  child: Text(
-                    bi(
-                      'Be the first to comment.',
-                      'முதல் கருத்தைப் பகிருங்கள்.',
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: Text(
+                      bi(
+                        'Be the first to comment.',
+                        'முதல் கருத்தைப் பகிருங்கள்.',
+                      ),
+                      style: const TextStyle(color: Ink.muted),
                     ),
                   ),
                 );
               }
               return ListView(
                 shrinkWrap: true,
+                padding: EdgeInsets.zero,
                 children: [
-                  for (final doc in snapshot.data!.docs)
-                    _SocialCommentCard(
-                      comment: doc,
-                      onReply: () {
-                        final username = txt(
-                          doc.data(),
-                          'authorUsername',
-                          txt(doc.data(), 'authorName'),
-                        );
-                        _text.text = '$username ';
-                        _text.selection = TextSelection.collapsed(
-                          offset: _text.text.length,
-                        );
-                        mentionSelections[_text] = [
-                          {
-                            'uid': txt(doc.data(), 'authorUid'),
-                            'username': username,
-                            'start': 0,
-                            'end': username.length,
-                          },
-                        ];
-                      },
-                    ),
+                  for (final (root, replies) in commentThreads(
+                    snapshot.data!.docs,
+                  ))
+                    ..._thread(root, replies),
                 ],
               );
             },
           ),
+        ),
+        AnimatedSize(
+          duration: Gold.fast,
+          child: _replyTo == null
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        CupertinoIcons.arrow_turn_down_right,
+                        size: 15,
+                        color: Ink.muted,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          bi(
+                            'Replying to ${_username(_replyTo!)}',
+                            '${_username(_replyTo!)}-க்கு பதில்',
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Ink.muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: ui('Cancel'),
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(CupertinoIcons.xmark, size: 15),
+                        onPressed: () {
+                          setState(() => _replyTo = null);
+                          _text.clear();
+                          mentionSelections[_text] = const [];
+                        },
+                      ),
+                    ],
+                  ),
+                ),
         ),
         SafeArea(
           top: false,
@@ -995,46 +1770,26 @@ class _SocialCommentsState extends State<_SocialComments> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
-                  child: MentionInput(
-                    controller: _text,
-                    minLines: 1,
-                    maxLines: 4,
-                    maxLength: 1000,
-                    hint: bi('Write a comment', 'கருத்தை எழுதுங்கள்'),
+                  child: Focus(
+                    focusNode: _focus,
+                    child: MentionInput(
+                      controller: _text,
+                      minLines: 1,
+                      maxLines: 4,
+                      maxLength: 1000,
+                      hint: _replyTo == null
+                          ? bi('Write a comment', 'கருத்தை எழுதுங்கள்')
+                          : bi('Write a reply', 'பதிலை எழுதுங்கள்'),
+                    ),
                   ),
                 ),
+                const SizedBox(width: 6),
                 IconButton.filled(
                   tooltip: ui('Send'),
-                  onPressed: _busy
-                      ? null
-                      : () async {
-                          if (_text.text.trim().isEmpty) return;
-                          if (accountUsername.isEmpty) {
-                            await push(context, const UsernameScreen());
-                            if (!mounted || accountUsername.isEmpty) return;
-                          }
-                          setState(() => _busy = true);
-                          try {
-                            await widget.post.collection('comments').add({
-                              'authorUid':
-                                  FirebaseAuth.instance.currentUser!.uid,
-                              'authorName': currentUserName(),
-                              'authorUsername': accountUsername,
-                              'ranchId': ranchId(),
-                              'text': _text.text.trim(),
-                              'mentions': mentionSelections[_text] ?? const [],
-                              'createdAt': FieldValue.serverTimestamp(),
-                            });
-                            _text.clear();
-                          } catch (_) {
-                            if (context.mounted) {
-                              snack(context, ui('Unable to save. Try again.'));
-                            }
-                          } finally {
-                            if (mounted) setState(() => _busy = false);
-                          }
-                        },
-                  icon: const Icon(CupertinoIcons.arrow_up),
+                  onPressed: _busy ? null : _send,
+                  icon: _busy
+                      ? const CupertinoActivityIndicator(color: Colors.white)
+                      : const Icon(CupertinoIcons.arrow_up),
                 ),
               ],
             ),
@@ -1048,7 +1803,17 @@ class _SocialCommentsState extends State<_SocialComments> {
 class _SocialCommentCard extends StatefulWidget {
   final QueryDocumentSnapshot<Map<String, dynamic>> comment;
   final VoidCallback onReply;
-  const _SocialCommentCard({required this.comment, required this.onReply});
+  final bool reply;
+
+  /// Draws the thread line down from this comment's avatar to the next reply.
+  final bool threadBelow;
+  const _SocialCommentCard({
+    super.key,
+    required this.comment,
+    required this.onReply,
+    this.reply = false,
+    this.threadBelow = false,
+  });
   @override
   State<_SocialCommentCard> createState() => _SocialCommentCardState();
 }
@@ -1095,136 +1860,205 @@ class _SocialCommentCardState extends State<_SocialCommentCard> {
         ),
       ),
     );
-    if (action == 'delete') await widget.comment.reference.delete();
-    if (action == 'report' && signedInUid.isNotEmpty) {
-      await widget.comment.reference
-          .collection('reports')
-          .doc(signedInUid)
-          .set({
-            'reporterUid': signedInUid,
-            'reason': 'reported from comment',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-      if (mounted)
-        snack(context, bi('Comment reported', 'கருத்து புகாரளிக்கப்பட்டது'));
+    try {
+      if (action == 'delete') await widget.comment.reference.delete();
+      if (action == 'report' && signedInUid.isNotEmpty) {
+        await widget.comment.reference
+            .collection('reports')
+            .doc(signedInUid)
+            .set({
+              'reporterUid': signedInUid,
+              'reason': 'reported from comment',
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+        if (mounted) {
+          snack(context, bi('Comment reported', 'கருத்து புகாரளிக்கப்பட்டது'));
+        }
+      }
+    } catch (error) {
+      if (mounted) snack(context, accountError(error));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final data = widget.comment.data();
+    final avatar = widget.reply ? 15.0 : 19.0;
+    final line = Ink.violetDeep.withValues(alpha: .16);
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onLongPress: _longPress,
-      child: Glass(
-        radius: Gold.r21,
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(13),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              future: _profile,
-              builder: (_, snapshot) => profileAvatar(
-                txt(snapshot.data?.data() ?? {}, 'photo'),
-                radius: 19,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
+      child: Padding(
+        padding: EdgeInsets.only(left: widget.reply ? 44 : 0),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: avatar * 2,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 2),
+                    GestureDetector(
+                      onTap: () => push(
+                        context,
+                        SocialProfileScreen(uid: txt(data, 'authorUid')),
+                      ),
+                      child:
+                          FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                            future: _profile,
+                            builder: (_, snapshot) => profileAvatar(
+                              txt(snapshot.data?.data() ?? {}, 'photo'),
+                              radius: avatar,
+                              label: txt(data, 'authorName'),
+                            ),
+                          ),
+                    ),
+                    // Threads-style connector down to the next reply.
+                    if (widget.threadBelow)
                       Expanded(
-                        child:
-                            FutureBuilder<
-                              DocumentSnapshot<Map<String, dynamic>>
-                            >(
-                              future: _profile,
-                              builder: (_, snapshot) => Text(
-                                txt(
-                                  snapshot.data?.data() ?? {},
-                                  'displayName',
-                                  txt(data, 'authorName'),
+                        child: Container(
+                          width: 2,
+                          margin: const EdgeInsets.only(top: 6),
+                          decoration: BoxDecoration(
+                            color: line,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child:
+                                FutureBuilder<
+                                  DocumentSnapshot<Map<String, dynamic>>
+                                >(
+                                  future: _profile,
+                                  builder: (_, snapshot) => Text(
+                                    txt(
+                                      snapshot.data?.data() ?? {},
+                                      'displayName',
+                                      txt(data, 'authorName'),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Ink.navy,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                                 ),
-                                style: const TextStyle(
-                                  color: Ink.violetDeep,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _ago(data['createdAt'] as Timestamp?),
+                            style: const TextStyle(
+                              color: Ink.faint,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      MentionText(
+                        txt(data, 'text'),
+                        mentions: data['mentions'] is List
+                            ? List.from(data['mentions'])
+                            : const [],
+                        style: const TextStyle(
+                          fontSize: 15,
+                          height: 1.4,
+                          color: Ink.body,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Ink.muted,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 0,
+                              ),
+                              minimumSize: const Size(44, 34),
+                              textStyle: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                      ),
-                      Text(
-                        _ago(data['createdAt'] as Timestamp?),
-                        style: const TextStyle(color: Ink.muted, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  MentionText(
-                    txt(data, 'text'),
-                    mentions: data['mentions'] is List
-                        ? List.from(data['mentions'])
-                        : const [],
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: widget.onReply,
-                        icon: const Icon(CupertinoIcons.reply, size: 17),
-                        label: Text(bi('Reply', 'பதில்')),
-                      ),
-                      const Spacer(),
-                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: _likes,
-                        builder: (_, snapshot) {
-                          final liked =
-                              snapshot.data?.docs.any(
-                                (doc) => doc.id == signedInUid,
-                              ) ??
-                              false;
-                          return TextButton.icon(
-                            onPressed: !snapshot.hasData || _likeBusy
-                                ? null
-                                : () async {
-                                    _likeBusy = true;
-                                    final ref = widget.comment.reference
-                                        .collection('likes')
-                                        .doc(signedInUid);
-                                    try {
-                                      if (liked) {
-                                        await ref.delete();
-                                      } else {
-                                        await ref.set({
-                                          'createdAt':
-                                              FieldValue.serverTimestamp(),
-                                        });
-                                      }
-                                    } finally {
-                                      _likeBusy = false;
-                                    }
-                                  },
-                            icon: Icon(
-                              liked
-                                  ? CupertinoIcons.heart_fill
-                                  : CupertinoIcons.heart,
-                              size: 17,
-                              color: liked ? Colors.pink : Ink.violetDeep,
-                            ),
-                            label: Text(
-                              '${snapshot.data?.size ?? 0} ${bi('Like', 'விருப்பு')}',
-                            ),
-                          );
-                        },
+                            onPressed: widget.onReply,
+                            child: Text(bi('Reply', 'பதில்')),
+                          ),
+                          const Spacer(),
+                          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                            stream: _likes,
+                            builder: (_, snapshot) {
+                              final liked =
+                                  snapshot.data?.docs.any(
+                                    (doc) => doc.id == signedInUid,
+                                  ) ??
+                                  false;
+                              final count = snapshot.data?.size ?? 0;
+                              return TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Ink.muted,
+                                  minimumSize: const Size(44, 34),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                  ),
+                                ),
+                                onPressed: !snapshot.hasData || _likeBusy
+                                    ? null
+                                    : () async {
+                                        _likeBusy = true;
+                                        final ref = widget.comment.reference
+                                            .collection('likes')
+                                            .doc(signedInUid);
+                                        try {
+                                          if (liked) {
+                                            await ref.delete();
+                                          } else {
+                                            await ref.set({
+                                              'createdAt':
+                                                  FieldValue.serverTimestamp(),
+                                            });
+                                          }
+                                        } catch (_) {
+                                        } finally {
+                                          _likeBusy = false;
+                                        }
+                                      },
+                                icon: Icon(
+                                  liked
+                                      ? CupertinoIcons.heart_fill
+                                      : CupertinoIcons.heart,
+                                  size: 16,
+                                  color: liked ? Colors.pink : Ink.muted,
+                                ),
+                                label: Text(
+                                  count == 0 ? '' : '$count',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

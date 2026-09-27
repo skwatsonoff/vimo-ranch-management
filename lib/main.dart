@@ -4095,6 +4095,7 @@ class CloudSyncService {
     'settingsQueueInitialized',
     'autoSyncEnabled',
     'socialDrafts',
+    'followNotices',
     'workspaceSyncEnabled',
     'activeDeviceWorkspace',
   };
@@ -4128,6 +4129,7 @@ class CloudSyncService {
   static const networkTimeout = Duration(seconds: 12);
 
   static bool mayUpload(String boxName, Map<String, dynamic> data) {
+    if (data['localOnly'] == true) return false;
     if (boxName == 'settings' || boxName == 'family_users') {
       return canManageRanch;
     }
@@ -4518,7 +4520,9 @@ class BrowserNotificationService {
             final senderUid = txt(notification, 'createdByUid');
             final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
             if ((target.isNotEmpty && target != me) ||
-                (senderUid.isNotEmpty && senderUid == myUid)) {
+                (senderUid.isNotEmpty && senderUid == myUid) ||
+                (target.isEmpty &&
+                    txt(notification, 'addedBy').toLowerCase() == me)) {
               continue;
             }
             _browserRuntime.showNotification(
@@ -5309,32 +5313,36 @@ class CowMark extends StatelessWidget {
   const CowMark({super.key, this.size = Gold.s21, this.color = Ink.violetDeep});
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-    dimension: size,
-    child: Stack(
-      children: [
-        for (final offset in const [
-          Offset(-.55, 0),
-          Offset(.55, 0),
-          Offset(0, -.55),
-          Offset(0, .55),
-          Offset.zero,
-        ])
-          Transform.translate(
-            offset: offset,
-            child: Image.asset(
-              'assets/images/cow_mark.png',
-              width: size,
-              height: size,
-              fit: BoxFit.contain,
-              color: color,
-              filterQuality: FilterQuality.high,
-              gaplessPlayback: true,
-            ),
-          ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final art = Image.asset(
+      'assets/images/cow_mark.png',
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      color: color,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
+    );
+    // Small marks (tabs, list rows, labels) draw the artwork once so the fine
+    // calf lines stay crisp. Only large artwork gets the thicker stroke made
+    // from slightly offset copies.
+    if (size < 48) return SizedBox.square(dimension: size, child: art);
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        children: [
+          for (final offset in const [
+            Offset(-.55, 0),
+            Offset(.55, 0),
+            Offset(0, -.55),
+            Offset(0, .55),
+            Offset.zero,
+          ])
+            Transform.translate(offset: offset, child: art),
+        ],
+      ),
+    );
+  }
 }
 
 /// Reusable cloven cow-hoof mark without its own background. The surrounding
@@ -5496,9 +5504,12 @@ class _RosettePainter extends CustomPainter {
 /// purple and green use layered liquid waves. No bitmap is used by these cards.
 class RankTexturePainter extends CustomPainter {
   final int rank;
-  final double progress;
+  final Animation<double> animation;
 
-  const RankTexturePainter({required this.rank, required this.progress});
+  RankTexturePainter({required this.rank, required this.animation})
+    : super(repaint: animation);
+
+  double get progress => animation.value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -5523,15 +5534,27 @@ class RankTexturePainter extends CustomPainter {
       _paintLiquid(canvas, size, palette);
     }
 
-    final sheenX = -size.width * .7 + progress * size.width * 2.1;
-    final sheen = Rect.fromLTWH(sheenX, 0, size.width * .52, size.height);
-    canvas.drawRect(
-      sheen,
-      Paint()
-        ..shader = const LinearGradient(
-          colors: [Colors.transparent, Color(0x42FFFFFF), Colors.transparent],
-        ).createShader(sheen),
+    // One light sweep in the first 40% of the loop, then a calm pause. The
+    // sweep starts and ends fully outside the card, so the loop has no seam.
+    final sweep = Curves.easeInOutCubic.transform(
+      (progress / .4).clamp(0.0, 1.0),
     );
+    if (sweep > 0 && sweep < 1) {
+      final sheenX = -size.width * .6 + sweep * size.width * 1.7;
+      final sheen = Rect.fromLTWH(sheenX, 0, size.width * .5, size.height);
+      canvas.save();
+      canvas.translate(sheen.center.dx, sheen.center.dy);
+      canvas.skew(-.35, 0);
+      canvas.translate(-sheen.center.dx, -sheen.center.dy);
+      canvas.drawRect(
+        sheen.inflate(size.height * .2),
+        Paint()
+          ..shader = const LinearGradient(
+            colors: [Colors.transparent, Color(0x4DFFFFFF), Colors.transparent],
+          ).createShader(sheen),
+      );
+      canvas.restore();
+    }
 
     canvas.drawRect(
       rect,
@@ -5562,29 +5585,35 @@ class RankTexturePainter extends CustomPainter {
           );
     canvas.drawRect(Offset.zero & size, bloom);
 
-    for (int i = 0; i < 48; i++) {
+    // Sparks rise slowly and fade in and out at the edges, so wrapping from
+    // top back to bottom is invisible. Every term is periodic in [progress].
+    final glow = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    final dot = Paint();
+    for (int i = 0; i < 30; i++) {
       final seed = i * Gold.goldenAngle;
-      final orbit = .12 + ((i * 37) % 100) / 100 * .86;
-      final drift = (progress * (i.isEven ? 1 : -1) + orbit) % 1;
+      final rise = (progress * (1 + i % 2) + ((i * 19) % 31) / 31) % 1;
+      final fade = math.sin(rise * math.pi);
       final x =
-          ((math.cos(seed) + 1) * .5 * size.width + drift * size.width * .23) %
-          size.width;
-      final y =
-          size.height - ((drift + ((i * 19) % 31) / 31) % 1) * size.height;
-      final radius = i % 9 == 0 ? 2.6 : (i % 3 == 0 ? 1.5 : .8);
+          (math.cos(seed) + 1) * .5 * size.width +
+          math.sin(rise * math.pi * 2 + seed) * 6;
+      final y = size.height * (1.04 - rise * 1.08);
+      final radius = i % 7 == 0 ? 2.4 : (i % 3 == 0 ? 1.5 : .9);
       final alpha =
-          .28 + .55 * ((math.sin(seed + progress * math.pi * 2) + 1) / 2);
+          fade *
+          (.35 + .5 * ((math.sin(seed + progress * math.pi * 4) + 1) / 2));
+      final at = Offset(x, y);
+      if (radius > 1.4) {
+        canvas.drawCircle(
+          at,
+          radius * 2.2,
+          glow..color = palette[0].withValues(alpha: alpha * .4),
+        );
+      }
       canvas.drawCircle(
-        Offset(x, y),
-        radius * 2.3,
-        Paint()
-          ..color = palette[0].withValues(alpha: alpha * .32)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-      );
-      canvas.drawCircle(
-        Offset(x, y),
+        at,
         radius,
-        Paint()..color = Colors.white.withValues(alpha: alpha),
+        dot..color = Colors.white.withValues(alpha: alpha),
       );
     }
   }
@@ -5602,9 +5631,7 @@ class RankTexturePainter extends CustomPainter {
         final y =
             baseY +
             math.sin(i / segments * math.pi * 3 + phase) * amplitude +
-            math.sin(i / segments * math.pi * 5 - phase * .62) *
-                amplitude *
-                .35;
+            math.sin(i / segments * math.pi * 5 - phase) * amplitude * .35;
         path.lineTo(x, y);
       }
       path
@@ -5641,15 +5668,18 @@ class RankTexturePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant RankTexturePainter old) =>
-      old.progress != progress || old.rank != rank;
+      old.animation != animation || old.rank != rank;
 }
 
 /// A rotating aura for a ranked avatar.
 class RankAuraPainter extends CustomPainter {
   final int rank;
-  final double progress;
+  final Animation<double> animation;
 
-  const RankAuraPainter({required this.rank, required this.progress});
+  RankAuraPainter({required this.rank, required this.animation})
+    : super(repaint: animation);
+
+  double get progress => animation.value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -5735,13 +5765,15 @@ class RankAuraPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant RankAuraPainter old) =>
-      old.progress != progress || old.rank != rank;
+      old.animation != animation || old.rank != rank;
 }
 
 /// The gilt wreath drawn around an animal celebrating a birthday.
 class BirthdayWreathPainter extends CustomPainter {
-  final double progress;
-  const BirthdayWreathPainter({required this.progress});
+  final Animation<double> animation;
+  BirthdayWreathPainter({required this.animation}) : super(repaint: animation);
+
+  double get progress => animation.value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -5783,7 +5815,7 @@ class BirthdayWreathPainter extends CustomPainter {
       ..color = Ink.goldLight;
 
     for (int i = 0; i < 16; i++) {
-      final a = i * math.pi * 2 / 16 + progress * 0.18;
+      final a = i * math.pi * 2 / 16 + math.sin(progress * math.pi * 2) * .09;
       canvas.drawPath(
         Path()
           ..moveTo(
@@ -5803,7 +5835,7 @@ class BirthdayWreathPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant BirthdayWreathPainter old) =>
-      old.progress != progress;
+      old.animation != animation;
 }
 
 // -----------------------------------------------------------------------------
@@ -5837,15 +5869,22 @@ class _AnimalAvatarState extends State<AnimalAvatar>
     with TickerProviderStateMixin {
   AnimationController? _c;
 
-  void _ensureController(bool needed) {
+  void _ensureController(bool needed, bool reduceMotion) {
     if (needed && _c == null) {
       _c = AnimationController(
         vsync: this,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 6),
       )..value = .2;
     } else if (!needed && _c != null) {
       _c!.dispose();
       _c = null;
+    }
+    final c = _c;
+    if (c == null) return;
+    if (reduceMotion) {
+      if (c.isAnimating) c.stop();
+    } else if (!c.isAnimating) {
+      c.repeat();
     }
   }
 
@@ -5866,7 +5905,10 @@ class _AnimalAvatarState extends State<AnimalAvatar>
     final birthday = widget.decorate && isBirthdayToday(animal);
     final ranked = rank > 0;
 
-    _ensureController(ranked || birthday);
+    _ensureController(
+      ranked || birthday,
+      MediaQuery.maybeDisableAnimationsOf(context) ?? false,
+    );
 
     final portrait = _AnimalPortrait(animal: animal, size: radius * 2);
 
@@ -5877,73 +5919,74 @@ class _AnimalAvatarState extends State<AnimalAvatar>
     final controller = _c;
     if (controller == null) return portrait;
 
+    // Only the painters repaint each frame; the portrait and its frame stay
+    // static layers.
     return SizedBox(
       width: total,
       height: total,
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (_, _) {
-          final t = controller.value;
-          return Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              if (ranked)
-                CustomPaint(
-                  size: Size(total, total),
-                  painter: RankAuraPainter(rank: rank, progress: t),
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          if (ranked)
+            RepaintBoundary(
+              child: CustomPaint(
+                size: Size(total, total),
+                painter: RankAuraPainter(rank: rank, animation: controller),
+              ),
+            ),
+          if (birthday)
+            RepaintBoundary(
+              child: CustomPaint(
+                size: Size(total, total),
+                painter: BirthdayWreathPainter(animation: controller),
+              ),
+            ),
+          Container(
+            padding: EdgeInsets.all(pad * Gold.minor),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.50),
+              border: Border.all(
+                color: birthday
+                    ? Ink.goldLight
+                    : rankColor(rank).withValues(alpha: 0.85),
+                width: birthday ? 2 : 1.4,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: (birthday ? Ink.violet : rankColor(rank)).withValues(
+                    alpha: 0.38,
+                  ),
+                  blurRadius: Gold.s21,
+                  spreadRadius: 1,
                 ),
-              if (birthday)
-                CustomPaint(
-                  size: Size(total, total),
-                  painter: BirthdayWreathPainter(progress: t),
-                ),
-              Container(
-                padding: EdgeInsets.all(pad * Gold.minor),
+              ],
+            ),
+            child: portrait,
+          ),
+          if (birthday)
+            Positioned(
+              top: -2,
+              left: -2,
+              child: Container(
+                width: radius > 34 ? Gold.s21 : Gold.s13,
+                height: radius > 34 ? Gold.s21 : Gold.s13,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.50),
-                  border: Border.all(
-                    color: birthday
-                        ? Ink.goldLight
-                        : rankColor(rank).withValues(alpha: 0.85),
-                    width: birthday ? 2 : 1.4,
+                  gradient: const LinearGradient(
+                    colors: [Ink.goldLight, Ink.goldBase],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (birthday ? Ink.violet : rankColor(rank))
-                          .withValues(alpha: 0.38),
-                      blurRadius: Gold.s21,
-                      spreadRadius: 1,
-                    ),
-                  ],
+                  border: Border.all(color: Colors.white, width: 1),
                 ),
-                child: portrait,
+                child: Icon(
+                  Icons.cake_rounded,
+                  color: Ink.violetDeep,
+                  size: radius > 34 ? 12 : 8,
+                ),
               ),
-              if (birthday)
-                Positioned(
-                  top: -2,
-                  left: -2,
-                  child: Container(
-                    width: radius > 34 ? Gold.s21 : Gold.s13,
-                    height: radius > 34 ? Gold.s21 : Gold.s13,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        colors: [Ink.goldLight, Ink.goldBase],
-                      ),
-                      border: Border.all(color: Colors.white, width: 1),
-                    ),
-                    child: Icon(
-                      Icons.cake_rounded,
-                      color: Ink.violetDeep,
-                      size: radius > 34 ? 12 : 8,
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
+            ),
+        ],
       ),
     );
   }
@@ -7774,6 +7817,8 @@ Future<void> addRanchNotification({
   String type = 'info',
   String targetUser = '',
   String sourceId = '',
+  bool localOnly = false,
+  Map<String, dynamic> extra = const {},
 }) async {
   final box = Hive.box('notifications');
   if (sourceId.isNotEmpty &&
@@ -7796,6 +7841,10 @@ Future<void> addRanchNotification({
     'createdByUid': firebaseReady
         ? FirebaseAuth.instance.currentUser?.uid ?? ''
         : '',
+    // Personal social activity (a new follower) stays on this device and is
+    // never shared with the ranch.
+    if (localOnly) ...{'localOnly': true, 'pendingUpload': false},
+    ...extra,
   });
 }
 
@@ -7874,10 +7923,23 @@ List<Map<String, dynamic>> visibleNotifications() {
   final rows = Hive.box('notifications').values
       .whereType<Map>()
       .map((e) => Map<String, dynamic>.from(e))
-      .where((e) => txt(e, 'targetUser').isEmpty || txt(e, 'targetUser') == me)
+      .where((e) => notificationForMe(e, me))
       .toList();
   rows.sort((a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')));
   return rows;
+}
+
+/// Ranch-wide notifications are for the other members: the author of a chat
+/// message or task update must not be alerted about their own action. Rows
+/// addressed to this member explicitly (reminders, join requests) still show.
+bool notificationForMe(Map<String, dynamic> row, String me) {
+  if (row['localOnly'] == true) return true;
+  final target = txt(row, 'targetUser');
+  if (target.isNotEmpty) return target == me;
+  final uid = firebaseReady ? FirebaseAuth.instance.currentUser?.uid ?? '' : '';
+  final byUid = txt(row, 'createdByUid');
+  if (uid.isNotEmpty && byUid.isNotEmpty) return byUid != uid;
+  return txt(row, 'addedBy') != me;
 }
 
 bool notificationRead(Map<String, dynamic> row) =>
@@ -8058,8 +8120,7 @@ class NotificationHistoryScreen extends StatelessWidget {
       final entries =
           box.toMap().entries.where((e) {
             final r = asMap(e.value);
-            return txt(r, 'targetUser').isEmpty ||
-                txt(r, 'targetUser') == currentUserName();
+            return notificationForMe(r, currentUserName());
           }).toList()..sort(
             (a, b) => txt(
               asMap(b.value),
@@ -8119,6 +8180,13 @@ class NotificationHistoryScreen extends StatelessWidget {
                               }
                               n['readBy'] = read;
                               await box.put(e.key, n);
+                              final profile = txt(n, 'profileUid');
+                              if (profile.isNotEmpty && context.mounted) {
+                                await push(
+                                  context,
+                                  SocialProfileScreen(uid: profile),
+                                );
+                              }
                             },
                             child: Row(
                               children: [
@@ -8683,6 +8751,7 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    SocialActivityService.start();
     _languageChanges = Hive.box('settings').watch().listen((event) {
       // Sync writes status and queue metadata frequently. Rebuilding the whole
       // shell for those writes tears down/recreates Firestore UI listeners and
@@ -8860,7 +8929,15 @@ class _MainShellState extends State<MainShell> {
             const RanchNotificationButton(),
           ],
         ),
-        body: IndexedStack(index: tab, children: pages),
+        // Hidden tabs keep their state but stop their animations, so looping
+        // cards on one tab never tick (or warm the phone) behind another.
+        body: IndexedStack(
+          index: tab,
+          children: [
+            for (var i = 0; i < pages.length; i++)
+              TickerMode(enabled: i == tab, child: pages[i]),
+          ],
+        ),
         floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
             ? null
             : order[tab] == 'Chat' ||
@@ -10152,8 +10229,21 @@ class _RankedCowCardState extends State<RankedCowCard>
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 9))
-      ..value = .22;
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 7));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // A short loop that repeats forever; paused when the system asks for
+    // reduced motion.
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _c
+        ..stop()
+        ..value = .55;
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
   }
 
   @override
@@ -10197,161 +10287,153 @@ class _RankedCowCardState extends State<RankedCowCard>
                 strength: 0.72,
                 sheen: false,
               ),
-              child: RepaintBoundary(
-                child: AnimatedBuilder(
-                  animation: _c,
-                  builder: (_, _) => CustomPaint(
-                    painter: RankTexturePainter(rank: rank, progress: _c.value),
-                    child: Padding(
-                      padding: const EdgeInsets.all(Gold.s16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              SizedBox(
-                                width: photo,
-                                height: photo,
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(3),
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
+              child: CustomPaint(
+                painter: RankTexturePainter(rank: rank, animation: _c),
+                // The card's content is its own layer, so each animation frame
+                // repaints only the texture beneath it.
+                child: RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.all(Gold.s16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: photo,
+                              height: photo,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.62,
+                                      ),
+                                      border: Border.all(
                                         color: Colors.white.withValues(
-                                          alpha: 0.62,
+                                          alpha: 0.86,
                                         ),
-                                        border: Border.all(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.86,
+                                        width: 1,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: palette[2].withValues(
+                                            alpha: 0.30,
                                           ),
-                                          width: 1,
+                                          blurRadius: Gold.s13,
+                                          offset: const Offset(0, Gold.s5),
                                         ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: palette[2].withValues(
-                                              alpha: 0.30,
+                                      ],
+                                    ),
+                                    child: _AnimalPortrait(
+                                      animal: a,
+                                      size: photo - 8,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    left: -Gold.s8,
+                                    top: -Gold.s5,
+                                    child: Rosette(rank: rank, size: Gold.s34),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: Gold.s16),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: Gold.s13,
+                                  vertical: Gold.s8,
+                                ),
+                                decoration: ShapeDecoration(
+                                  shape: SquircleBorder(
+                                    radius: Gold.r13,
+                                    side: BorderSide(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.74,
+                                      ),
+                                    ),
+                                  ),
+                                  color: Colors.white.withValues(alpha: 0.84),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    AppText(
+                                      name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: Gold.t21,
+                                        fontWeight: FontWeight.w700,
+                                        color: Ink.navy,
+                                        height: 1.15,
+                                        letterSpacing: -0.4,
+                                      ),
+                                    ),
+                                    AppText(
+                                      '#${txt(a, 'id')}',
+                                      style: const TextStyle(
+                                        fontSize: Gold.t13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Ink.navy,
+                                      ),
+                                    ),
+                                    if (birthday) ...[
+                                      const SizedBox(height: Gold.s5),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: Gold.s8,
+                                          vertical: Gold.s2,
+                                        ),
+                                        decoration: ShapeDecoration(
+                                          shape: const SquircleBorder(
+                                            radius: Gold.r8,
+                                          ),
+                                          color: Ink.lavender,
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.cake_rounded,
+                                              size: 11,
+                                              color: Ink.violetDeep,
                                             ),
-                                            blurRadius: Gold.s13,
-                                            offset: const Offset(0, Gold.s5),
-                                          ),
-                                        ],
+                                            SizedBox(width: Gold.s3),
+                                            AppText(
+                                              'Birthday today',
+                                              style: TextStyle(
+                                                fontSize: Gold.t10,
+                                                fontWeight: FontWeight.w700,
+                                                color: Ink.violetDeep,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                      child: _AnimalPortrait(
-                                        animal: a,
-                                        size: photo - 8,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      left: -Gold.s8,
-                                      top: -Gold.s5,
-                                      child: Rosette(
-                                        rank: rank,
-                                        size: Gold.s34,
-                                      ),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: Gold.s16),
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: Gold.s13,
-                                    vertical: Gold.s8,
-                                  ),
-                                  decoration: ShapeDecoration(
-                                    shape: SquircleBorder(
-                                      radius: Gold.r13,
-                                      side: BorderSide(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.74,
-                                        ),
-                                      ),
-                                    ),
-                                    color: Colors.white.withValues(alpha: 0.84),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      AppText(
-                                        name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: Gold.t21,
-                                          fontWeight: FontWeight.w700,
-                                          color: Ink.navy,
-                                          height: 1.15,
-                                          letterSpacing: -0.4,
-                                        ),
-                                      ),
-                                      AppText(
-                                        '#${txt(a, 'id')}',
-                                        style: const TextStyle(
-                                          fontSize: Gold.t13,
-                                          fontWeight: FontWeight.w600,
-                                          color: Ink.navy,
-                                        ),
-                                      ),
-                                      if (birthday) ...[
-                                        const SizedBox(height: Gold.s5),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: Gold.s8,
-                                            vertical: Gold.s2,
-                                          ),
-                                          decoration: ShapeDecoration(
-                                            shape: const SquircleBorder(
-                                              radius: Gold.r8,
-                                            ),
-                                            color: Ink.lavender,
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.cake_rounded,
-                                                size: 11,
-                                                color: Ink.violetDeep,
-                                              ),
-                                              SizedBox(width: Gold.s3),
-                                              AppText(
-                                                'Birthday today',
-                                                style: TextStyle(
-                                                  fontSize: Gold.t10,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Ink.violetDeep,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: Gold.s13),
-                          _StatStrip(
-                            entries: [
-                              _StatEntry(
-                                'Milk',
-                                '${cowMilkForPeriod(name, 'This Month').toStringAsFixed(1)} L',
-                              ),
-                              _StatEntry(
-                                'Lactation',
-                                '${lactationCount(name)}',
-                              ),
-                              _StatEntry('Age', ageShort(a)),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: Gold.s13),
+                        _StatStrip(
+                          entries: [
+                            _StatEntry(
+                              'Milk',
+                              '${cowMilkForPeriod(name, 'This Month').toStringAsFixed(1)} L',
+                            ),
+                            _StatEntry('Lactation', '${lactationCount(name)}'),
+                            _StatEntry('Age', ageShort(a)),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -14391,23 +14473,11 @@ class _SellScreenState extends State<SellScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
             Gold.s21,
-            Gold.s21,
+            Gold.s8,
             Gold.s21,
             _MainShellState.bottomInset,
           ),
           children: [
-            const SizedBox(height: Gold.s21),
-            AppText(
-              tamilUi ? 'தீவன இருப்பு' : 'Stock',
-              style: const TextStyle(
-                fontSize: Gold.t34,
-                fontWeight: FontWeight.w700,
-                color: Ink.navy,
-                height: 1.05,
-                letterSpacing: -1,
-              ),
-            ),
-            const SizedBox(height: Gold.s21),
             Row(
               children: [
                 for (int i = 0; i < _stockItems.length; i++) ...[
@@ -14592,6 +14662,23 @@ class _SellScreenState extends State<SellScreen> {
             resizeToAvoidBottomInset: true,
             appBar: AppBar(
               title: AppText(['Sell', 'Stock', 'Reports'][_section]),
+              actions: [
+                if (_section == 2)
+                  Padding(
+                    padding: const EdgeInsets.only(right: Gold.s8),
+                    child: IconButton(
+                      tooltip: ui('Export'),
+                      icon: const Icon(
+                        Icons.file_download_outlined,
+                        color: Ink.violetDeep,
+                      ),
+                      onPressed: () => push(
+                        context,
+                        const ExportReportScreen(ranchOnly: true),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             body: child,
           );
@@ -14614,33 +14701,15 @@ class _SellScreenState extends State<SellScreen> {
 
           return Shell(
             child: ListView(
+              // The app bar already names the page; content starts right
+              // beneath it.
               padding: const EdgeInsets.fromLTRB(
                 Gold.s21,
-                Gold.s21,
+                Gold.s8,
                 Gold.s21,
                 _MainShellState.bottomInset,
               ),
               children: [
-                const SizedBox(height: Gold.s21),
-                Reveal(
-                  index: 0,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppText(
-                        tamilUi ? 'பால் விற்பனை' : 'Sell',
-                        style: const TextStyle(
-                          fontSize: Gold.t34,
-                          fontWeight: FontWeight.w700,
-                          color: Ink.navy,
-                          height: 1.05,
-                          letterSpacing: -1,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: Gold.s21),
                 if (!isDataEntryUser)
                   Reveal(
                     index: 1,
@@ -15130,51 +15199,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(
           Gold.s21,
-          Gold.s21,
+          Gold.s8,
           Gold.s21,
           _MainShellState.bottomInset,
         ),
         children: [
-          Reveal(
-            index: 0,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppText(
-                        'Reports',
-                        style: TextStyle(
-                          fontSize: Gold.t34,
-                          fontWeight: FontWeight.w700,
-                          color: Ink.navy,
-                          height: 1.05,
-                          letterSpacing: -1,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: Gold.s13),
-                Glass(
-                  radius: Gold.r21,
-                  blur: Gold.s13,
-                  padding: const EdgeInsets.all(Gold.s13),
-                  elevation: 0.8,
-                  onTap: () =>
-                      push(context, const ExportReportScreen(ranchOnly: true)),
-                  child: const Icon(
-                    Icons.file_download_outlined,
-                    color: Ink.violetDeep,
-                    size: Gold.t21,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: Gold.s21),
           Reveal(
             index: 1,
             child: Glass(
@@ -15420,9 +15449,12 @@ class ProfitBar extends StatelessWidget {
     final incomeShare = total <= 0 ? 0.5 : income / total;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ClipPath(
-          clipper: const SquircleClipper(Gold.r8),
+        // A plain capsule clip: the squircle path degenerates on a bar this
+        // thin and could hide the bar entirely.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(Gold.s8),
           child: SizedBox(
             height: Gold.s13,
             child: Row(
@@ -15454,36 +15486,84 @@ class ProfitBar extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: Gold.s8),
-        Wrap(
-          spacing: Gold.s16,
-          runSpacing: Gold.s8,
-          alignment: WrapAlignment.spaceBetween,
+        const SizedBox(height: Gold.s13),
+        // Income sits under the green end of the bar and expense under the
+        // red end, so each reads directly against its share.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final item in [
-              (Ink.green, 'Income ${money(income)}'),
-              (Ink.red, 'Expense ${money(expense)}'),
-            ])
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _Dot(color: item.$1),
-                  const SizedBox(width: Gold.s5),
-                  AppText(
-                    item.$2,
-                    style: const TextStyle(
-                      fontSize: Gold.t10,
-                      fontWeight: FontWeight.w700,
-                      color: Ink.body,
-                    ),
-                  ),
-                ],
+            Expanded(
+              child: _ProfitLegend(
+                color: Ink.green,
+                label: 'Income',
+                value: money(income),
               ),
+            ),
+            const SizedBox(width: Gold.s16),
+            Expanded(
+              child: _ProfitLegend(
+                color: Ink.red,
+                label: 'Expense',
+                value: money(expense),
+                end: true,
+              ),
+            ),
           ],
         ),
       ],
     );
   }
+}
+
+class _ProfitLegend extends StatelessWidget {
+  final Color color;
+  final String label, value;
+  final bool end;
+  const _ProfitLegend({
+    required this.color,
+    required this.label,
+    required this.value,
+    this.end = false,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+    children: [
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Dot(color: color),
+          const SizedBox(width: Gold.s5),
+          Flexible(
+            child: AppText(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: Gold.t13,
+                fontWeight: FontWeight.w600,
+                color: Ink.muted,
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: Gold.s2),
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: end ? Alignment.centerRight : Alignment.centerLeft,
+        child: Text(
+          value,
+          style: const TextStyle(
+            fontSize: Gold.t16,
+            fontWeight: FontWeight.w800,
+            color: Ink.navy,
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 class _Dot extends StatelessWidget {

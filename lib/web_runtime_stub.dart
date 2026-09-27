@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class BrowserRuntime {
   bool get online => true;
   bool get notificationsGranted => false;
@@ -11,6 +13,9 @@ class BrowserRuntime {
     required String body,
     required String tag,
   }) {}
+
+  Future<String> saveImage(Uint8List bytes, String fileName) async =>
+      'unsupported';
 
   void dismissBootSplash() {}
 

@@ -1147,15 +1147,14 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
-  void _openProfile() =>
-      push(context, SocialProfileScreen(uid: widget.peer));
+  void _openProfile() => push(context, SocialProfileScreen(uid: widget.peer));
 
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.white,
     appBar: AppBar(
       centerTitle: true,
-      toolbarHeight: 72,
+      toolbarHeight: 96,
       backgroundColor: Colors.white.withValues(alpha: .96),
       title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
@@ -1178,8 +1177,8 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  profileAvatar(txt(data, 'photo'), radius: 19, label: name),
-                  const SizedBox(height: 3),
+                  profileAvatar(txt(data, 'photo'), radius: 27, label: name),
+                  const SizedBox(height: 5),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1189,14 +1188,14 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                       const Icon(
                         CupertinoIcons.chevron_right,
-                        size: 11,
+                        size: 13,
                         color: Ink.faint,
                       ),
                     ],
@@ -1260,7 +1259,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                           child: Text(
                             txt(asMap(message), 'text'),
                             style: const TextStyle(
-                              fontSize: 16.5,
+                              fontSize: 18,
                               height: 1.3,
                               color: Colors.white,
                             ),
@@ -1276,7 +1275,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                               child: Text(
                                 txt(d.data(), 'text'),
                                 style: TextStyle(
-                                  fontSize: 16.5,
+                                  fontSize: 18,
                                   height: 1.3,
                                   color: mine ? Colors.white : Ink.navy,
                                 ),
@@ -1301,8 +1300,12 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                 enabled: !_busy,
                 maxLength: 2000,
                 buildCounter:
-                    (_, {required currentLength, required isFocused, maxLength}) =>
-                        null,
+                    (
+                      _, {
+                      required currentLength,
+                      required isFocused,
+                      maxLength,
+                    }) => null,
                 minLines: 1,
                 maxLines: 5,
                 textCapitalization: TextCapitalization.sentences,

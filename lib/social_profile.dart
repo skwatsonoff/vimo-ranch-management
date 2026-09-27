@@ -60,6 +60,95 @@ Widget profileAvatar(
   halo: halo,
 );
 
+/// Tells a member when someone new follows them. There is no push server, so
+/// this watches the member's own followers list while the app is open and,
+/// on the next launch, reports follows that arrived while it was closed.
+class SocialActivityService {
+  const SocialActivityService._();
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _followers;
+  static String _uid = '';
+
+  static void start() {
+    final uid = signedInUid;
+    if (uid.isEmpty || (uid == _uid && _followers != null)) return;
+    unawaited(_followers?.cancel());
+    _uid = uid;
+    _followers = FirebaseFirestore.instance
+        .collection('profiles')
+        .doc(uid)
+        .collection('followers')
+        .orderBy('createdAt', descending: true)
+        .limit(20)
+        .snapshots()
+        .listen(
+          (snapshot) => unawaited(_arrived(uid, snapshot)),
+          onError: (_) {},
+        );
+  }
+
+  static Future<void> _arrived(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final seenByUser = asMap(settingValue('followNotices', {}));
+    final seen = seenByUser[uid];
+    var newest = seen is num ? seen.toInt() : -1;
+    final fresh = <(String, int)>[];
+    for (final doc in snapshot.docs) {
+      final stamp = doc.data()['createdAt'];
+      if (stamp is! Timestamp) continue;
+      final millis = stamp.millisecondsSinceEpoch;
+      if (seen is num && millis > seen) fresh.add((doc.id, millis));
+      if (millis > newest) newest = millis;
+    }
+    // The first run only records where "new" starts; old follows are not
+    // announced as if they had just happened.
+    if (seen is! num || newest > seen) {
+      await setSetting('followNotices', {
+        ...seenByUser,
+        uid: math.max(0, newest),
+      });
+    }
+    for (final (follower, millis) in fresh.reversed) {
+      var name = bi('Someone', 'ஒருவர்');
+      try {
+        final profile = await FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(follower)
+            .get()
+            .timeout(CloudSyncService.networkTimeout);
+        final data = profile.data() ?? const <String, dynamic>{};
+        final username = txt(data, 'username');
+        name = txt(data, 'displayName', username.isEmpty ? name : '@$username');
+      } catch (_) {}
+      final title = bi(
+        '$name started following you',
+        '$name உங்களைப் பின்தொடர்கிறார்',
+      );
+      await addRanchNotification(
+        title: title,
+        message: bi('Tap to see their profile', 'அவர் சுயவிவரத்தைப் பார்க்க'),
+        type: 'follow',
+        sourceId: 'follow-$uid-$follower-$millis',
+        localOnly: true,
+        extra: {'profileUid': follower},
+      );
+      _browserRuntime.showNotification(
+        title: title,
+        body: bi('Open VIMO to see their profile', 'VIMO-வில் பார்க்கவும்'),
+        tag: 'follow-$follower',
+      );
+    }
+  }
+
+  static Future<void> stop() async {
+    await _followers?.cancel();
+    _followers = null;
+    _uid = '';
+  }
+}
+
 class SocialProfileScreen extends StatefulWidget {
   final String? uid;
   const SocialProfileScreen({super.key, this.uid});
@@ -154,17 +243,26 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                             ),
                                           ),
                                           const SizedBox(height: 2),
-                                          Text(
-                                            name.isEmpty
-                                                ? bi(
-                                                    'Choose a username',
-                                                    'பயனர்பெயரைத் தேர்ந்தெடு',
-                                                  )
-                                                : '@$name',
-                                            style: const TextStyle(
-                                              color: Ink.muted,
-                                              fontWeight: FontWeight.w500,
-                                            ),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 4,
+                                            crossAxisAlignment:
+                                                WrapCrossAlignment.center,
+                                            children: [
+                                              Text(
+                                                name.isEmpty
+                                                    ? bi(
+                                                        'Choose a username',
+                                                        'பயனர்பெயரைத் தேர்ந்தெடு',
+                                                      )
+                                                    : '@$name',
+                                                style: const TextStyle(
+                                                  color: Ink.muted,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                              if (!own) _FollowsYou(uid: uid),
+                                            ],
                                           ),
                                           if (txt(data, 'place').isNotEmpty)
                                             Padding(
@@ -317,43 +415,77 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                               if (!own)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 12),
-                                  child: StreamBuilder<
-                                    DocumentSnapshot<Map<String, dynamic>>
-                                  >(
-                                    stream: FirebaseFirestore.instance
-                                        .collection('profiles')
-                                        .doc(uid)
-                                        .collection('followers')
-                                        .doc(signedInUid)
-                                        .snapshots(),
-                                    builder: (context, follow) {
-                                      final following =
-                                          follow.data?.exists == true;
-                                      return LiquidButton(
-                                        label: following
-                                            ? bi(
-                                                'Following',
-                                                'பின்தொடர்கிறீர்கள்',
-                                              )
-                                            : bi('Follow', 'பின்தொடர்'),
-                                        icon: following
-                                            ? CupertinoIcons.check_mark
-                                            : CupertinoIcons.person_add_solid,
-                                        height: 48,
-                                        radius: 24,
-                                        start: following
-                                            ? const Color(0xFFB9ABEA)
-                                            : Ink.violet,
-                                        end: following
-                                            ? const Color(0xFF9B89DE)
-                                            : Ink.violetDeep,
-                                        busy: _busy,
-                                        onPressed: _busy
-                                            ? null
-                                            : () => _toggleFollow(following),
-                                      );
-                                    },
-                                  ),
+                                  child:
+                                      StreamBuilder<
+                                        DocumentSnapshot<Map<String, dynamic>>
+                                      >(
+                                        stream: FirebaseFirestore.instance
+                                            .collection('profiles')
+                                            .doc(uid)
+                                            .collection('followers')
+                                            .doc(signedInUid)
+                                            .snapshots(),
+                                        builder: (context, follow) {
+                                          final following =
+                                              follow.data?.exists == true;
+                                          if (!following) {
+                                            return LiquidButton(
+                                              label: bi('Follow', 'பின்தொடர்'),
+                                              icon: CupertinoIcons
+                                                  .person_add_solid,
+                                              height: 48,
+                                              radius: 24,
+                                              busy: _busy,
+                                              onPressed:
+                                                  _busy || !follow.hasData
+                                                  ? null
+                                                  : () => _toggleFollow(false),
+                                            );
+                                          }
+                                          // Once followed, the same place offers
+                                          // Unfollow as a quiet outlined button.
+                                          return SizedBox(
+                                            height: 48,
+                                            width: double.infinity,
+                                            child: OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                shape: const StadiumBorder(),
+                                                backgroundColor: Colors.white
+                                                    .withValues(alpha: .7),
+                                                foregroundColor: Ink.navy,
+                                                side: BorderSide(
+                                                  color: Ink.violetDeep
+                                                      .withValues(alpha: .28),
+                                                ),
+                                                textStyle: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              onPressed: _busy
+                                                  ? null
+                                                  : () => _toggleFollow(true),
+                                              icon: _busy
+                                                  ? const SizedBox.square(
+                                                      dimension: 18,
+                                                      child:
+                                                          CupertinoActivityIndicator(),
+                                                    )
+                                                  : const Icon(
+                                                      CupertinoIcons
+                                                          .person_badge_minus,
+                                                      size: 20,
+                                                    ),
+                                              label: Text(
+                                                bi(
+                                                  'Unfollow',
+                                                  'பின்தொடர்வதை நிறுத்து',
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
                                 ),
                             ],
                           ),
@@ -361,10 +493,26 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                         Positioned(
                           left: 14,
                           top: -46,
-                          child: profileAvatar(
-                            txt(data, 'photo'),
-                            radius: 56,
-                            label: txt(data, 'displayName', name),
+                          child: GestureDetector(
+                            onTap: () {
+                              final image = cachedPhoto(txt(data, 'photo'));
+                              if (image == null) return;
+                              push(
+                                context,
+                                SocialPhotoViewer(
+                                  image: image,
+                                  heroTag: 'profile-photo-$uid',
+                                ),
+                              );
+                            },
+                            child: Hero(
+                              tag: 'profile-photo-$uid',
+                              child: profileAvatar(
+                                txt(data, 'photo'),
+                                radius: 56,
+                                label: txt(data, 'displayName', name),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -554,54 +702,93 @@ class _ProfilePostListState extends State<ProfilePostList> {
       _posts = SocialFeed.load(authorUid: widget.uid, own: widget.own);
 }
 
+/// Twitter-style "Follows you" tag, shown when the viewed member follows the
+/// signed-in member.
+class _FollowsYou extends StatelessWidget {
+  final String uid;
+  const _FollowsYou({required this.uid});
+  @override
+  Widget build(BuildContext context) =>
+      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(signedInUid)
+            .collection('followers')
+            .doc(uid)
+            .snapshots(),
+        builder: (context, snap) => AnimatedSwitcher(
+          duration: Gold.base,
+          child: snap.data?.exists == true
+              ? Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Ink.violetDeep.withValues(alpha: .08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    bi('Follows you', 'உங்களைப் பின்தொடர்கிறார்'),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Ink.muted,
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      );
+}
+
 class _ProfileCount extends StatelessWidget {
   final String uid, kind;
   const _ProfileCount({required this.uid, required this.kind});
   @override
-  Widget build(
-    BuildContext context,
-  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: FirebaseFirestore.instance
-        .collection('profiles')
-        .doc(uid)
-        .collection(kind)
-        .snapshots(),
-    builder: (context, snapshot) {
-      final count = snapshot.data?.docs.length;
-      String compact(int n) => n >= 1000000
-          ? '${(n / 1000000).toStringAsFixed(n % 1000000 == 0 ? 0 : 1)}M'
-          : n >= 1000
-          ? '${(n / 1000).toStringAsFixed(n % 1000 == 0 ? 0 : 1)}K'
-          : '$n';
-      return InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () =>
-            push(context, ProfilePeopleScreen(uid: uid, kind: kind)),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            children: [
-              Text(
-                count == null ? '–' : compact(count),
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: Ink.navy,
-                ),
+  Widget build(BuildContext context) =>
+      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(uid)
+            .collection(kind)
+            .snapshots(),
+        builder: (context, snapshot) {
+          final count = snapshot.data?.docs.length;
+          String compact(int n) => n >= 1000000
+              ? '${(n / 1000000).toStringAsFixed(n % 1000000 == 0 ? 0 : 1)}M'
+              : n >= 1000
+              ? '${(n / 1000).toStringAsFixed(n % 1000 == 0 ? 0 : 1)}K'
+              : '$n';
+          return InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () =>
+                push(context, ProfilePeopleScreen(uid: uid, kind: kind)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                children: [
+                  Text(
+                    count == null ? '–' : compact(count),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Ink.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    kind == 'followers'
+                        ? bi('Followers', 'பின்தொடர்பவர்கள்')
+                        : bi('Following', 'பின்தொடர்பவை'),
+                    style: const TextStyle(color: Ink.muted, fontSize: 13),
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                kind == 'followers'
-                    ? bi('Followers', 'பின்தொடர்பவர்கள்')
-                    : bi('Following', 'பின்தொடர்பவை'),
-                style: const TextStyle(color: Ink.muted, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       );
-    },
-  );
 }
 
 class _ProfileAction extends StatelessWidget {

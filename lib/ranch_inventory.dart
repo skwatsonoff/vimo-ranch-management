@@ -147,6 +147,32 @@ class VendorOnlyReports extends StatefulWidget {
 
 class _VendorOnlyReportsState extends State<VendorOnlyReports> {
   String _period = 'This Month';
+
+  Future<void> _export(List<Map<String, dynamic>> rows) async {
+    final output = StringBuffer(
+      'Date,Time,Session,Kind,Person,Quantity (L),Price,Amount,Paid\n',
+    );
+    for (final row in rows) {
+      output.writeln(
+        [
+          'date',
+          'time',
+          'session',
+          'kind',
+          'personName',
+          'quantity',
+          'price',
+          'amount',
+          'paid',
+        ].map((key) => csv('${row[key] ?? ''}')).join(','),
+      );
+    }
+    await downloadCsvFile(
+      'vendor_${safeFileName(_period)}_${todayDate()}.csv',
+      output.toString(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => ValueListenableBuilder(
     valueListenable: Hive.box('vendor_entries').listenable(),
@@ -162,78 +188,424 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
             ..sort(
               (a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')),
             );
+      final milkIn =
+          _vendorSum(rows, 'collection', 'quantity') +
+          _vendorSum(rows, 'purchase', 'quantity');
+      final delivered = _vendorSum(rows, 'sale', 'quantity');
+      final sales = _vendorSum(rows, 'sale', 'amount');
+      final cost =
+          _vendorSum(rows, 'collection', 'amount') +
+          _vendorSum(rows, 'purchase', 'amount');
+      final dates = <String>[];
+      for (final r in rows) {
+        if (!dates.contains(txt(r, 'date'))) dates.add(txt(r, 'date'));
+      }
       return Shell(
         child: ListView(
-          padding: const EdgeInsets.all(21),
+          padding: const EdgeInsets.fromLTRB(21, 8, 21, 120),
           children: [
-            Text(
-              bi('Vendor reports', 'விற்பனையாளர் அறிக்கைகள்'),
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 18),
             LiquidSegmentBar(
               labels: const ['Today', 'Week', 'Month', 'Year'],
               index: periods.indexOf(_period).clamp(0, periods.length - 1),
               onChanged: (i) => setState(() => _period = periods[i]),
             ),
             const SizedBox(height: 18),
-            VendorReportSummary(period: _period),
-            TextButton.icon(
-              icon: const Icon(Icons.file_download_outlined),
-              label: Text(
-                bi(
-                  'Export vendor report',
-                  'விற்பனையாளர் அறிக்கையைப் பதிவிறக்கு',
+            _VendorProfitCard(sales: sales, cost: cost),
+            const SizedBox(height: 13),
+            Row(
+              children: [
+                Expanded(
+                  child: _VendorReportTile(
+                    icon: CupertinoIcons.arrow_down_circle_fill,
+                    color: Ink.greenText,
+                    value: '${vendorFieldNumber(milkIn)} L',
+                    label: bi('Milk in', 'வந்த பால்'),
+                  ),
                 ),
-              ),
-              onPressed: () async {
-                final output = StringBuffer(
-                  'Date,Time,Session,Kind,Person,Quantity (L),Price,Amount,Paid\n',
-                );
-                for (final row in rows) {
-                  output.writeln(
-                    [
-                      'date',
-                      'time',
-                      'session',
-                      'kind',
-                      'personName',
-                      'quantity',
-                      'price',
-                      'amount',
-                      'paid',
-                    ].map((key) => csv('${row[key] ?? ''}')).join(','),
-                  );
-                }
-                await downloadCsvFile(
-                  'vendor_${safeFileName(_period)}_${todayDate()}.csv',
-                  output.toString(),
-                );
-              },
+                const SizedBox(width: 13),
+                Expanded(
+                  child: _VendorReportTile(
+                    icon: CupertinoIcons.arrow_up_circle_fill,
+                    color: Ink.violetDeep,
+                    value: '${vendorFieldNumber(delivered)} L',
+                    label: bi('Delivered', 'கொடுத்த பால்'),
+                  ),
+                ),
+              ],
             ),
-
-            for (final row in rows)
-              ListTile(
-                title: Text(
-                  '${vendorEntryLabel(txt(row, 'kind'))} · ${txt(row, 'personName')}',
+            const SizedBox(height: 27),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    bi('Entries', 'பதிவுகள்'),
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w700,
+                      color: Ink.navy,
+                    ),
+                  ),
                 ),
-                subtitle: Text(
-                  '${txt(row, 'date')} · ${ui(txt(row, 'session'))} · ${numv(row, 'quantity').toStringAsFixed(2)} L',
-                ),
-                trailing: Text(money(numv(row, 'amount'))),
-              ),
+                if (rows.isNotEmpty)
+                  IconButton(
+                    tooltip: bi(
+                      'Export vendor report',
+                      'விற்பனையாளர் அறிக்கையைப் பதிவிறக்கு',
+                    ),
+                    icon: const Icon(
+                      Icons.file_download_outlined,
+                      color: Ink.violetDeep,
+                    ),
+                    onPressed: () => _export(rows),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             if (rows.isEmpty)
-              Text(
-                bi(
-                  'No vendor entries in this period.',
-                  'இந்தக் காலத்தில் விற்பனையாளர் பதிவுகள் இல்லை.',
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 34),
+                child: Column(
+                  children: [
+                    const MilkVendorIcon(size: 55, color: Ink.faint),
+                    const SizedBox(height: 13),
+                    Text(
+                      bi(
+                        'No vendor entries in this period.',
+                        'இந்தக் காலத்தில் விற்பனையாளர் பதிவுகள் இல்லை.',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Ink.muted),
+                    ),
+                  ],
                 ),
               ),
+            for (final date in dates) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+                child: Text(
+                  ui(chatDateLabel(date)),
+                  style: const TextStyle(
+                    color: Ink.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Glass(
+                radius: 21,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  children: [
+                    for (final (i, r)
+                        in rows
+                            .where((r) => txt(r, 'date') == date)
+                            .indexed) ...[
+                      if (i > 0)
+                        const Divider(
+                          height: 1,
+                          thickness: .5,
+                          indent: 66,
+                          color: Color(0x1A202635),
+                        ),
+                      _VendorReportRow(row: r),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       );
     },
   );
+}
+
+class _VendorProfitCard extends StatelessWidget {
+  final double sales, cost;
+  const _VendorProfitCard({required this.sales, required this.cost});
+  @override
+  Widget build(BuildContext context) {
+    final profit = sales - cost;
+    final good = profit >= 0;
+    return Glass(
+      radius: 27,
+      padding: const EdgeInsets.fromLTRB(21, 18, 21, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: (good ? Ink.green : Ink.red).withValues(alpha: .12),
+                ),
+                child: Icon(
+                  good
+                      ? CupertinoIcons.arrow_up_right
+                      : CupertinoIcons.arrow_down_right,
+                  size: 21,
+                  color: good ? Ink.greenText : Ink.redText,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      good ? bi('Profit', 'லாபம்') : bi('Loss', 'நஷ்டம்'),
+                      style: const TextStyle(
+                        color: Ink.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        money(profit.abs()),
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -.6,
+                          color: good ? Ink.greenText : Ink.redText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _MoneyLine(
+                  icon: CupertinoIcons.cart_fill,
+                  label: bi('Sales', 'விற்பனை'),
+                  value: money(sales),
+                  color: Ink.violetDeep,
+                ),
+              ),
+              Container(width: .5, height: 34, color: const Color(0x33202635)),
+              Expanded(
+                child: _MoneyLine(
+                  icon: CupertinoIcons.bag_fill,
+                  label: bi('Milk cost', 'பால் செலவு'),
+                  value: money(cost),
+                  color: Ink.amberText,
+                  end: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoneyLine extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+  final Color color;
+  final bool end;
+  const _MoneyLine({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    this.end = false,
+  });
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsetsDirectional.only(start: end ? 16 : 0, end: end ? 0 : 16),
+    child: Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Ink.muted, fontSize: 12),
+              ),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Ink.navy,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _VendorReportTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String value, label;
+  const _VendorReportTile({
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.label,
+  });
+  @override
+  Widget build(BuildContext context) => Glass(
+    radius: 21,
+    padding: const EdgeInsets.all(16),
+    child: Row(
+      children: [
+        Icon(icon, size: 30, color: color),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    color: Ink.navy,
+                  ),
+                ),
+              ),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _VendorReportRow extends StatelessWidget {
+  final Map<String, dynamic> row;
+  const _VendorReportRow({required this.row});
+  @override
+  Widget build(BuildContext context) {
+    final kind = txt(row, 'kind');
+    final payment = kind == 'payment';
+    final intake = kind == 'collection' || kind == 'purchase';
+    final color = payment
+        ? Ink.greenText
+        : intake
+        ? Ink.amberText
+        : Ink.violetDeep;
+    final icon = payment
+        ? CupertinoIcons.money_dollar
+        : intake
+        ? CupertinoIcons.arrow_down
+        : CupertinoIcons.arrow_up;
+    final person = vendorRows(
+      'vendor_people',
+    ).where((p) => p['id'] == row['personId']).firstOrNull;
+    return InkWell(
+      borderRadius: BorderRadius.circular(21),
+      onTap: person == null
+          ? null
+          : () => push(
+              context,
+              VendorPersonScreen(
+                person: person,
+                intakeKind: kind == 'purchase' ? 'purchase' : 'collection',
+              ),
+            ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(13, 10, 16, 10),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color.withValues(alpha: .1),
+              ),
+              child: Icon(icon, size: 19, color: color),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    txt(row, 'personName'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Ink.navy,
+                    ),
+                  ),
+                  Text(
+                    [
+                      vendorEntryLabel(kind),
+                      if (txt(row, 'session').isNotEmpty)
+                        ui(txt(row, 'session')),
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  payment
+                      ? money(numv(row, 'amount'))
+                      : '${vendorFieldNumber(numv(row, 'quantity'))} L',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+                if (!payment)
+                  Text(
+                    money(numv(row, 'amount')),
+                    style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 String vendorEntryLabel(String kind) => switch (kind) {
