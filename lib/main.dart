@@ -38,6 +38,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:record/record.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:latlong2/latlong.dart' as ll;
+import 'package:geolocator/geolocator.dart' as geo;
 import 'firebase_options.dart';
 import 'web_runtime.dart';
 import 'sync_support.dart';
@@ -61,6 +64,8 @@ part 'animal_roles.dart';
 part 'onboarding.dart';
 part 'share.dart';
 part 'tamil_strings.dart';
+part 'vendor_extras.dart';
+part 'vendor_routes.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -167,6 +172,8 @@ Future<void> main() async {
   }
   // Private account messages must never enter a ranch backup or shared box.
   await Hive.openBox('community_outbox');
+  // Route maps stay on this device and never enter ranch backups or sync.
+  await Hive.openBox(VendorRoutes.boxName);
 
   await applyPrelaunchResetOnce();
   await seedAnimals();
@@ -8730,6 +8737,7 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    vendorRouteRequest.addListener(_showVendorForRoute);
     SocialActivityService.start();
     _languageChanges = Hive.box('settings').watch().listen((event) {
       // Sync writes status and queue metadata frequently. Rebuilding the whole
@@ -8756,8 +8764,21 @@ class _MainShellState extends State<MainShell> {
     });
   }
 
+  /// "Start route" on a route map opens the Vendor ride.
+  void _showVendorForRoute() {
+    if (vendorRouteRequest.value == null || !mounted) return;
+    final index = navigationOrder().indexOf('Vendor');
+    if (index < 0 || index == _tab) return;
+    setState(() {
+      _tabHistory.add(_tab);
+      _tab = index;
+    });
+    vendorWorkspaceRevision.value++;
+  }
+
   @override
   void dispose() {
+    vendorRouteRequest.removeListener(_showVendorForRoute);
     _languageChanges?.cancel();
     super.dispose();
   }

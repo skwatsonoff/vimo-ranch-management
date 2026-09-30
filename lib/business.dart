@@ -719,7 +719,7 @@ double vendorMilkBalance(Iterable<Map<String, dynamic>> entries) =>
               total +
               (r['kind'] == 'purchase' || r['kind'] == 'collection'
                   ? numv(r, 'quantity')
-                  : r['kind'] == 'sale'
+                  : r['kind'] == 'sale' || r['kind'] == 'clearance'
                   ? -numv(r, 'quantity')
                   : 0),
         );
@@ -727,7 +727,7 @@ double vendorPersonDue(
   String personId,
   Iterable<Map<String, dynamic>> entries,
 ) => entries
-    .where((r) => r['personId'] == personId)
+    .where((r) => r['personId'] == personId && r['kind'] != 'clearance')
     .fold(
       0.0,
       (total, r) =>
@@ -773,12 +773,25 @@ class VendorLedger {
     if (id.isEmpty ||
         txt(person, 'id').isEmpty ||
         notes.length > 500 ||
-        !['collection', 'purchase', 'sale', 'payment'].contains(kind) ||
+        ![
+          'collection',
+          'purchase',
+          'sale',
+          'payment',
+          'clearance',
+        ].contains(kind) ||
         (['collection', 'purchase'].contains(kind) &&
             person['kind'] != 'supplier') ||
         (kind == 'sale' && person['kind'] != 'customer') ||
+        (kind == 'clearance' &&
+            (!['fridge', 'supplier', 'customer'].contains(person['kind']) ||
+                quantity <= 0 ||
+                price != 0 ||
+                paid != 0 ||
+                payment != 0)) ||
         ![quantity, price, paid, payment].every((n) => n.isFinite && n >= 0) ||
         (kind != 'payment' &&
+            kind != 'clearance' &&
             (quantity <= 0 || price <= 0 || paid > quantity * price)) ||
         (kind == 'payment' && payment <= 0)) {
       throw StateError(
@@ -794,6 +807,8 @@ class VendorLedger {
       final personId = txt(person, 'id');
       final amount = kind == 'payment'
           ? payment
+          : kind == 'clearance'
+          ? 0.0
           : double.parse((quantity * price).toStringAsFixed(2));
       final entry = <String, dynamic>{
         'pendingUpload': true,
@@ -823,7 +838,8 @@ class VendorLedger {
       // Stable IDs make a retry after an interrupted save a no-op.
       if (box.containsKey(id)) return;
       final rows = vendorRows('vendor_entries');
-      if (kind == 'sale' && quantity > vendorMilkBalance(rows) + 0.000001) {
+      if ((kind == 'sale' || kind == 'clearance') &&
+          quantity > vendorMilkBalance(rows) + 0.000001) {
         throw StateError(
           bi(
             'Not enough milk. Add the milk collected from a provider first.',
@@ -1180,24 +1196,45 @@ class VendorStockScreen extends StatelessWidget {
               onTap: () => push(context, const MilkOriginScreen()),
               child: Glass(
                 padding: const EdgeInsets.all(24),
-                child: AppText(
-                  '${vendorMilkBalance(rows).toStringAsFixed(2)} L',
-                  style: const TextStyle(
-                    fontSize: 42,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: AppText(
+                        '${vendorMilkBalance(rows).toStringAsFixed(2)} L',
+                        style: const TextStyle(
+                          fontSize: 42,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (canRecordEntries)
+                      TextButton.icon(
+                        onPressed: () => showMilkClearance(context),
+                        icon: const Icon(
+                          CupertinoIcons.tray_arrow_down_fill,
+                          size: 17,
+                        ),
+                        label: Text(bi('Clearance', 'கிளியரன்ஸ்')),
+                        style: TextButton.styleFrom(foregroundColor: Ink.blue),
+                      ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-            const SizedBox(height: 20),
+            const SizedBox(height: 40),
             for (final r in rows.where(
               (r) => r['kind'] != 'payment' && r['kind'] != 'ranch',
             ))
               ListTile(
                 onTap: () => push(context, MilkOriginScreen(entry: r)),
-                title: AppText(txt(r, 'personName')),
-                subtitle: AppText('${txt(r, 'date')} · ${txt(r, 'time')}'),
+                title: AppText(vendorEntryPersonName(r)),
+                subtitle: AppText(
+                  [
+                    txt(r, 'date'),
+                    txt(r, 'time'),
+                    if (r['kind'] == 'clearance') vendorEntryLabel('clearance'),
+                  ].join(' · '),
+                ),
                 trailing: AppText(
                   '${['collection', 'purchase'].contains(r['kind']) || (r['kind'] == 'ranch' && numv(r, 'quantity') >= 0) ? '+' : '−'}${numv(r, 'quantity').abs().toStringAsFixed(2)} L',
                   style: TextStyle(
@@ -1592,6 +1629,36 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                         ],
                       ),
                     ],
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => push(
+                            context,
+                            CustomerMonthlyReportScreen(person: p),
+                          ),
+                          icon: const Icon(
+                            CupertinoIcons.chart_bar_alt_fill,
+                            size: 18,
+                          ),
+                          label: Text(bi('Monthly report', 'மாத அறிக்கை')),
+                        ),
+                        if (personPoint(p) case final home?) ...[
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            onPressed: () => _contact(
+                              'https://www.google.com/maps/search/?api=1&query=${home.latitude},${home.longitude}',
+                            ),
+                            icon: const Icon(
+                              CupertinoIcons.location_fill,
+                              size: 18,
+                            ),
+                            label: Text(bi('Home on map', 'வீடு வரைபடத்தில்')),
+                          ),
+                        ],
+                      ],
+                    ),
                     const SizedBox(height: 20),
                     if (canRecordEntries) ...[
                       SegmentedButton<bool>(

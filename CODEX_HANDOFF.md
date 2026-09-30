@@ -6,6 +6,39 @@ implementation status and current continuation instructions. Read it first.
 The dated notes below are historical; older blocked/deployment/branch statements
 do not override the September 26 release checkpoint in the master handoff.
 
+## Ready to deploy — 2026-09-30, version 1.5.0+8 (Claude)
+
+- Vendor ride: every waiting customer can be swiped in any order (complete,
+  change or skip); volume buttons still act on the next one.
+- Customize → "Group customers by place": place bubbles between the Customers
+  title and the list. Spellings of one place merge ("Chennai", "chennai.").
+  A chosen bubble lifts that place to the top and Start delivers only it;
+  "All" starts every place, place by place. The person form suggests places
+  already entered.
+- Route maps (Customize → Route maps): record the path by GPS, mark each home
+  (long-press the map also works), pin text/voice/photo notes on a home or on
+  the path. Saved routes: Start route (ride in map order with a live map and
+  the next home's notes), Edit, Share in VIMO chat, Delete. Routes stay on
+  the device (`vendor_routes` box, not a ranch backup).
+- Sharing lends a route for 1 day / 2 days / 3 days / 1 week to one chat
+  contact (`route_shares/{id}`). The copy carries name, place, litres and,
+  unless "I'll collect money after I return" is on, price and balance only.
+  The recipient saves or rejects from the chat card, delivers with a simple
+  map screen (litres editable) and reports progress. The owner sees time
+  left and progress, can extend or stop; stopping closes the recipient's map.
+- Person form: optional home location (map picker). Customer page: Monthly
+  report and Home on map. Reports → Customer profile reports (any month,
+  opening/closing balance, day by day, CSV).
+- Milk balance card and stock page: Clearance to a person, the fridge or a
+  new person (`kind: clearance`, no money, stock only).
+- New packages: flutter_map, latlong2, geolocator. Location permission added
+  for Android and iOS. Map tiles: OpenStreetMap.
+- Verification: analyze has no errors or warnings; 108/108 Flutter tests;
+  161/161 Firestore emulator rule checks (32 new in route_rules_test.cjs);
+  web release build passed.
+- Deploy needs the new rules: `VIMO_DEPLOY.bat` (hosting + firestore:rules)
+  after this branch is merged to main.
+
 ## Released — 2026-09-26, version 1.3.0+5 (Claude)
 
 - Vendor/ride/person/chat/profile redesign per the user's 8 screenshots; full list in

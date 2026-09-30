@@ -256,6 +256,46 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
+    // A vendor route lent to one person for a limited time. The owner can
+    // extend or stop it; the recipient can only answer and report deliveries.
+    // Shared stops carry name, place, litres and (optionally) balance only.
+    match /route_shares/{shareId} {
+      function routeOwner() { return signedIn() && resource.data.ownerUid == request.auth.uid; }
+      function routeRecipient() { return signedIn() && resource.data.recipientUid == request.auth.uid; }
+      allow get: if routeOwner() || routeRecipient();
+      allow list: if signedIn()
+        && (resource.data.ownerUid == request.auth.uid || resource.data.recipientUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerUid', 'ownerName', 'recipientUid', 'routeName', 'route', 'collectLater', 'status', 'response', 'progress', 'expiresAt', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.recipientUid is string && request.resource.data.recipientUid.size() > 0
+        && request.resource.data.recipientUid != request.auth.uid
+        && request.resource.data.ownerName is string && request.resource.data.ownerName.size() <= 80
+        && request.resource.data.routeName is string && request.resource.data.routeName.size() > 0 && request.resource.data.routeName.size() <= 80
+        && request.resource.data.route is map && request.resource.data.route.keys().hasOnly(['path', 'stops', 'notes'])
+        && request.resource.data.collectLater is bool
+        && request.resource.data.status == 'active' && request.resource.data.response == 'pending'
+        && request.resource.data.progress is map && request.resource.data.progress.size() == 0
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(8, 'd')
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if (routeOwner()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'expiresAt', 'updatedAt'])
+          && request.resource.data.status in ['active', 'stopped']
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt <= request.time + duration.value(15, 'd')
+          && request.resource.data.updatedAt == request.time)
+        || (routeRecipient()
+          && resource.data.status == 'active' && resource.data.expiresAt > request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['response', 'progress', 'updatedAt'])
+          && request.resource.data.response in ['accepted', 'rejected']
+          && request.resource.data.progress is map
+          && request.resource.data.updatedAt == request.time);
+      allow delete: if routeOwner();
+    }
+
     match /direct_chats/{chat} {
       function participant() { return signedIn() && request.auth.uid in resource.data.participants; }
       allow read: if participant();
@@ -350,7 +390,12 @@ service cloud.firestore {
           && request.resource.data.get('price', 1) is number && request.resource.data.get('price', 1) > 0
           && request.resource.data.get('paymentDays', []) is list && request.resource.data.get('paymentDays', []).hasOnly([0, 1, 2, 3, 4, 5, 6])
           && request.resource.data.get('paymentMonthDay', 1) is int && request.resource.data.get('paymentMonthDay', 1) >= 1 && request.resource.data.get('paymentMonthDay', 1) <= 31
-          && request.resource.data.get('routeOrder', {}) is map;
+          && request.resource.data.get('routeOrder', {}) is map
+          // Optional home location; null clears a saved one.
+          && (request.resource.data.get('lat', null) == null
+            || (request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90))
+          && (request.resource.data.get('lng', null) == null
+            || (request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180));
         allow delete: if false;
       }
 
@@ -362,7 +407,7 @@ service cloud.firestore {
           && vendorEntry(entryId).createdByUid == request.auth.uid;
       }
       function stockChange(entry) {
-        return entry.kind in ['collection', 'purchase', 'ranch'] ? entry.quantity : entry.kind == 'sale' ? -entry.quantity : 0;
+        return entry.kind in ['collection', 'purchase', 'ranch'] ? entry.quantity : entry.kind in ['sale', 'clearance'] ? -entry.quantity : 0;
       }
       function sourceMilk(box, id) {
         let path = /databases/$(database)/documents/ranches/$(ranchId)/$(box)/$(id);
@@ -426,15 +471,25 @@ service cloud.firestore {
           && request.resource.data.cloudId == entryId
           && request.resource.data.serverCreatedAt == request.time
           && request.resource.data.stockScope == 'vendor_v2'
-          && request.resource.data.kind in ['collection', 'purchase', 'sale', 'payment']
-          && get(/databases/$(database)/documents/ranches/$(ranchId)/vendor_people/$(request.resource.data.personId)).data.kind == request.resource.data.personKind
-          && (request.resource.data.kind == 'payment' || (request.resource.data.kind in ['collection', 'purchase'] && request.resource.data.personKind == 'supplier') || (request.resource.data.kind == 'sale' && request.resource.data.personKind == 'customer'))
-          && request.resource.data.quantity is number && request.resource.data.quantity >= 0
-          && request.resource.data.price is number && request.resource.data.price >= 0
-          && request.resource.data.amount is number && request.resource.data.amount > 0
-          && request.resource.data.paid is number && request.resource.data.paid >= 0 && request.resource.data.paid <= request.resource.data.amount
+          && request.resource.data.kind in ['collection', 'purchase', 'sale', 'payment', 'clearance']
+          // Clearance moves unsold milk out of stock at no charge: to the
+          // fridge or to any person. It never changes a balance.
+          && (request.resource.data.kind == 'clearance'
+            ? (request.resource.data.personKind in ['fridge', 'supplier', 'customer']
+              && (request.resource.data.personKind == 'fridge'
+                ? request.resource.data.personId == '_fridge'
+                : get(/databases/$(database)/documents/ranches/$(ranchId)/vendor_people/$(request.resource.data.personId)).data.kind == request.resource.data.personKind)
+              && request.resource.data.quantity is number && request.resource.data.quantity > 0
+              && request.resource.data.price == 0 && request.resource.data.amount == 0 && request.resource.data.paid == 0
+              && request.resource.data.get('syncMode', '') == 'local_v3')
+            : (get(/databases/$(database)/documents/ranches/$(ranchId)/vendor_people/$(request.resource.data.personId)).data.kind == request.resource.data.personKind
+              && (request.resource.data.kind == 'payment' || (request.resource.data.kind in ['collection', 'purchase'] && request.resource.data.personKind == 'supplier') || (request.resource.data.kind == 'sale' && request.resource.data.personKind == 'customer'))
+              && request.resource.data.quantity is number && request.resource.data.quantity >= 0
+              && request.resource.data.price is number && request.resource.data.price >= 0
+              && request.resource.data.amount is number && request.resource.data.amount > 0
+              && request.resource.data.paid is number && request.resource.data.paid >= 0 && request.resource.data.paid <= request.resource.data.amount
+              && (request.resource.data.kind == 'payment' || (request.resource.data.quantity > 0 && request.resource.data.price > 0 && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011))))
           && request.resource.data.notes is string && request.resource.data.notes.size() <= 500
-          && (request.resource.data.kind == 'payment' || (request.resource.data.quantity > 0 && request.resource.data.price > 0 && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011))
           // Optional member sharing relays the device's immutable ledger.
           // Local v3 entries derive stock and balances from ledger rows.
           && (request.resource.data.get('syncMode', '') == 'local_v3'

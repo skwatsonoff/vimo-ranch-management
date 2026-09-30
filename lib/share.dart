@@ -58,9 +58,25 @@ class ShareCard {
         if (cardId.isNotEmpty) 'c': cardId,
       });
 
+  /// A lent milk route. The route itself stays in route_shares; the card only
+  /// names it, so chat text never carries customer details.
+  static ShareCard route({
+    required String shareId,
+    required String name,
+    required String owner,
+    required int homes,
+  }) => ShareCard({
+    'k': 'route',
+    's': shareId,
+    'n': name,
+    'o': owner,
+    'c': homes,
+  });
+
   /// The first line people see even without card support.
   String get headline => switch (kind) {
     'animal' => '🐄 $displayName · ${ui(txt(data, 'b', 'Unknown breed'))}',
+    'route' => '🗺️ ${bi('Route map', 'பாதை வரைபடம்')} · ${txt(data, 'n')}',
     'post' => '📝 ${bi('Post by', 'பதிவு:')} ${txt(data, 'n')}',
     _ =>
       '👤 ${txt(data, 'n')}${txt(data, 'h').isEmpty ? '' : ' @${txt(data, 'h')}'}',
@@ -90,7 +106,7 @@ class ShareCard {
       final json = jsonDecode(utf8.decode(base64Url.decode(raw)));
       if (json is! Map) return null;
       final card = ShareCard(Map<String, dynamic>.from(json));
-      return const {'animal', 'post', 'profile'}.contains(card.kind)
+      return const {'animal', 'post', 'profile', 'route'}.contains(card.kind)
           ? card
           : null;
     } catch (_) {
@@ -224,6 +240,57 @@ Future<void> _sendToPerson(String peer, String text) async {
   AutoSyncService.markDirty(reason: 'private message');
 }
 
+/// People this account can message: contacts, chat partners and, when asked,
+/// active ranch members. One unavailable source never hides the others.
+Future<List<String>> loadShareablePeople({
+  bool includeRanchMembers = true,
+}) async {
+  final me = signedInUid;
+
+  final db = FirebaseFirestore.instance;
+  final ids = <String>{};
+  Future<void> collect(Future<Iterable<String>> Function() load) async {
+    try {
+      ids.addAll(await load().timeout(CloudSyncService.networkTimeout));
+    } catch (_) {
+      /* One unavailable source must not hide the others. */
+    }
+  }
+
+  await Future.wait([
+    collect(() async {
+      final s = await db
+          .collection('profiles')
+          .doc(me)
+          .collection('contacts')
+          .get();
+      return s.docs.map((d) => d.id);
+    }),
+    collect(() async {
+      final s = await db
+          .collection('direct_chats')
+          .where('participants', arrayContains: me)
+          .get();
+      return [
+        for (final d in s.docs)
+          for (final p in (d.data()['participants'] as List? ?? const [])) '$p',
+      ];
+    }),
+    if (includeRanchMembers && CloudSyncService.ready)
+      collect(() async {
+        final s = await CloudSyncService.ranch.collection('members').get();
+        return [
+          for (final d in s.docs)
+            if (d.data()['active'] != false &&
+                txt(d.data(), 'status', 'active') == 'active')
+              d.id,
+        ];
+      }),
+  ]);
+  ids.remove(me);
+  return ids.toList();
+}
+
 /// Pick where to share: the ranch group (members only) and people.
 Future<void> showShareSheet(
   BuildContext context,
@@ -256,52 +323,8 @@ class _ShareSheetState extends State<_ShareSheet> {
 
   static const _ranchTarget = '#ranch';
 
-  Future<List<String>> _loadPeople() async {
-    final me = signedInUid;
-    final db = FirebaseFirestore.instance;
-    final ids = <String>{};
-    Future<void> collect(Future<Iterable<String>> Function() load) async {
-      try {
-        ids.addAll(await load().timeout(CloudSyncService.networkTimeout));
-      } catch (_) {
-        /* One unavailable source must not hide the others. */
-      }
-    }
-
-    await Future.wait([
-      collect(() async {
-        final s = await db
-            .collection('profiles')
-            .doc(me)
-            .collection('contacts')
-            .get();
-        return s.docs.map((d) => d.id);
-      }),
-      collect(() async {
-        final s = await db
-            .collection('direct_chats')
-            .where('participants', arrayContains: me)
-            .get();
-        return [
-          for (final d in s.docs)
-            for (final p in (d.data()['participants'] as List? ?? const []))
-              '$p',
-        ];
-      }),
-      if (CloudSyncService.ready)
-        collect(() async {
-          final s = await CloudSyncService.ranch.collection('members').get();
-          return [
-            for (final d in s.docs)
-              if (d.data()['active'] != false &&
-                  txt(d.data(), 'status', 'active') == 'active')
-                d.id,
-          ];
-        }),
-    ]);
-    ids.remove(me);
-    return ids.toList();
-  }
+  Future<List<String>> _loadPeople() =>
+      loadShareablePeople(includeRanchMembers: CloudSyncService.ready);
 
   Future<void> _send() async {
     if (_sending || (_selected.isEmpty && !_ranch)) return;
@@ -533,6 +556,8 @@ class ShareCardBubble extends StatelessWidget {
         }
       case 'post':
         push(context, SharedPostScreen(postId: txt(card.data, 'p')));
+      case 'route':
+        push(context, RouteInviteScreen(shareId: txt(card.data, 's')));
       default:
         push(context, SocialProfileScreen(uid: txt(card.data, 'u')));
     }
@@ -581,6 +606,36 @@ class ShareCardBubble extends StatelessWidget {
             ? (card.data['ph'] == true ? bi('Photo', 'புகைப்படம்') : '')
             : txt(card.data, 'x');
         tag = bi('Post', 'பதிவு');
+      case 'route':
+        leading = Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: mine ? Colors.white.withValues(alpha: .18) : Ink.lavender,
+          ),
+          child: Icon(
+            CupertinoIcons.map_fill,
+            color: mine ? Colors.white : Ink.violetDeep,
+            size: 26,
+          ),
+        );
+        title = txt(card.data, 'n');
+        subtitle = [
+          bi(
+            '${toInt(card.data['c'])} homes',
+            '${toInt(card.data['c'])} வீடுகள்',
+          ),
+          if (txt(card.data, 'o').isNotEmpty)
+            bi(
+              'from ${txt(card.data, 'o')}',
+              '${txt(card.data, 'o')} அனுப்பியது',
+            ),
+        ].join(' · ');
+        tag = bi(
+          'Route map · Save or reject',
+          'பாதை வரைபடம் · சேமி அல்லது மறு',
+        );
       default:
         leading = Icon(CupertinoIcons.person_crop_circle, color: fg, size: 32);
         title = txt(card.data, 'n');
