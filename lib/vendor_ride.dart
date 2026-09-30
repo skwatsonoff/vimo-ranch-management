@@ -337,6 +337,7 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
           .cast<String>()
           .toSet();
   late int _monthDay = numv(widget.person ?? {}, 'paymentMonthDay', 1).toInt();
+  late ll.LatLng? _point = personPoint(widget.person ?? {});
   bool _saving = false, _picking = false;
   @override
   void dispose() {
@@ -381,6 +382,17 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
         'updatedAtMillis': now.millisecondsSinceEpoch,
       };
       data.remove('_key');
+      final point = _point;
+      if (point == null) {
+        // Null (not a missing key) so a merged cloud copy clears it too.
+        if (data.containsKey('lat') || data.containsKey('lng')) {
+          data['lat'] = null;
+          data['lng'] = null;
+        }
+      } else {
+        data['lat'] = point.latitude;
+        data['lng'] = point.longitude;
+      }
       await Hive.box('vendor_people').put(widget.person?['_key'] ?? id, data);
       AutoSyncService.markDirty(reason: 'vendor person');
       if (mounted) Navigator.pop(context);
@@ -485,10 +497,12 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                   (v ?? '').trim().isEmpty ? ui('Enter a name') : null,
             ),
             const SizedBox(height: 12),
-            TextFormField(
+            // Places already used are suggested, so one place is always
+            // spelled one way and its customers group together.
+            VendorPlaceField(
               controller: _place,
-              maxLength: 160,
-              decoration: fieldStyle(bi('Place', 'இடம்')),
+              label: bi('Place', 'இடம்'),
+              icon: null,
               validator: (v) => (v ?? '').trim().isEmpty
                   ? bi('Enter a place', 'இடத்தை உள்ளிடவும்')
                   : null,
@@ -624,6 +638,12 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
               ),
             ],
             const SizedBox(height: 24),
+            VendorLocationField(
+              value: _point,
+              name: _name.text.trim(),
+              onChanged: (p) => setState(() => _point = p),
+            ),
+            const SizedBox(height: 24),
             FilledButton(
               onPressed: _saving ? null : _save,
               child: Padding(
@@ -654,8 +674,15 @@ class _VendorRideScreenState extends State<VendorRideScreen>
   List<String> _supplyIds = [];
   List<Map<String, dynamic>> _stops = [];
   Set<String> _done = {}, _skipped = {};
-  String? _editing;
+  String? _editing, _savingId;
   bool _busy = false, _hint = false, _volume = false, _payNow = true;
+
+  /// Customers grouped by place (a Customize option) and the chosen place.
+  bool _groups = false;
+  String? _place;
+
+  /// The route map this ride follows, if it was started from one.
+  String _routeId = '';
   Timer? _hintTimer, _clock;
   final _qty = TextEditingController(),
       _price = TextEditingController(),
@@ -679,7 +706,15 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       _stops = ((saved['stops'] as List?) ?? []).map(asMap).toList();
       _done = ((saved['done'] as List?) ?? []).cast<String>().toSet();
       _skipped = ((saved['skipped'] as List?) ?? []).cast<String>().toSet();
+      _routeId = txt(saved, 'route');
     }
+    _groups =
+        Hive.box(
+          'settings',
+        ).get('${_storageKey}_groups', defaultValue: false) ==
+        true;
+    vendorRouteRequest.addListener(_routeRequested);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _routeRequested());
     _volume =
         Hive.box(
           'settings',
@@ -772,6 +807,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
   @override
   void dispose() {
     appRouteObserver.unsubscribe(this);
+    vendorRouteRequest.removeListener(_routeRequested);
     vendorWorkspaceRevision.removeListener(_workspaceChanged);
     _hintTimer?.cancel();
     _clock?.cancel();
@@ -800,12 +836,53 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     'stops': _stops.map((p) => {...p}..remove('_key')).toList(),
     'done': _done.toList(),
     'skipped': _skipped.toList(),
+    'route': _routeId,
   });
+
+  /// Starts a ride in a route map's home order.
+  void _routeRequested() {
+    final id = vendorRouteRequest.value;
+    if (id == null || !mounted) return;
+    vendorRouteRequest.value = null;
+    if (_active) {
+      snack(
+        context,
+        bi(
+          'End the current ride before starting a route.',
+          'பாதையைத் தொடங்கும் முன் இப்போதைய பயணத்தை முடிக்கவும்.',
+        ),
+      );
+      return;
+    }
+    final route = VendorRoutes.byId(id);
+    if (route == null) return;
+    final people = {
+      for (final p in vendorRows('vendor_people'))
+        if (p['kind'] == 'customer') txt(p, 'id'): p,
+    };
+    final ordered = [
+      for (final stop in routeStops(route)) ?people[txt(stop, 'id')],
+    ];
+    unawaited(_start(ordered, vendorRows('vendor_entries'), routeId: id));
+  }
+
+  /// Ride order: by place when grouping is on, the chosen place first (or
+  /// only that place when one is selected).
+  List<Map<String, dynamic>> _rideOrder(List<Map<String, dynamic>> buyers) {
+    if (!_groups) return buyers;
+    final groups = vendorPlaceGroups(buyers);
+    if (_place != null && groups.any((g) => g.key == _place)) {
+      return groups.firstWhere((g) => g.key == _place).people;
+    }
+    return [for (final g in groups) ...g.people];
+  }
+
   DateTime get _date => DateTime.tryParse(_rideDate) ?? DateTime.now();
   Future<void> _start(
     List<Map<String, dynamic>> people,
-    List<Map<String, dynamic>> rows,
-  ) async {
+    List<Map<String, dynamic>> rows, {
+    String routeId = '',
+  }) async {
     if (!canRecordEntries || _busy) return;
     final date = todayDate();
     // A completed delivery in the selected session cannot be delivered twice by restarting a ride.
@@ -852,6 +929,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
           .where((id) => id.isNotEmpty)
           .toList();
       _rideDate = date;
+      _routeId = routeId;
       _stops = stops;
       _done = {};
       _skipped = {};
@@ -891,6 +969,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
         _skipped.contains(txt(p, 'id'))) {
       return;
     }
+    final wasNext = _current?['id'] == p['id'];
     final rows = vendorRows('vendor_entries');
     final id = _entryId(p);
     final existing = rows.where((r) => r['cloudId'] == id).firstOrNull;
@@ -925,7 +1004,10 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       );
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _savingId = txt(p, 'id');
+    });
     try {
       // Persist the exact draft before writing. Retries use identical IDs and terms.
       if (existing == null) {
@@ -966,15 +1048,20 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       HapticFeedback.mediumImpact();
       setState(() {
         _done.add(txt(p, 'id'));
-        _editing = null;
+        if (_editing == txt(p, 'id')) _editing = null;
         _hint = false;
       });
       await _persist();
-      _revealCurrent();
+      if (wasNext) _revealCurrent();
     } catch (e) {
       if (mounted) snack(context, '$e'.replaceFirst('Bad state: ', ''));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _savingId = null;
+        });
+      }
     }
   }
 
@@ -990,14 +1077,15 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       );
       return;
     }
+    final wasNext = _current?['id'] == p['id'];
     HapticFeedback.lightImpact();
     setState(() {
       _skipped.add(txt(p, 'id'));
-      _editing = null;
+      if (_editing == txt(p, 'id')) _editing = null;
       _hint = false;
     });
     await _persist();
-    _revealCurrent();
+    if (wasNext) _revealCurrent();
   }
 
   void _edit(Map<String, dynamic> p) {
@@ -1076,6 +1164,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     }
     setState(() {
       _rideId = '';
+      _routeId = '';
       _editing = null;
       _hint = false;
     });
@@ -1134,6 +1223,14 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         !buyers.any((b) => b['id'] == p['id']),
                   )
                   .toList();
+        final groups = _groups
+            ? vendorPlaceGroups(_active ? _stops : buyers)
+            : const <VendorPlaceGroup>[];
+        if (_place != null && !groups.any((g) => g.key == _place)) {
+          _place = null;
+        }
+        final chosen = groups.where((g) => g.key == _place).firstOrNull;
+        final route = _routeId.isEmpty ? null : VendorRoutes.byId(_routeId);
         return Shell(
           child: SizedBox.expand(
             child: SingleChildScrollView(
@@ -1152,6 +1249,8 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         child: LiquidButton(
                           label: _active
                               ? bi('End', 'முடி')
+                              : chosen != null
+                              ? '${bi('Start', 'தொடங்கு')} · ${chosen.label}'
                               : bi('Start', 'தொடங்கு'),
                           icon: _active
                               ? CupertinoIcons.stop_fill
@@ -1162,7 +1261,9 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                           end: _active ? Ink.red : Ink.violetDeep,
                           onPressed: _busy || !canRecordEntries
                               ? null
-                              : () => _active ? _end() : _start(buyers, rows),
+                              : () => _active
+                                    ? _end()
+                                    : _start(_rideOrder(buyers), rows),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1175,6 +1276,23 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                       ),
                     ],
                   ),
+                  if (_active && route != null) ...[
+                    const SizedBox(height: 16),
+                    VendorRouteGuide(
+                      route: route,
+                      currentId: txt(_current ?? {}, 'id'),
+                      states: {
+                        for (final p in _stops)
+                          txt(p, 'id'): _done.contains(txt(p, 'id'))
+                              ? StopState.done
+                              : _skipped.contains(txt(p, 'id'))
+                              ? StopState.skipped
+                              : txt(p, 'id') == txt(_current ?? {}, 'id')
+                              ? StopState.current
+                              : StopState.pending,
+                      },
+                    ),
+                  ],
                   const SizedBox(height: 26),
                   Row(
                     children: [
@@ -1217,6 +1335,29 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         ),
                     ],
                   ),
+                  if (groups.length > 1 || (groups.isNotEmpty && _active)) ...[
+                    const SizedBox(height: 13),
+                    VendorPlaceBubbles(
+                      groups: groups,
+                      selected: _place,
+                      done: _active
+                          ? {
+                              for (final g in groups)
+                                g.key: g.people
+                                    .where(
+                                      (p) =>
+                                          _done.contains(txt(p, 'id')) ||
+                                          _skipped.contains(txt(p, 'id')),
+                                    )
+                                    .length,
+                            }
+                          : null,
+                      onSelected: (key) {
+                        HapticFeedback.selectionClick();
+                        setState(() => _place = key);
+                      },
+                    ),
+                  ],
                   if (_active && _volume)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
@@ -1241,6 +1382,20 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         style: const TextStyle(color: Ink.muted),
                       ),
                     )
+                  else if (_groups)
+                    for (final g in _placeFirst(groups)) ...[
+                      _GroupHeader(
+                        label: g.label,
+                        count: g.people.length,
+                        highlighted: g.key == _place,
+                      ),
+                      for (final p in g.people)
+                        Padding(
+                          key: _keys.putIfAbsent(txt(p, 'id'), GlobalKey.new),
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _stop(p, rows),
+                        ),
+                    ]
                   else
                     for (final p in buyers)
                       Padding(
@@ -1315,18 +1470,29 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     );
   }
 
+  /// The chosen place rises to the top; the rest keep their order.
+  List<VendorPlaceGroup> _placeFirst(List<VendorPlaceGroup> groups) => [
+    ...groups.where((g) => g.key == _place),
+    ...groups.where((g) => g.key != _place),
+  ];
+
   Future<void> _customize() async {
     await _open(
-      VendorCustomizeScreen(volume: _volume, storageKey: _storageKey),
+      VendorCustomizeScreen(
+        volume: _volume,
+        groups: _groups,
+        storageKey: _storageKey,
+      ),
     );
     if (mounted) {
-      setState(
-        () => _volume =
-            Hive.box(
-              'settings',
-            ).get('${_storageKey}_volume', defaultValue: false) ==
-            true,
-      );
+      final settings = Hive.box('settings');
+      setState(() {
+        _volume =
+            settings.get('${_storageKey}_volume', defaultValue: false) == true;
+        _groups =
+            settings.get('${_storageKey}_groups', defaultValue: false) == true;
+        if (!_groups) _place = null;
+      });
     }
   }
 
@@ -1398,7 +1564,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
               r['stockScope'] == 'vendor_v2' &&
               (intake
                   ? ['collection', 'purchase'].contains(r['kind'])
-                  : r['kind'] == 'sale'),
+                  : r['kind'] == 'sale' || r['kind'] == 'clearance'),
         )
         .fold(0.0, (s, r) => s + numv(r, 'quantity'));
     final inToday = sumToday(true), outToday = sumToday(false);
@@ -1469,6 +1635,12 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                 label: '−${vendorFieldNumber(outToday)} L',
                 color: Ink.violetDeep,
               ),
+              const SizedBox(height: 6),
+              _ClearanceChip(
+                onTap: _busy || !canRecordEntries
+                    ? null
+                    : () => showMilkClearance(context),
+              ),
             ],
           ),
         ],
@@ -1476,6 +1648,8 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     );
   }
 
+  /// Every waiting customer can be swiped, in any order. Finished rows stay
+  /// on top; with place groups on, the chosen place leads.
   List<Widget> _rideList(List<Map<String, dynamic>> rows) {
     final finished = _stops
         .where(
@@ -1483,86 +1657,81 @@ class _VendorRideScreenState extends State<VendorRideScreen>
               _done.contains(txt(p, 'id')) || _skipped.contains(txt(p, 'id')),
         )
         .toList();
-    final current = _current;
-    final upcoming = _stops
-        .where(
-          (p) =>
-              !finished.contains(p) && txt(p, 'id') != txt(current ?? {}, 'id'),
-        )
-        .toList();
-    final reduce = MediaQuery.disableAnimationsOf(context);
+    final waiting = _stops.where((p) => !finished.contains(p)).toList();
+    final ordered = _groups
+        ? [for (final g in _placeFirst(vendorPlaceGroups(waiting))) ...g.people]
+        : waiting;
     return [
       for (final p in finished)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: _finishedRow(p),
-        ),
-      AnimatedSwitcher(
-        duration: reduce ? Duration.zero : const Duration(milliseconds: 380),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween(
-              begin: const Offset(0, .18),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
+        _RideAppear(
+          key: ValueKey('done-${txt(p, 'id')}'),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _finishedRow(p),
           ),
         ),
-        child: current == null
-            ? Padding(
-                key: const ValueKey('ride-finished'),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Glass(
-                  child: Row(
-                    children: [
-                      const Icon(
-                        CupertinoIcons.check_mark_circled_solid,
-                        color: Ink.green,
-                        size: 28,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          bi(
-                            'All customers done. Press End.',
-                            'அனைவரும் முடிந்தது. முடி அழுத்தவும்.',
-                          ),
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
+      if (waiting.isEmpty)
+        _RideAppear(
+          key: const ValueKey('ride-finished'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Glass(
+              child: Row(
+                children: [
+                  const Icon(
+                    CupertinoIcons.check_mark_circled_solid,
+                    color: Ink.green,
+                    size: 28,
                   ),
-                ),
-              )
-            : Padding(
-                key: ValueKey('ride-${txt(current, 'id')}'),
-                padding: const EdgeInsets.only(bottom: 12, top: 4),
-                child: KeyedSubtree(
-                  key: _keys.putIfAbsent(txt(current, 'id'), GlobalKey.new),
-                  child: _stop(current, rows),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      bi(
+                        'All customers done. Press End.',
+                        'அனைவரும் முடிந்தது. முடி அழுத்தவும்.',
+                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        )
+      else if (finished.isEmpty && waiting.length > 1)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            children: [
+              const Icon(
+                CupertinoIcons.hand_draw_fill,
+                size: 15,
+                color: Ink.muted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  bi(
+                    'Swipe any customer, in any order',
+                    'எந்த வாடிக்கையாளரையும், எந்த வரிசையிலும் நகர்த்தலாம்',
+                  ),
+                  style: const TextStyle(color: Ink.muted, fontSize: 13),
                 ),
               ),
-      ),
-      if (upcoming.isNotEmpty) ...[
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 8),
-          child: Text(
-            bi('Up next', 'அடுத்து'),
-            style: const TextStyle(
-              color: Ink.muted,
-              fontWeight: FontWeight.w600,
+            ],
+          ),
+        ),
+      for (final p in ordered)
+        _RideAppear(
+          key: ValueKey('ride-${txt(p, 'id')}'),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: KeyedSubtree(
+              key: _keys.putIfAbsent(txt(p, 'id'), GlobalKey.new),
+              child: _stop(p, rows),
             ),
           ),
         ),
-        for (final p in upcoming)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Opacity(opacity: .55, child: _stop(p, rows, preview: true)),
-          ),
-      ],
     ];
   }
 
@@ -1632,7 +1801,9 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     bool preview = false,
   }) {
     final id = txt(p, 'id');
-    final current = !preview && _active && _current?['id'] == id;
+    // Any customer still waiting can be completed, changed or skipped.
+    final current =
+        !preview && _active && !_done.contains(id) && !_skipped.contains(id);
     final edit = current && _editing == id;
     final qty = _active
             ? numv(p, 'quantity')
@@ -1766,7 +1937,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
             ],
           ),
           if (edit) ..._editFields(p, due),
-          if (current && _busy)
+          if (current && _busy && _savingId == id)
             const Padding(
               padding: EdgeInsets.only(top: 12),
               child: LinearProgressIndicator(minHeight: 2),
@@ -1778,7 +1949,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     return _VendorSwipeCard(
       enabled: current && !_busy,
       editing: edit,
-      hint: current && _hint,
+      hint: current && _hint && _current?['id'] == id,
       onRight: () => edit ? _skip(p) : _complete(p),
       onLeft: () => edit || _volume ? _skip(p) : _edit(p),
       child: card,
@@ -1943,6 +2114,117 @@ class _MilkFlow extends StatelessWidget {
       style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13),
     ),
   );
+}
+
+/// The small "Clearance" capsule on the milk balance card.
+class _ClearanceChip extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _ClearanceChip({required this.onTap});
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
+    child: Pressable(
+      radius: 14,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: ShapeDecoration(
+          shape: StadiumBorder(
+            side: BorderSide(color: Ink.blue.withValues(alpha: .28)),
+          ),
+          color: Colors.white.withValues(alpha: .7),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              CupertinoIcons.tray_arrow_down_fill,
+              size: 12,
+              color: onTap == null ? Ink.faint : Ink.blue,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              bi('Clearance', 'கிளியரன்ஸ்'),
+              style: TextStyle(
+                color: onTap == null ? Ink.faint : Ink.blue,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Place heading inside the grouped customer list.
+class _GroupHeader extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool highlighted;
+  const _GroupHeader({
+    required this.label,
+    required this.count,
+    this.highlighted = false,
+  });
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
+    child: Row(
+      children: [
+        Icon(
+          CupertinoIcons.location_solid,
+          size: 15,
+          color: highlighted ? Ink.violetDeep : Ink.muted,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: highlighted ? Ink.violetDeep : Ink.muted,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '· $count',
+          style: const TextStyle(color: Ink.faint, fontSize: 13),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Divider(color: Ink.violetDeep.withValues(alpha: .1))),
+      ],
+    ),
+  );
+}
+
+/// A soft rise-and-fade when a ride card first appears.
+class _RideAppear extends StatelessWidget {
+  final Widget child;
+  const _RideAppear({super.key, required this.child});
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Gold.slow,
+      curve: Gold.ease,
+      child: child,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * 14),
+          child: child,
+        ),
+      ),
+    );
+  }
 }
 
 class _CircleGlassButton extends StatelessWidget {
@@ -2332,11 +2614,12 @@ class _VendorSwipeCardState extends State<_VendorSwipeCard> {
 }
 
 class VendorCustomizeScreen extends StatefulWidget {
-  final bool volume;
+  final bool volume, groups;
   final String storageKey;
   const VendorCustomizeScreen({
     super.key,
     required this.volume,
+    this.groups = false,
     required this.storageKey,
   });
   @override
@@ -2346,6 +2629,7 @@ class VendorCustomizeScreen extends StatefulWidget {
 class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
   int _day = DateTime.now().weekday % 7;
   late bool _volume = widget.volume;
+  late bool _groups = widget.groups;
   bool _saving = false;
   List<Map<String, dynamic>> _people = [];
   final Map<int, List<Map<String, dynamic>>> _orders = {};
@@ -2389,6 +2673,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
         }
       }
       await Hive.box('settings').put('${widget.storageKey}_volume', _volume);
+      await Hive.box('settings').put('${widget.storageKey}_groups', _groups);
       AutoSyncService.markDirty(reason: 'vendor route order');
       if (mounted) Navigator.pop(context);
     } catch (_) {
@@ -2405,6 +2690,148 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(21, 12, 21, 40),
         children: [
+          Glass(
+            radius: 27,
+            padding: const EdgeInsets.all(16),
+            onTap: () => push(context, const RouteMapsScreen()),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Ink.violet, Ink.violetDeep],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Ink.violetDeep.withValues(alpha: .28),
+                        blurRadius: 13,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.map_fill,
+                    color: Colors.white,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        bi('Route maps', 'பாதை வரைபடங்கள்'),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Ink.navy,
+                        ),
+                      ),
+                      Text(
+                        bi(
+                          'Record your round, pin notes, lend it for a day',
+                          'சுற்றைப் பதிவு செய், குறிப்பு சேர், ஒரு நாள் கொடு',
+                        ),
+                        maxLines: 2,
+                        style: const TextStyle(color: Ink.muted, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: Ink.faint,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 13),
+          Glass(
+            radius: 27,
+            padding: const EdgeInsets.all(16),
+            onTap: () => push(context, const CustomerReportsScreen()),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Ink.violetDeep.withValues(alpha: .1),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.person_crop_rectangle_fill,
+                    color: Ink.violetDeep,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        bi(
+                          'Customer profile reports',
+                          'வாடிக்கையாளர் அறிக்கைகள்',
+                        ),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Ink.navy,
+                        ),
+                      ),
+                      Text(
+                        bi(
+                          'Each customer, month by month',
+                          'ஒவ்வொரு வாடிக்கையாளருக்கும் மாத வாரியாக',
+                        ),
+                        style: const TextStyle(color: Ink.muted, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: Ink.faint,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 13),
+          Glass(
+            radius: 27,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _groups,
+              activeTrackColor: Ink.violetDeep,
+              secondary: const Icon(
+                CupertinoIcons.location_solid,
+                color: Ink.violetDeep,
+              ),
+              title: Text(
+                bi('Group customers by place', 'ஊர் வாரியாகப் பிரி'),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                bi(
+                  'Place bubbles above the list. Start delivers one place at a time.',
+                  'பட்டியலுக்கு மேல் ஊர் குமிழ்கள். தொடங்கு ஒவ்வொரு ஊராக விநியோகிக்கும்.',
+                ),
+              ),
+              onChanged: (v) => setState(() => _groups = v),
+            ),
+          ),
+          const SizedBox(height: 27),
           Text(
             bi('Customer order', 'வாடிக்கையாளர் வரிசை'),
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),

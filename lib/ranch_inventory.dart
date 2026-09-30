@@ -233,6 +233,63 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                 ),
               ],
             ),
+            const SizedBox(height: 13),
+            Glass(
+              radius: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              onTap: () => push(context, const CustomerReportsScreen()),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Ink.violetDeep.withValues(alpha: .1),
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.person_crop_rectangle_fill,
+                      color: Ink.violetDeep,
+                      size: 21,
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          bi(
+                            'Customer profile reports',
+                            'வாடிக்கையாளர் அறிக்கைகள்',
+                          ),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: Ink.navy,
+                          ),
+                        ),
+                        Text(
+                          bi(
+                            'Each customer, month by month',
+                            'ஒவ்வொரு வாடிக்கையாளருக்கும் மாத வாரியாக',
+                          ),
+                          style: const TextStyle(
+                            color: Ink.muted,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 16,
+                    color: Ink.faint,
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 27),
             Row(
               children: [
@@ -515,15 +572,20 @@ class _VendorReportRow extends StatelessWidget {
     final kind = txt(row, 'kind');
     final payment = kind == 'payment';
     final intake = kind == 'collection' || kind == 'purchase';
+    final clearance = kind == 'clearance';
     final color = payment
         ? Ink.greenText
         : intake
         ? Ink.amberText
+        : clearance
+        ? Ink.blue
         : Ink.violetDeep;
     final icon = payment
         ? CupertinoIcons.money_dollar
         : intake
         ? CupertinoIcons.arrow_down
+        : clearance
+        ? CupertinoIcons.tray_arrow_down
         : CupertinoIcons.arrow_up;
     final person = vendorRows(
       'vendor_people',
@@ -558,7 +620,7 @@ class _VendorReportRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    txt(row, 'personName'),
+                    vendorEntryPersonName(row),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -594,7 +656,7 @@ class _VendorReportRow extends StatelessWidget {
                     color: color,
                   ),
                 ),
-                if (!payment)
+                if (!payment && !clearance)
                   Text(
                     money(numv(row, 'amount')),
                     style: const TextStyle(color: Ink.muted, fontSize: 12.5),
@@ -612,5 +674,12 @@ String vendorEntryLabel(String kind) => switch (kind) {
   'collection' => bi('Collected', 'சேகரித்தது'),
   'purchase' => bi('Purchased', 'வாங்கியது'),
   'sale' => bi('Sold', 'விற்றது'),
+  'clearance' => bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
   _ => bi('Payment', 'பணம் செலுத்தியது'),
 };
+
+/// Clearance to the fridge has no person; show a localized name for it.
+String vendorEntryPersonName(Map<String, dynamic> row) =>
+    row['personKind'] == 'fridge'
+    ? bi('Fridge', 'ஃப்ரிட்ஜ்')
+    : txt(row, 'personName');
