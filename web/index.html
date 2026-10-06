@@ -9,7 +9,9 @@
   <meta name="description" content="VIMO - ranch care, milk vendor deliveries, market sales, stock, reports and community with secure Firebase sync.">
 
   <!-- iPhone / PWA polish -->
-  <meta name="theme-color" content="#F6F1FF">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="VIMO">
@@ -35,7 +37,7 @@
       padding: 0;
       width: 100%;
       min-height: 100%;
-      background: #F6F1FF;
+      background: #F2F2F7;
       overscroll-behavior: none;
       -webkit-tap-highlight-color: transparent;
     }
@@ -53,8 +55,8 @@
       align-items: center;
       justify-content: center;
       background:
-        radial-gradient(circle at 50% 44%, rgba(125, 65, 232, .18), transparent 24%),
-        radial-gradient(circle at 20% 20%, #FFFFFF 0%, #F6F1FF 42%, #E7DCFF 100%);
+        radial-gradient(circle at 50% 44%, rgba(91, 46, 224, .12), transparent 26%),
+        #F2F2F7;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       z-index: 9999;
     }
@@ -134,17 +136,29 @@
     }
 
     .splash-title {
-      color: #2D234A;
-      font-weight: 900;
+      color: #000000;
+      font-weight: 700;
       font-size: 28px;
       letter-spacing: 5px;
     }
 
     .splash-subtitle {
-      color: #6C5E86;
+      color: #6C6C70;
       font-size: 13px;
       margin-top: 7px;
       letter-spacing: .3px;
+    }
+
+    /* Follow the system appearance from the first frame. */
+    @media (prefers-color-scheme: dark) {
+      html, body { background: #000000; }
+      #loading {
+        background:
+          radial-gradient(circle at 50% 44%, rgba(166, 144, 255, .16), transparent 26%),
+          #000000;
+      }
+      .splash-title { color: #FFFFFF; }
+      .splash-subtitle { color: #98989F; }
     }
 
     @keyframes trace-squircle {

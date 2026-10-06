@@ -38,10 +38,10 @@ String maleUseDescription(String use) => switch (use) {
 };
 
 IconData maleUseIcon(String use) => switch (use) {
-  'Breeding' => Icons.favorite_rounded,
-  'Jallikattu' => Icons.emoji_events_rounded,
+  'Breeding' => CupertinoIcons.heart_fill,
+  'Jallikattu' => CupertinoIcons.rosette,
   'Cart' => Icons.agriculture_rounded,
-  _ => Icons.help_outline_rounded,
+  _ => CupertinoIcons.question_circle,
 };
 
 Color maleUseColor(String use) => switch (use) {
@@ -216,25 +216,25 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
             '${services.where(_inThisMonth).length} services',
             '${services.where(_inThisMonth).length} முறை',
           ),
-          Icons.calendar_month_rounded,
+          CupertinoIcons.calendar,
           Ink.violet,
         ),
         (
           bi('Success rate', 'வெற்றி விகிதம்'),
           decided == 0 ? '—' : '${(confirmed * 100 / decided).round()}%',
-          Icons.verified_rounded,
+          CupertinoIcons.checkmark_seal_fill,
           Ink.green,
         ),
         (
           bi('Pregnancies', 'சினை உறுதி'),
           '$confirmed / ${services.length}',
-          Icons.favorite_rounded,
+          CupertinoIcons.heart_fill,
           Ink.violetDeep,
         ),
         (
           bi('Service income', 'கட்டண வருமானம்'),
           money(income),
-          Icons.payments_rounded,
+          CupertinoIcons.money_dollar_circle_fill,
           Ink.amber,
         ),
       ];
@@ -259,13 +259,13 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
         (
           bi('Wins', 'வெற்றிகள்'),
           '$wins / ${events.length}',
-          Icons.emoji_events_rounded,
+          CupertinoIcons.rosette,
           Ink.amber,
         ),
         (
           bi('Prize value', 'பரிசு மதிப்பு'),
           money(prizes),
-          Icons.redeem_rounded,
+          CupertinoIcons.gift_fill,
           Ink.green,
         ),
         (
@@ -286,7 +286,7 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
         (
           bi('Work days this month', 'இந்த மாத வேலை நாட்கள்'),
           bi('$days days', '$days நாள்'),
-          Icons.calendar_month_rounded,
+          CupertinoIcons.calendar,
           Ink.violet,
         ),
         (
@@ -295,13 +295,13 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
             '${hours.toStringAsFixed(hours % 1 == 0 ? 0 : 1)} h',
             '${hours.toStringAsFixed(hours % 1 == 0 ? 0 : 1)} மணி',
           ),
-          Icons.schedule_rounded,
+          CupertinoIcons.clock,
           Ink.blue,
         ),
         (
           bi('Earned this month', 'இந்த மாத வருமானம்'),
           money(earned),
-          Icons.payments_rounded,
+          CupertinoIcons.money_dollar_circle_fill,
           Ink.green,
         ),
         (
@@ -309,7 +309,7 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
           last.isEmpty
               ? bi('No work yet', 'வேலை இல்லை')
               : bi('${daysSince(last)} days', '${daysSince(last)} நாள்'),
-          Icons.bedtime_rounded,
+          CupertinoIcons.moon_fill,
           Ink.amber,
         ),
       ];
@@ -345,14 +345,14 @@ List<(String, String, IconData, Color)> maleFacts(Map<String, dynamic> a) {
         services.isEmpty
             ? bi('No service yet', 'இன்னும் இல்லை')
             : '${_shortDate(txt(services.first, 'date'))} · ${_daysAgo(txt(services.first, 'date'))}',
-        Icons.history_rounded,
+        CupertinoIcons.clock,
         Ink.violet,
       ));
       if (numv(a, 'serviceFee') > 0) {
         facts.add((
           bi('Service fee', 'கருவூட்டல் கட்டணம்'),
           money(numv(a, 'serviceFee')),
-          Icons.sell_rounded,
+          CupertinoIcons.tag_fill,
           Ink.amber,
         ));
       }
@@ -361,7 +361,7 @@ List<(String, String, IconData, Color)> maleFacts(Map<String, dynamic> a) {
         a['outsideService'] == true
             ? bi('Available for service', 'கருவூட்டலுக்குக் கிடைக்கும்')
             : bi('Only for this ranch', 'இந்தத் தொழுவத்திற்கு மட்டும்'),
-        Icons.handshake_rounded,
+        CupertinoIcons.hand_raised_fill,
         Ink.blue,
       ));
     case 'Jallikattu':
@@ -396,7 +396,7 @@ List<(String, String, IconData, Color)> maleFacts(Map<String, dynamic> a) {
         facts.add((
           bi('Pair partner', 'ஜோடி மாடு'),
           localizedAnimalLabel(txt(a, 'pairPartner')),
-          Icons.link_rounded,
+          CupertinoIcons.link,
           Ink.violet,
         ));
       }
@@ -404,7 +404,7 @@ List<(String, String, IconData, Color)> maleFacts(Map<String, dynamic> a) {
         facts.add((
           bi('Usual rate per day', 'ஒரு நாள் கூலி'),
           money(numv(a, 'dailyRate')),
-          Icons.sell_rounded,
+          CupertinoIcons.tag_fill,
           Ink.amber,
         ));
       }
@@ -497,9 +497,9 @@ Color workEntryColor(Map<String, dynamic> e) => switch (txt(e, 'kind')) {
 };
 
 IconData workEntryIcon(Map<String, dynamic> e) => switch (txt(e, 'kind')) {
-  'service' => Icons.favorite_rounded,
+  'service' => CupertinoIcons.heart_fill,
   'training' => Icons.directions_run_rounded,
-  'event' => Icons.emoji_events_rounded,
+  'event' => CupertinoIcons.rosette,
   _ => Icons.agriculture_rounded,
 };
 
@@ -536,7 +536,7 @@ class MaleUsePicker extends StatelessWidget {
                     'What do you use this bull for?',
                     'இந்தக் காளையை எதற்காகப் பயன்படுத்துகிறீர்கள்?',
                   ),
-            style: const TextStyle(
+            style: TextStyle(
               color: Ink.navy,
               fontSize: Gold.t16,
               fontWeight: FontWeight.w700,
@@ -586,13 +586,9 @@ class _UseTile extends StatelessWidget {
           decoration: ShapeDecoration(
             shape: SquircleBorder(
               radius: Gold.r21,
-              side: BorderSide(
-                color: selected ? Ink.violetDeep : const Color(0xCFFFFFFF),
-              ),
+              side: BorderSide(color: selected ? Ink.tint : Colors.transparent),
             ),
-            color: selected
-                ? Ink.violetDeep
-                : Colors.white.withValues(alpha: .52),
+            color: selected ? Ink.tint : Ink.surface.withValues(alpha: .52),
           ),
           child: Row(
             children: [
@@ -671,7 +667,7 @@ class MaleRolePanel extends StatelessWidget {
           InfoRow(
             title: bi('Growth', 'வளர்ச்சி'),
             value: readiness,
-            icon: Icons.trending_up_rounded,
+            icon: CupertinoIcons.arrow_up_right,
             color: Ink.green,
           ),
         ],
@@ -695,7 +691,7 @@ class MaleRolePanel extends StatelessWidget {
               ),
               _ => bi('Record work', 'வேலையைப் பதிவு செய்'),
             },
-            icon: Icons.add_rounded,
+            icon: CupertinoIcons.add,
             onPressed: () => push(
               context,
               MaleWorkEntryScreen(animalKey: animalKey, use: use),
@@ -755,16 +751,16 @@ class _RoleBanner extends StatelessWidget {
             children: [
               Text(
                 maleUseLabel(use),
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.navy,
-                  fontSize: Gold.t21,
+                  fontSize: 22,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: Gold.s2),
               Text(
                 maleUseDescription(use),
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.muted,
                   fontSize: Gold.t13,
                   fontWeight: FontWeight.w600,
@@ -790,7 +786,7 @@ class _WorkLine extends StatelessWidget {
 
   Future<void> _actions(BuildContext context) async {
     final isService = txt(entry, 'kind') == 'service';
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showAppleSheet<String>(
       context: context,
       showDragHandle: true,
       builder: (sheet) => SafeArea(
@@ -801,7 +797,7 @@ class _WorkLine extends StatelessWidget {
               for (final r in breedingResults)
                 ListTile(
                   leading: Icon(
-                    Icons.circle,
+                    CupertinoIcons.circle_fill,
                     size: 14,
                     color: breedingResultColor(r),
                   ),
@@ -812,13 +808,10 @@ class _WorkLine extends StatelessWidget {
                 ),
             if (canEditAnimals)
               ListTile(
-                leading: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: Ink.red,
-                ),
+                leading: Icon(CupertinoIcons.trash, color: Ink.red),
                 title: Text(
                   bi('Delete record', 'பதிவை நீக்கு'),
-                  style: const TextStyle(color: Ink.red),
+                  style: TextStyle(color: Ink.red),
                 ),
                 onTap: () => Navigator.pop(sheet, 'delete'),
               ),
@@ -1039,7 +1032,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
   Widget _money(TextEditingController c, String label) => TextField(
     controller: c,
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-    decoration: fieldStyle(label, icon: Icons.payments_outlined),
+    decoration: fieldStyle(label, icon: CupertinoIcons.money_dollar_circle),
   );
 
   Widget _choices(
@@ -1055,7 +1048,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
         ChoiceChip(
           showCheckmark: false,
           selected: v == selected,
-          selectedColor: Ink.violetDeep,
+          selectedColor: Ink.tint,
           label: Text(
             label(v),
             style: TextStyle(
@@ -1086,7 +1079,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
       if (!_outsideCow)
         cows.isEmpty
             ? EmptyNote(
-                icon: Icons.info_outline_rounded,
+                icon: CupertinoIcons.info_circle,
                 title: bi('No female cows', 'பசு மாடுகள் இல்லை'),
                 message: bi(
                   'Choose Outside cow to record a service for another ranch.',
@@ -1113,7 +1106,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
           textCapitalization: TextCapitalization.words,
           decoration: fieldStyle(
             bi('Cow owner name', 'மாட்டின் உரிமையாளர் பெயர்'),
-            icon: Icons.person_outline_rounded,
+            icon: CupertinoIcons.person,
           ),
         ),
       _gap(),
@@ -1123,7 +1116,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
         padding: const EdgeInsets.only(left: Gold.s5, bottom: Gold.s8),
         child: Text(
           bi('Result', 'முடிவு'),
-          style: const TextStyle(color: Ink.muted, fontWeight: FontWeight.w700),
+          style: TextStyle(color: Ink.muted, fontWeight: FontWeight.w700),
         ),
       ),
       _choices(
@@ -1161,7 +1154,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
         keyboardType: TextInputType.number,
         decoration: fieldStyle(
           bi('Minutes', 'நிமிடங்கள்'),
-          icon: Icons.timer_outlined,
+          icon: CupertinoIcons.timer,
         ),
       ),
     ] else ...[
@@ -1186,7 +1179,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
         textCapitalization: TextCapitalization.sentences,
         decoration: fieldStyle(
           bi('Prize (optional)', 'பரிசு (விருப்பம்)'),
-          icon: Icons.redeem_outlined,
+          icon: CupertinoIcons.gift,
         ),
       ),
       _gap(),
@@ -1205,7 +1198,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       decoration: fieldStyle(
         bi('Hours worked', 'வேலை செய்த நேரம் (மணி)'),
-        icon: Icons.schedule_rounded,
+        icon: CupertinoIcons.clock,
       ),
     ),
     _gap(),
@@ -1236,7 +1229,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
                   txt(a, 'name'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
@@ -1245,7 +1238,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
               ),
               AppText(
                 '#${txt(a, 'id')}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.muted,
                   fontWeight: FontWeight.w700,
                   fontSize: Gold.t11,
@@ -1278,7 +1271,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: bi('Save', 'சேமி'),
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           busy: _saving,
           onPressed: _save,
         ),
@@ -1313,7 +1306,7 @@ class UnknownToggleField extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.navy,
                   fontWeight: FontWeight.w700,
                   fontSize: Gold.t13,
@@ -1333,7 +1326,7 @@ class UnknownToggleField extends StatelessWidget {
               scale: .82,
               child: CupertinoSwitch(
                 value: unknown,
-                activeTrackColor: Ink.violetDeep,
+                activeTrackColor: Ink.tint,
                 onChanged: onUnknownChanged,
               ),
             ),
@@ -1354,8 +1347,8 @@ class UnknownToggleField extends StatelessWidget {
                 elevation: 0.4,
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.help_outline_rounded,
+                    Icon(
+                      CupertinoIcons.question_circle,
                       color: Ink.faint,
                       size: Gold.t21,
                     ),
@@ -1366,7 +1359,7 @@ class UnknownToggleField extends StatelessWidget {
                           'Marked as unknown · you can add it later',
                           'தெரியாது எனக் குறிக்கப்பட்டது · பின்னர் சேர்க்கலாம்',
                         ),
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Ink.muted,
                           fontWeight: FontWeight.w600,
                           fontSize: Gold.t13,

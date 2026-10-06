@@ -114,7 +114,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
+    SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
       statusBarBrightness: Brightness.light,
@@ -974,38 +974,70 @@ class Gold {
       math.max(4.0, outer - pad);
 }
 
-/// Palette sampled directly from the approved VIMO screen designs.
+/// Apple system colours, in light and dark appearance.
+///
+/// Every colour follows the iOS semantic system (label, secondary label,
+/// grouped backgrounds, fills, separators and system tints) so the app reads
+/// like a native iPhone app and follows the person's Light / Dark setting.
+/// Values are resolved when a widget builds; [VimoApp] rebuilds the whole tree
+/// when the system appearance changes.
 class Ink {
   const Ink._();
 
-  // Brand
-  static const Color violet = Color(0xFF7C4DFF);
-  static const Color violetDeep = Color(0xFF5B2EE0);
-  static const Color violetDark = Color(0xFF4526B8);
+  /// Set by [VimoApp] from the system appearance.
+  static bool dark = false;
 
-  // Text
-  static const Color navy = Color(0xFF202635);
-  static const Color body = Color(0xFF343C4E);
-  static const Color muted = Color(0xFF646F82);
-  static const Color faint = Color(0xFF798498);
+  static Color _c(int light, int dim) => Color(dark ? dim : light);
 
-  // Surfaces
-  static const Color canvasTop = Color(0xFFF7F8FC);
-  static const Color canvasMid = Color(0xFFEDF0F8);
-  static const Color canvasLow = Color(0xFFF6F8FC);
-  static const Color lavender = Color(0xFFEDE6FF);
+  // Brand accent (the app's tint). Dark variants are lighter for contrast.
+  static Color get violet => _c(0xFF7C4DFF, 0xFF9B7DFF);
+  static Color get violetDeep => _c(0xFF5B2EE0, 0xFFA690FF);
+  static Color get violetDark => _c(0xFF4526B8, 0xFFC3B5FF);
 
-  // Semantic
-  static const Color green = Color(0xFF35A66B);
-  static const Color amber = Color(0xFFF0A02A);
-  static const Color red = Color(0xFFE1495B);
-  static const Color blue = Color(0xFF4F6BFF);
-  // Darker text tones stay readable on tinted glass.
-  static const Color amberText = Color(0xFFB45309);
-  static const Color greenText = Color(0xFF15803D);
-  static const Color redText = Color(0xFFC0263A);
+  /// Tint used as a fill behind white labels (prominent buttons, selected
+  /// segments, switches, sent bubbles). Keeps white text at 4.5:1 or better in
+  /// both appearances, where [violetDeep] is tuned for tinted text instead.
+  static Color get tint => _c(0xFF5B2EE0, 0xFF7C4DFF);
 
-  // Rank — read off the gold / purple / green cards in the reference design
+  // Labels: label, label, secondary label, tertiary label.
+  static Color get navy => _c(0xFF000000, 0xFFFFFFFF);
+  static Color get body => _c(0xFF1C1C1E, 0xFFF2F2F7);
+  static Color get muted => _c(0xFF6C6C70, 0xFF98989F);
+  static Color get faint => _c(0xFF8E8E93, 0xFF7C7C82);
+
+  // Grouped backgrounds: canvas (primary), surface (cells), surface2.
+  static Color get canvasTop => _c(0xFFF2F2F7, 0xFF000000);
+  static Color get canvasMid => canvasTop;
+  static Color get canvasLow => canvasTop;
+  static Color get surface => _c(0xFFFFFFFF, 0xFF1C1C1E);
+  static Color get surface2 => _c(0xFFF2F2F7, 0xFF2C2C2E);
+
+  /// Elevated surfaces (sheets, alerts) and the cells drawn on them.
+  static Color get sheet => _c(0xFFF2F2F7, 0xFF1C1C1E);
+  static Color get sheetCell => _c(0xFFFFFFFF, 0xFF2C2C2E);
+
+  /// Tertiary system fill: text fields, segmented tracks, gray buttons.
+  static Color get fill => _c(0x1F767680, 0x3D767680);
+  static Color get fillStrong => _c(0x33787880, 0x5C787880);
+  static Color get separator => _c(0x4A3C3C43, 0xA6545458);
+
+  /// Bars (navigation and tab bars) before the blur is applied.
+  static Color get bar => _c(0xD9F9F9F9, 0xD91C1C1E);
+
+  /// The brand tint on a light wash, used behind selected or featured items.
+  static Color get lavender => _c(0xFFEDE6FF, 0xFF2A2446);
+
+  // System tints.
+  static Color get green => _c(0xFF34C759, 0xFF30D158);
+  static Color get amber => _c(0xFFFF9500, 0xFFFF9F0A);
+  static Color get red => _c(0xFFFF3B30, 0xFFFF453A);
+  static Color get blue => _c(0xFF007AFF, 0xFF0A84FF);
+  // Accessible text tones of the tints (4.5:1 on the grouped backgrounds).
+  static Color get amberText => _c(0xFFC93400, 0xFFFFB340);
+  static Color get greenText => _c(0xFF248A3D, 0xFF30D158);
+  static Color get redText => _c(0xFFD70015, 0xFFFF6961);
+
+  // Rank artwork (illustration colours, identical in both appearances).
   static const Color goldLight = Color(0xFFFBE08B);
   static const Color goldBase = Color(0xFFF2C13D);
   static const Color goldDeep = Color(0xFFDC9C1E);
@@ -1242,6 +1274,26 @@ class _GlassSkinPainter extends CustomPainter {
 
 /// The core surface of the app. A blurred, tinted squircle carrying a specular
 /// rim, an inner sheen and layered depth shadows.
+/// Marks content shown in a sheet or an alert. Cells inside use the elevated
+/// surface colour, as iOS does, so they stay distinct in Dark Mode.
+class ElevatedSurface extends InheritedWidget {
+  const ElevatedSurface({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ElevatedSurface>() != null;
+
+  @override
+  bool updateShouldNotify(ElevatedSurface oldWidget) => false;
+}
+
+/// A content-layer surface: an iOS inset-grouped cell with continuous
+/// corners. Following Apple's material guidance, Liquid Glass is reserved for
+/// controls that float above content ([LiquidGlass]); cards and lists use
+/// the solid secondary grouped background instead.
+///
+/// [tint] washes the cell with a colour (status rows, selections). The
+/// glass-era parameters [blur], [opacity], [specular], [sheen] and
+/// [elevation] are accepted for compatibility and no longer draw anything.
 class Glass extends StatelessWidget {
   final Widget child;
   final double radius;
@@ -1274,67 +1326,23 @@ class Glass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = tint ?? Colors.white;
-    final accessible = MediaQuery.highContrastOf(context);
-    final effectiveOpacity = accessible ? .96 : opacity;
-
-    // A real backdrop blur on every card forces the GPU to repeatedly sample
-    // and blur the whole scene. The translucent fill and painted rim keep the
-    // glass character without an off-screen blur pass per surface.
-    Widget surface = ClipPath(
-      clipper: SquircleClipper(radius),
-      child: CustomPaint(
-        foregroundPainter: _GlassSkinPainter(
+    final cell = ElevatedSurface.of(context) ? Ink.sheetCell : Ink.surface;
+    final tintColor = tint;
+    final color = tintColor == null ? cell : Color.alphaBlend(tintColor, cell);
+    final contrast = MediaQuery.highContrastOf(context);
+    Widget surface = DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: SquircleBorder(
           radius: radius,
-          strength: specular,
-          sheen: sheen,
+          side: contrast
+              ? BorderSide(color: Ink.separator, width: 1)
+              : BorderSide.none,
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient:
-                (accessible ? null : gradient) ??
-                LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    base.withValues(alpha: effectiveOpacity),
-                    base.withValues(
-                      alpha: effectiveOpacity * (accessible ? 1 : .48),
-                    ),
-                    base.withValues(
-                      alpha: effectiveOpacity * (accessible ? 1 : .82),
-                    ),
-                  ],
-                ),
-          ),
-          child: Padding(padding: padding, child: child),
-        ),
+        color: gradient == null || contrast ? color : null,
+        gradient: contrast ? null : gradient,
       ),
+      child: Padding(padding: padding, child: child),
     );
-
-    if (elevation > 0) {
-      surface = DecoratedBox(
-        decoration: ShapeDecoration(
-          shape: SquircleBorder(radius: radius),
-          shadows: [
-            // Ambient occlusion — wide, soft, barely there.
-            BoxShadow(
-              color: Ink.navy.withValues(alpha: 0.055 * elevation),
-              blurRadius: Gold.s34 * elevation,
-              offset: Offset(0, Gold.s13 * elevation),
-            ),
-            // Key shadow — tighter and slightly darker.
-            BoxShadow(
-              color: Ink.navy.withValues(alpha: 0.035 * elevation),
-              blurRadius: Gold.s13 * elevation,
-              offset: Offset(0, Gold.s5 * elevation),
-            ),
-          ],
-        ),
-        child: surface,
-      );
-    }
-
     if (margin != null) {
       surface = Padding(padding: margin!, child: surface);
     }
@@ -1345,8 +1353,82 @@ class Glass extends StatelessWidget {
   }
 }
 
-/// Press feedback. Scales toward 1/phi of the usual travel and lifts a coloured
-/// glow, so a tap feels like pressing into a soft physical surface.
+/// Liquid Glass, for the functional layer only: the tab bar, floating
+/// buttons and panels over maps. Content behind it blurs and shows through;
+/// with Increase Contrast it becomes opaque.
+class LiquidGlass extends StatelessWidget {
+  final Widget child;
+  final double radius;
+  final EdgeInsetsGeometry padding;
+  final Color? tint;
+  final VoidCallback? onTap;
+  final bool shadow;
+
+  const LiquidGlass({
+    super.key,
+    required this.child,
+    this.radius = Gold.r27,
+    this.padding = EdgeInsets.zero,
+    this.tint,
+    this.onTap,
+    this.shadow = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final contrast = MediaQuery.highContrastOf(context);
+    final tintColor = tint;
+    final fill = contrast
+        ? (Ink.dark ? const Color(0xFF2C2C2E) : Colors.white)
+        : tintColor ?? Ink.bar;
+    Widget glass = ClipPath(
+      clipper: SquircleClipper(radius),
+      child: BackdropFilter(
+        enabled: !contrast,
+        filter: dart_ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: SquircleBorder(
+              radius: radius,
+              side: BorderSide(
+                color: contrast
+                    ? Ink.separator
+                    : (Ink.dark
+                          ? Colors.white.withValues(alpha: .10)
+                          : Colors.white.withValues(alpha: .65)),
+                width: contrast ? 1 : .6,
+              ),
+            ),
+            color: fill,
+          ),
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+    if (shadow) {
+      glass = DecoratedBox(
+        decoration: ShapeDecoration(
+          shape: SquircleBorder(radius: radius),
+          shadows: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: Ink.dark ? .32 : .10),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: glass,
+      );
+    }
+    if (onTap != null) {
+      glass = Pressable(radius: radius, onTap: onTap, child: glass);
+    }
+    return glass;
+  }
+}
+
+/// Press state for custom controls: a quick, slight dip and dim that tracks
+/// the finger, like system buttons. Reduce Motion keeps only the dim.
 class Pressable extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -1376,6 +1458,7 @@ class _PressableState extends State<Pressable> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
+    final reduce = MediaQuery.disableAnimationsOf(context);
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
       child: GestureDetector(
@@ -1384,29 +1467,15 @@ class _PressableState extends State<Pressable> {
         onTapDown: enabled ? (_) => _set(true) : null,
         onTapUp: enabled ? (_) => _set(false) : null,
         onTapCancel: enabled ? () => _set(false) : null,
-        child: AnimatedScale(
-          scale: _down && !MediaQuery.disableAnimationsOf(context)
-              ? 1 - (0.025 * widget.depth)
-              : 1,
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : Gold.fast,
-          curve: Gold.ease,
-          child: AnimatedContainer(
-            duration: Gold.base,
-            curve: Gold.ease,
-            decoration: ShapeDecoration(
-              shape: SquircleBorder(radius: widget.radius),
-              shadows: _down
-                  ? [
-                      BoxShadow(
-                        color: Ink.violet.withValues(alpha: 0.20),
-                        blurRadius: Gold.s21,
-                        offset: const Offset(0, Gold.s8),
-                      ),
-                    ]
-                  : const [],
-            ),
+        child: AnimatedOpacity(
+          opacity: _down ? .72 : 1,
+          duration: _down ? Duration.zero : const Duration(milliseconds: 200),
+          child: AnimatedScale(
+            scale: _down && !reduce ? 1 - (0.02 * widget.depth) : 1,
+            duration: reduce
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
             child: widget.child,
           ),
         ),
@@ -1419,71 +1488,14 @@ class _PressableState extends State<Pressable> {
 //  Background
 // -----------------------------------------------------------------------------
 
-/// The ambient canvas. Three slow-drifting colour fields sit under a heavy blur
-/// so the glass above always has something with structure to refract.
+/// The page background: the system grouped background colour.
 class LiquidCanvas extends StatelessWidget {
   final Widget child;
   const LiquidCanvas({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Ink.canvasTop, Ink.canvasMid, Ink.canvasLow],
-          stops: [0.0, Gold.invPhi, 1.0],
-        ),
-      ),
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: RepaintBoundary(
-              child: CustomPaint(painter: _AuroraPainter(0.18)),
-            ),
-          ),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _AuroraPainter extends CustomPainter {
-  final double t;
-  const _AuroraPainter(this.t);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final tau = math.pi * 2;
-
-    void field(Color color, double cx, double cy, double r, double phase) {
-      final dx = math.cos(tau * (t + phase)) * size.width * 0.10;
-      final dy = math.sin(tau * (t + phase) * Gold.invPhi) * size.height * 0.06;
-      final center = Offset(size.width * cx + dx, size.height * cy + dy);
-      final radius = size.shortestSide * r;
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()
-          ..shader = RadialGradient(
-            colors: [
-              color.withValues(alpha: 0.30),
-              color.withValues(alpha: 0.0),
-            ],
-          ).createShader(Rect.fromCircle(center: center, radius: radius)),
-      );
-    }
-
-    field(const Color(0xFFAABBEA), 0.04, 0.12, 0.65, 0.0);
-    field(const Color(0xFFCABDE8), 0.96, 0.34, 0.55, 0.33);
-    field(const Color(0xFFA8D5DB), 0.26, 0.96, 0.60, 0.66);
-  }
-
-  @override
-  bool shouldRepaint(covariant _AuroraPainter old) => old.t != t;
+  Widget build(BuildContext context) =>
+      ColoredBox(color: Ink.canvasTop, child: child);
 }
 
 /// Constrains content to the golden content column and applies safe area.
@@ -1514,46 +1526,47 @@ class Shell extends StatelessWidget {
 //  Motion
 // -----------------------------------------------------------------------------
 
-/// Page transition: a short rise, a slight scale-up and a fade, all on one
-/// curve so the whole surface reads as a single object arriving.
-class LiquidRoute<T> extends PageRouteBuilder<T> {
-  LiquidRoute({required WidgetBuilder builder})
-    : super(
-        transitionDuration: Gold.slow,
-        reverseTransitionDuration: Gold.base,
-        opaque: true,
-        barrierColor: Colors.transparent,
-        pageBuilder: (context, _, _) => Material(
-          color: Ink.canvasTop,
-          textStyle: Theme.of(
-            context,
-          ).textTheme.bodyMedium!.copyWith(decoration: TextDecoration.none),
-          child: builder(context),
-        ),
-        transitionsBuilder: (context, animation, secondary, child) {
-          if (MediaQuery.disableAnimationsOf(context)) {
-            return FadeTransition(opacity: animation, child: child);
-          }
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Gold.ease,
-            reverseCurve: Gold.easeIn,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.034),
-                end: Offset.zero,
-              ).animate(curved),
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.968, end: 1.0).animate(curved),
-                child: child,
-              ),
-            ),
-          );
-        },
-      );
+/// The iPhone push: the new page slides in from the trailing edge over a
+/// parallax-shifted, dimmed previous page, and people can swipe from the
+/// leading edge to go back interactively. Reduce Motion uses a cross-fade.
+class LiquidRoute<T> extends PageRoute<T>
+    with CupertinoRouteTransitionMixin<T> {
+  LiquidRoute({required this.builder, super.settings});
+
+  final WidgetBuilder builder;
+
+  @override
+  Widget buildContent(BuildContext context) => Material(
+    color: Ink.canvasTop,
+    textStyle: Theme.of(
+      context,
+    ).textTheme.bodyMedium!.copyWith(decoration: TextDecoration.none),
+    child: builder(context),
+  );
+
+  @override
+  String? get title => null;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return FadeTransition(opacity: animation, child: child);
+    }
+    return super.buildTransitions(
+      context,
+      animation,
+      secondaryAnimation,
+      child,
+    );
+  }
 }
 
 Future<T?> push<T>(BuildContext context, Widget page) =>
@@ -1572,9 +1585,9 @@ Future<T?> guardedPush<T>(
   return push<T>(context, page);
 }
 
-/// Staggered entrance. Each item waits a Fibonacci-scaled beat longer than the
-/// one before it, so a grid resolves as a wave rather than all at once.
-class Reveal extends StatefulWidget {
+/// Content appears in place, as in system apps. Lists and grids don't animate
+/// in on every visit (Apple: avoid motion on frequent interactions).
+class Reveal extends StatelessWidget {
   final Widget child;
   final int index;
   final double rise;
@@ -1587,57 +1600,7 @@ class Reveal extends StatefulWidget {
   });
 
   @override
-  State<Reveal> createState() => _RevealState();
-}
-
-class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-  late final Animation<double> _t;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = AnimationController(vsync: this, duration: Gold.ambient);
-
-    // The stagger is an Interval inside one controller run rather than a
-    // start-up delay. A delayed timer can fire while this element is briefly
-    // detached -- during a tab switch or page transition -- and the callback is
-    // then skipped for good, leaving the content stranded at zero opacity. A
-    // controller started here always runs to completion, so the widget cannot
-    // end up permanently invisible no matter what happens to the tree.
-    final int step = widget.index < 0
-        ? 0
-        : (widget.index > 10 ? 10 : widget.index);
-    final double begin = step * 0.055; // at most 0.55, so the interval is valid
-    _t = CurvedAnimation(
-      parent: _c,
-      curve: Interval(begin, 1.0, curve: Gold.ease),
-    );
-    _c.forward();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) {
-      return widget.child;
-    }
-    return FadeTransition(
-      opacity: _t,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: Offset(0, widget.rise),
-          end: Offset.zero,
-        ).animate(_t),
-        child: widget.child,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => child;
 }
 
 /// A number that cross-fades when it changes, so a stat updating never snaps.
@@ -1678,14 +1641,16 @@ class FlowText extends StatelessWidget {
 //  PART 3 — CONTROLS
 // =============================================================================
 
-/// Primary action. A gradient squircle with its own specular sheen so it reads
-/// as the same material family as the glass around it.
+/// The prominent button: a solid capsule in the app tint with a white
+/// semibold label (Apple keeps one or two of these per view). [start] (or
+/// [end]) recolours it for a role, such as green for Delivered or red for
+/// End. Disabled buttons use the system fill and tertiary label.
 class LiquidButton extends StatelessWidget {
   final String label;
   final IconData? icon;
   final VoidCallback? onPressed;
-  final Color start;
-  final Color end;
+  final Color? start;
+  final Color? end;
   final double height;
   final double radius;
   final bool busy;
@@ -1695,9 +1660,9 @@ class LiquidButton extends StatelessWidget {
     required this.label,
     this.icon,
     required this.onPressed,
-    this.start = Ink.violet,
-    this.end = Ink.violetDeep,
-    this.height = Gold.s55,
+    this.start,
+    this.end,
+    this.height = 50,
     this.radius = Gold.r21,
     this.busy = false,
   });
@@ -1705,69 +1670,49 @@ class LiquidButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null && !busy;
-
-    return Pressable(
-      radius: radius,
-      onTap: enabled ? onPressed : null,
-      child: AnimatedOpacity(
-        duration: Gold.base,
-        opacity: enabled ? 1 : 0.55,
-        child: Container(
+    final fill = start ?? end ?? Ink.tint;
+    final foreground = busy || enabled ? Colors.white : Ink.faint;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: busy ? null : label,
+      child: Pressable(
+        radius: height / 2,
+        onTap: enabled ? onPressed : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
           height: height,
+          padding: const EdgeInsets.symmetric(horizontal: Gold.s16),
           decoration: ShapeDecoration(
-            shape: SquircleBorder(radius: radius),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [start, end],
-            ),
-            shadows: [
-              BoxShadow(
-                color: start.withValues(alpha: 0.34),
-                blurRadius: Gold.s21,
-                offset: const Offset(0, Gold.s8),
-              ),
-            ],
+            shape: const StadiumBorder(),
+            color: busy || enabled ? fill : Ink.fill,
           ),
-          child: CustomPaint(
-            foregroundPainter: _GlassSkinPainter(
-              radius: radius,
-              strength: 0.62,
-              sheen: true,
-            ),
-            child: Center(
-              child: busy
-                  ? const SizedBox(
-                      width: Gold.s21,
-                      height: Gold.s21,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (icon != null) ...[
-                          Icon(icon, color: Colors.white, size: Gold.s21),
-                          const SizedBox(width: Gold.s8),
-                        ],
-                        Flexible(
-                          child: AppText(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: Gold.t16,
-                              letterSpacing: 0.2,
-                            ),
+          child: Center(
+            child: busy
+                ? CupertinoActivityIndicator(color: foreground)
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (icon != null) ...[
+                        Icon(icon, color: foreground, size: 19),
+                        const SizedBox(width: Gold.s8),
+                      ],
+                      Flexible(
+                        child: AppText(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: foreground,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 17,
+                            letterSpacing: -.2,
                           ),
                         ),
-                      ],
-                    ),
-            ),
+                      ),
+                    ],
+                  ),
           ),
         ),
       ),
@@ -1775,60 +1720,71 @@ class LiquidButton extends StatelessWidget {
   }
 }
 
-/// Secondary action — glass instead of gradient.
+/// The gray button: system fill with a tinted label, for secondary actions
+/// beside a prominent one.
 class GhostButton extends StatelessWidget {
   final String label;
   final IconData? icon;
   final VoidCallback? onPressed;
-  final Color color;
+  final Color? color;
 
   const GhostButton({
     super.key,
     required this.label,
     this.icon,
     required this.onPressed,
-    this.color = Ink.violetDeep,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Glass(
-      radius: Gold.r21,
-      blur: 13,
-      opacity: 0.50,
-      elevation: 0.55,
-      padding: const EdgeInsets.symmetric(
-        horizontal: Gold.s21,
-        vertical: Gold.s13,
-      ),
-      onTap: onPressed,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: Gold.s21, color: color),
-            const SizedBox(width: Gold.s8),
-          ],
-          Flexible(
-            child: AppText(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w600,
-                fontSize: Gold.t13,
-              ),
-            ),
+    final tint = onPressed == null ? Ink.faint : color ?? Ink.violetDeep;
+    return Semantics(
+      button: true,
+      enabled: onPressed != null,
+      child: Pressable(
+        radius: 25,
+        onTap: onPressed,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 50),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gold.s16,
+            vertical: Gold.s8,
           ),
-        ],
+          decoration: ShapeDecoration(
+            shape: const StadiumBorder(),
+            color: Ink.fill,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 19, color: tint),
+                const SizedBox(width: Gold.s8),
+              ],
+              Flexible(
+                child: AppText(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: tint,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 17,
+                    letterSpacing: -.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Segmented control pill, as used for Cows / Calves and the period selector.
+/// One segment of a two-choice row, as used for Cows / Calves.
 class Segment extends StatelessWidget {
   final String title;
   final IconData? icon;
@@ -1845,68 +1801,55 @@ class Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = active ? Colors.white : Ink.navy;
     return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: Gold.base,
-          curve: Gold.ease,
-          margin: const EdgeInsets.symmetric(horizontal: Gold.s3),
-          padding: const EdgeInsets.symmetric(
-            vertical: Gold.s13,
-            horizontal: Gold.s8,
-          ),
-          decoration: ShapeDecoration(
-            shape: SquircleBorder(radius: Gold.r21),
-            gradient: active
-                ? const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Ink.violet, Ink.violetDeep],
-                  )
-                : LinearGradient(
-                    colors: [
-                      Colors.white.withValues(alpha: 0.72),
-                      Colors.white.withValues(alpha: 0.44),
-                    ],
-                  ),
-            shadows: active
-                ? [
-                    BoxShadow(
-                      color: Ink.violet.withValues(alpha: 0.30),
-                      blurRadius: Gold.s13,
-                      offset: const Offset(0, Gold.s5),
+      child: Semantics(
+        button: true,
+        selected: active,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            if (!active) HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: AnimatedContainer(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.symmetric(horizontal: Gold.s3),
+            constraints: const BoxConstraints(minHeight: 44),
+            padding: const EdgeInsets.symmetric(
+              vertical: Gold.s8,
+              horizontal: Gold.s8,
+            ),
+            decoration: ShapeDecoration(
+              shape: const StadiumBorder(),
+              color: active ? Ink.tint : Ink.fill,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18, color: color),
+                  const SizedBox(width: Gold.s5),
+                ],
+                Flexible(
+                  child: AppText(
+                    title,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
                     ),
-                  ]
-                : const [],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(
-                  icon,
-                  size: Gold.t21,
-                  color: active ? Colors.white : Ink.muted,
-                ),
-                const SizedBox(width: Gold.s5),
-              ],
-              Flexible(
-                child: AppText(
-                  title,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: active ? Colors.white : Ink.body,
-                    fontWeight: FontWeight.w600,
-                    fontSize: Gold.t13,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1914,9 +1857,9 @@ class Segment extends StatelessWidget {
   }
 }
 
-/// A single sheet of glass that physically glides between choices. The moving
-/// highlight stays mounted while the selected value changes, giving navigation
-/// and filters the continuous Liquid Glass motion used by Apple interfaces.
+/// The iOS segmented control: equal segments on a system-fill track with a
+/// thumb that slides to the chosen segment. The thumb carries the app tint
+/// (Apple's selected-segment tint) with a white label.
 class LiquidSegmentBar extends StatelessWidget {
   final List<String> labels;
   final List<IconData?>? icons;
@@ -1930,108 +1873,120 @@ class LiquidSegmentBar extends StatelessWidget {
     required this.index,
     required this.onChanged,
     this.icons,
-    this.height = Gold.s55 - Gold.s5,
+    this.height = 40,
   });
 
   @override
   Widget build(BuildContext context) {
     if (labels.isEmpty) return const SizedBox.shrink();
     final selected = index.clamp(0, labels.length - 1);
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    const inset = 3.0;
 
-    return SizedBox(
+    return Container(
       height: height,
+      decoration: ShapeDecoration(
+        shape: const StadiumBorder(),
+        color: Ink.fill,
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final cellWidth = constraints.maxWidth / labels.length;
+          final cellWidth = (constraints.maxWidth - inset * 2) / labels.length;
           return Stack(
-            clipBehavior: Clip.none,
             children: [
               AnimatedPositioned(
-                duration: MediaQuery.disableAnimationsOf(context)
+                duration: reduce
                     ? Duration.zero
-                    : const Duration(milliseconds: 280),
+                    : const Duration(milliseconds: 300),
                 curve: Curves.easeOutCubic,
-                left: selected * cellWidth + Gold.s2,
-                width: math.max(0, cellWidth - Gold.s5),
-                top: Gold.s2,
-                bottom: Gold.s2,
+                left: inset + selected * cellWidth,
+                width: math.max(0, cellWidth),
+                top: inset,
+                bottom: inset,
                 child: IgnorePointer(
-                  child: Glass(
-                    radius: Gold.r21,
-                    blur: Gold.s21,
-                    opacity: 0.58,
-                    specular: 1.15,
-                    elevation: 0.82,
-                    padding: EdgeInsets.zero,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Ink.violetDeep, Ink.violetDeep, Ink.violetDeep],
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      shape: const StadiumBorder(),
+                      color: Ink.tint,
+                      shadows: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .12),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
                     ),
-                    child: const SizedBox.expand(),
                   ),
                 ),
               ),
-              Row(
-                children: [
-                  for (int i = 0; i < labels.length; i++)
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => onChanged(i),
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: Gold.s5,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                if (icons != null &&
-                                    i < icons!.length &&
-                                    icons![i] != null) ...[
-                                  AnimatedSwitcher(
-                                    duration: Gold.fast,
-                                    child: Icon(
-                                      icons![i],
-                                      key: ValueKey<bool>(selected == i),
-                                      size: Gold.t21,
-                                      color: selected == i
-                                          ? Colors.white
-                                          : Ink.faint,
-                                    ),
-                                  ),
-                                  const SizedBox(width: Gold.s5),
-                                ],
-                                Flexible(
-                                  child: AnimatedDefaultTextStyle(
-                                    duration: Gold.base,
-                                    curve: Gold.ease,
-                                    style: TextStyle(
-                                      color: selected == i
-                                          ? Colors.white
-                                          : Ink.body,
-                                      fontWeight: selected == i
-                                          ? FontWeight.w700
-                                          : FontWeight.w700,
-                                      fontSize: Gold.t13,
-                                    ),
-                                    child: AppText(
-                                      labels[i],
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: inset),
+                child: Row(
+                  children: [
+                    for (int i = 0; i < labels.length; i++)
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          selected: selected == i,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (i != selected) {
+                                HapticFeedback.selectionClick();
+                              }
+                              onChanged(i);
+                            },
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: Gold.s5,
                                 ),
-                              ],
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (icons != null &&
+                                        i < icons!.length &&
+                                        icons![i] != null) ...[
+                                      Icon(
+                                        icons![i],
+                                        size: 17,
+                                        color: selected == i
+                                            ? Colors.white
+                                            : Ink.navy,
+                                      ),
+                                      const SizedBox(width: Gold.s5),
+                                    ],
+                                    Flexible(
+                                      child: AnimatedDefaultTextStyle(
+                                        duration: reduce
+                                            ? Duration.zero
+                                            : const Duration(milliseconds: 200),
+                                        style: TextStyle(
+                                          color: selected == i
+                                              ? Colors.white
+                                              : Ink.navy,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                          letterSpacing: -.1,
+                                        ),
+                                        child: AppText(
+                                          labels[i],
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ],
           );
@@ -2041,25 +1996,32 @@ class LiquidSegmentBar extends StatelessWidget {
   }
 }
 
-/// Shared field styling. Fields are glass-filled with concentric corners.
+/// iOS text field styling: a filled rounded field on the system fill with
+/// the field's name as a small caption above the value. The focused field
+/// takes a tint outline so the keyboard target is always clear.
 InputDecoration fieldStyle(
   String label, {
   IconData? icon,
   Widget? prefix,
   Widget? suffix,
 }) {
-  OutlineInputBorder border(Color c, double w) => GlassInputBorder(
-    borderRadius: BorderRadius.circular(Gold.r21),
+  InputBorder border(Color c, double w) => GlassInputBorder(
+    borderRadius: BorderRadius.circular(14),
     borderSide: BorderSide(color: c, width: w),
   );
 
   return InputDecoration(
     labelText: label.isEmpty ? null : ui(label),
     floatingLabelBehavior: FloatingLabelBehavior.always,
-    floatingLabelStyle: const TextStyle(
+    floatingLabelStyle: TextStyle(
       color: Ink.muted,
-      fontSize: 17,
-      fontWeight: FontWeight.w600,
+      fontSize: 15,
+      fontWeight: FontWeight.w500,
+    ),
+    labelStyle: TextStyle(
+      color: Ink.muted,
+      fontSize: 15,
+      fontWeight: FontWeight.w500,
     ),
     prefixIcon:
         prefix ??
@@ -2067,29 +2029,31 @@ InputDecoration fieldStyle(
             ? null
             : Padding(
                 padding: const EdgeInsets.only(left: Gold.s13, right: Gold.s8),
-                child: Icon(icon, size: Gold.t21, color: Ink.violet),
+                child: Icon(icon, size: 20, color: Ink.violetDeep),
               )),
     prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
     suffixIcon: suffix,
-    hintStyle: const TextStyle(
-      color: Ink.muted,
-      fontWeight: FontWeight.w600,
-      fontSize: Gold.t13,
+    hintStyle: TextStyle(
+      color: Ink.faint,
+      fontWeight: FontWeight.w400,
+      fontSize: 17,
     ),
     filled: true,
-    fillColor: Color(0x52FFFFFF),
+    fillColor: Ink.fill,
     contentPadding: const EdgeInsets.symmetric(
-      horizontal: Gold.s21,
-      vertical: Gold.s21,
+      horizontal: Gold.s16,
+      vertical: Gold.s16,
     ),
-    enabledBorder: border(Colors.white.withValues(alpha: 0.80), 1),
-    focusedBorder: border(Ink.violet, 1.6),
-    disabledBorder: border(Colors.white.withValues(alpha: 0.50), 1),
-    errorBorder: border(Ink.red.withValues(alpha: 0.70), 1.2),
-    focusedErrorBorder: border(Ink.red, 1.6),
+    enabledBorder: border(Colors.transparent, 0),
+    focusedBorder: border(Ink.violetDeep, 1.5),
+    disabledBorder: border(Colors.transparent, 0),
+    errorBorder: border(Ink.red, 1),
+    focusedErrorBorder: border(Ink.red, 1.5),
   );
 }
 
+/// A brief status message in a floating capsule, in the inverse of the
+/// current appearance so it stands apart from content.
 void snack(BuildContext context, String message) {
   final messenger = ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return;
@@ -2098,16 +2062,235 @@ void snack(BuildContext context, String message) {
     SnackBar(
       content: AppText(
         message,
-        style: const TextStyle(fontWeight: FontWeight.w700),
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          color: Ink.surface,
+        ),
       ),
       behavior: SnackBarBehavior.floating,
-      backgroundColor: Ink.navy.withValues(alpha: 0.94),
+      backgroundColor: Ink.navy.withValues(alpha: 0.92),
       elevation: 0,
-      margin: const EdgeInsets.all(Gold.s21),
-      duration: const Duration(milliseconds: 2600),
-      shape: const SquircleBorder(radius: Gold.r21),
+      margin: const EdgeInsets.all(Gold.s16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      duration: const Duration(milliseconds: 3200),
+      shape: const StadiumBorder(),
     ),
   );
+}
+
+/// A sheet in the iOS style: rounded top corners, a grabber, swipe down to
+/// dismiss, and elevated cells (distinct in Dark Mode). [backgroundColor] is
+/// accepted for call-site compatibility; sheets use the elevated colour.
+Future<T?> showAppleSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool isScrollControlled = false,
+  bool? showDragHandle,
+  Color? backgroundColor,
+}) => showModalBottomSheet<T>(
+  context: context,
+  isScrollControlled: isScrollControlled,
+  showDragHandle: showDragHandle ?? true,
+  backgroundColor: Ink.sheet,
+  builder: (sheetContext) => ElevatedSurface(child: builder(sheetContext)),
+);
+
+/// The iOS alert: a centred title and message on an elevated rounded panel,
+/// with full-width buttons separated by hairlines (side by side for two,
+/// stacked otherwise). Buttons keep their callbacks; a filled button becomes
+/// the bold default action and a red one the destructive action.
+/// [shape] and [backgroundColor] are accepted for call-site compatibility.
+class AppleAlert extends StatelessWidget {
+  final Widget? title;
+  final Widget? content;
+  final List<Widget>? actions;
+  final ShapeBorder? shape;
+  final Color? backgroundColor;
+
+  const AppleAlert({
+    super.key,
+    this.title,
+    this.content,
+    this.actions,
+    this.shape,
+    this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final buttons = [
+      for (final a in actions ?? const <Widget>[]) _alertAction(a),
+    ];
+    final side = buttons.length == 2;
+    return Dialog(
+      backgroundColor: Ink.sheetCell,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 34, vertical: 24),
+      shape: const RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(30)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ElevatedSurface(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (title != null)
+                        DefaultTextStyle.merge(
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: Ink.navy,
+                            height: 1.3,
+                          ),
+                          child: title!,
+                        ),
+                      if (title != null && content != null)
+                        const SizedBox(height: 6),
+                      if (content != null)
+                        DefaultTextStyle.merge(
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Ink.body,
+                            height: 1.35,
+                          ),
+                          child: content!,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (buttons.isNotEmpty) ...[
+                Divider(height: .5, thickness: .5, color: Ink.separator),
+                if (side)
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: buttons[0]),
+                        VerticalDivider(
+                          width: .5,
+                          thickness: .5,
+                          color: Ink.separator,
+                        ),
+                        Expanded(child: buttons[1]),
+                      ],
+                    ),
+                  )
+                else
+                  for (final (i, b) in buttons.indexed) ...[
+                    if (i > 0)
+                      Divider(height: .5, thickness: .5, color: Ink.separator),
+                    b,
+                  ],
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _alertAction(Widget action) {
+    if (action is! ButtonStyleButton) return action;
+    final style = action.style;
+    final tones = {
+      style?.backgroundColor?.resolve(const <WidgetState>{}),
+      style?.foregroundColor?.resolve(const <WidgetState>{}),
+    };
+    final destructive = tones.any(
+      (c) =>
+          c != null &&
+          (c == Ink.red ||
+              c == Ink.redText ||
+              (c.r > .7 && c.g < .45 && c.b < .45)),
+    );
+    final primary = action is FilledButton || action is ElevatedButton;
+    return _AlertButton(
+      onPressed: action.onPressed,
+      destructive: destructive,
+      primary: primary && !destructive,
+      child: action.child ?? const SizedBox.shrink(),
+    );
+  }
+}
+
+class _AlertButton extends StatefulWidget {
+  final VoidCallback? onPressed;
+  final bool destructive, primary;
+  final Widget child;
+  const _AlertButton({
+    required this.onPressed,
+    required this.destructive,
+    required this.primary,
+    required this.child,
+  });
+  @override
+  State<_AlertButton> createState() => _AlertButtonState();
+}
+
+class _AlertButtonState extends State<_AlertButton> {
+  bool _down = false;
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    final color = !enabled
+        ? Ink.faint
+        : widget.destructive
+        ? Ink.red
+        : Ink.violetDeep;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onPressed,
+        onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+        onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+        onTapCancel: enabled ? () => setState(() => _down = false) : null,
+        child: ColoredBox(
+          color: _down ? Ink.fill : Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 50),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: IconTheme.merge(
+                  data: IconThemeData(color: color, size: 20),
+                  child: DefaultTextStyle.merge(
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 17,
+                      color: color,
+                      fontWeight: widget.primary
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                    child: widget.child,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // =============================================================================
@@ -2120,14 +2303,15 @@ void snack(BuildContext context, String message) {
 class RanchIcon extends StatelessWidget {
   final String type;
   final double size;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? Ink.violet;
   final double weight;
 
   const RanchIcon({
     super.key,
     required this.type,
     this.size = Gold.s21,
-    this.color = Ink.violet,
+    this._color,
     this.weight = 2.0,
   });
 
@@ -2151,11 +2335,14 @@ class _RanchIconPainter extends CustomPainter {
   final Color color;
   final double weight;
 
-  const _RanchIconPainter({
+  /// Some icon parts use system tints, which differ in Dark Mode.
+  final bool dark;
+
+  _RanchIconPainter({
     required this.type,
     required this.color,
     required this.weight,
-  });
+  }) : dark = Ink.dark;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2396,7 +2583,10 @@ class _RanchIconPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RanchIconPainter old) =>
-      old.type != type || old.color != color || old.weight != weight;
+      old.dark != dark ||
+      old.type != type ||
+      old.color != color ||
+      old.weight != weight;
 }
 
 // =============================================================================
@@ -3444,7 +3634,7 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       ),
       'sub': '${txt(r, 'date')} \u2022 ${txt(r, 'time')}',
       'value': '${numv(r, 'quantity').toStringAsFixed(1)} L',
-      'icon': Icons.water_drop_rounded,
+      'icon': CupertinoIcons.drop_fill,
       'color': Ink.violet,
       'sort': activityDate(r),
       '_box': 'milk_records',
@@ -3470,7 +3660,7 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'sub': '${txt(r, 'date')} \u2022 ${txt(r, 'target', 'Stock')}',
       'value':
           '${numv(r, 'quantityKg').toStringAsFixed(1)} ${stockUnit(txt(r, 'item'))}',
-      'icon': Icons.inventory_2_rounded,
+      'icon': CupertinoIcons.cube_box_fill,
       'color': txt(r, 'movement') == 'Usage' ? Ink.amber : Ink.green,
       'sort': activityDate(r),
       '_box': 'stock_records',
@@ -3482,7 +3672,7 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'title': '${txt(r, 'name')} expense',
       'sub': '${txt(r, 'date')} \u2022 Others',
       'value': money(numv(r, 'amount')),
-      'icon': Icons.receipt_long_rounded,
+      'icon': CupertinoIcons.doc_text_fill,
       'color': Ink.red,
       'sort': activityDate(r),
       '_box': 'expense_records',
@@ -3497,7 +3687,7 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       ),
       'sub': '${txt(r, 'type')} \u2022 ${txt(r, 'date')}',
       'value': money(numv(r, 'cost')),
-      'icon': Icons.medical_services_rounded,
+      'icon': CupertinoIcons.bandage_fill,
       'color': Ink.blue,
       'sort': activityDate(r),
       '_box': 'doctor_records',
@@ -3509,7 +3699,7 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       'title': '${txt(r, 'category', 'Sale')} saved',
       'sub': '${txt(r, 'animal')} \u2022 ${txt(r, 'date')}',
       'value': money(numv(r, 'amount')),
-      'icon': Icons.sell_rounded,
+      'icon': CupertinoIcons.tag_fill,
       'color': Ink.green,
       'sort': activityDate(r),
       '_box': 'sale_records',
@@ -3547,7 +3737,7 @@ Future<String?> chooseDate(BuildContext context, String current) async {
     lastDate: DateTime(2100),
     builder: (context, child) => Theme(
       data: Theme.of(context).copyWith(
-        colorScheme: const ColorScheme.light(
+        colorScheme: ColorScheme.light(
           primary: Ink.violet,
           onPrimary: Colors.white,
           onSurface: Ink.navy,
@@ -4595,13 +4785,10 @@ class BrowserNotificationService {
               ..showSnackBar(
                 SnackBar(
                   behavior: SnackBarBehavior.floating,
-                  backgroundColor: Ink.violetDeep,
+                  backgroundColor: Ink.tint,
                   content: Row(
                     children: [
-                      const Icon(
-                        Icons.notifications_active_rounded,
-                        color: Colors.white,
-                      ),
+                      const Icon(CupertinoIcons.bell_fill, color: Colors.white),
                       const SizedBox(width: Gold.s13),
                       Expanded(
                         child: AppText(
@@ -5365,8 +5552,9 @@ const AssetImage vimoIconImage = AssetImage('assets/images/vimo_logo_v3.png');
 /// The house cow mark, used wherever a cow or calf needs representing.
 class CowMark extends StatelessWidget {
   final double size;
-  final Color color;
-  const CowMark({super.key, this.size = Gold.s21, this.color = Ink.violetDeep});
+  final Color? _color;
+  Color get color => _color ?? Ink.violetDeep;
+  const CowMark({super.key, this.size = Gold.s21, this._color});
 
   @override
   Widget build(BuildContext context) {
@@ -5405,13 +5593,10 @@ class CowMark extends StatelessWidget {
 /// control already provides the Liquid Glass surface.
 class CowHoofIcon extends StatelessWidget {
   final double size;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? Ink.violetDeep;
 
-  const CowHoofIcon({
-    super.key,
-    this.size = Gold.s34,
-    this.color = Ink.violetDeep,
-  });
+  const CowHoofIcon({super.key, this.size = Gold.s34, this._color});
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
@@ -5827,7 +6012,10 @@ class RankAuraPainter extends CustomPainter {
 /// The gilt wreath drawn around an animal celebrating a birthday.
 class BirthdayWreathPainter extends CustomPainter {
   final Animation<double> animation;
-  BirthdayWreathPainter({required this.animation}) : super(repaint: animation);
+  final bool dark;
+  BirthdayWreathPainter({required this.animation})
+    : dark = Ink.dark,
+      super(repaint: animation);
 
   double get progress => animation.value;
 
@@ -5891,7 +6079,7 @@ class BirthdayWreathPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant BirthdayWreathPainter old) =>
-      old.animation != animation;
+      old.dark != dark || old.animation != animation;
 }
 
 // -----------------------------------------------------------------------------
@@ -6002,7 +6190,7 @@ class _AnimalAvatarState extends State<AnimalAvatar>
             padding: EdgeInsets.all(pad * Gold.minor),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.50),
+              color: Ink.surface.withValues(alpha: 0.50),
               border: Border.all(
                 color: birthday
                     ? Ink.goldLight
@@ -6033,7 +6221,7 @@ class _AnimalAvatarState extends State<AnimalAvatar>
                   gradient: const LinearGradient(
                     colors: [Ink.goldLight, Ink.goldBase],
                   ),
-                  border: Border.all(color: Colors.white, width: 1),
+                  border: Border.all(color: Ink.surface, width: 1),
                 ),
                 child: Icon(
                   Icons.cake_rounded,
@@ -6073,8 +6261,8 @@ class SectionTitle extends StatelessWidget {
           Expanded(
             child: AppText(
               title,
-              style: const TextStyle(
-                fontSize: Gold.t21,
+              style: TextStyle(
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: Ink.navy,
                 letterSpacing: -0.3,
@@ -6086,7 +6274,7 @@ class SectionTitle extends StatelessWidget {
               onTap: onAction,
               child: AppText(
                 action!,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.violetDeep,
                   fontWeight: FontWeight.w600,
                   fontSize: Gold.t13,
@@ -6107,7 +6295,7 @@ Widget panel(String title, String emptyMessage, List<Widget> children) {
       children: [
         AppText(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: Gold.t16,
             fontWeight: FontWeight.w700,
             color: Ink.navy,
@@ -6117,7 +6305,7 @@ Widget panel(String title, String emptyMessage, List<Widget> children) {
         if (children.isEmpty)
           AppText(
             emptyMessage,
-            style: const TextStyle(color: Ink.muted, fontSize: Gold.t13),
+            style: TextStyle(color: Ink.muted, fontSize: Gold.t13),
           )
         else
           ...children,
@@ -6163,7 +6351,7 @@ class InfoRow extends StatelessWidget {
           Expanded(
             child: AppText(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Ink.body,
                 fontSize: Gold.t13,
@@ -6172,7 +6360,7 @@ class InfoRow extends StatelessWidget {
           ),
           AppText(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w700,
               color: Ink.navy,
               fontSize: Gold.t16,
@@ -6228,7 +6416,7 @@ class DataCard extends StatelessWidget {
               children: [
                 AppText(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
@@ -6236,7 +6424,7 @@ class DataCard extends StatelessWidget {
                 ),
                 AppText(
                   subtitle,
-                  style: const TextStyle(color: Ink.muted, fontSize: Gold.t11),
+                  style: TextStyle(color: Ink.muted, fontSize: Gold.t11),
                 ),
                 const SizedBox(height: Gold.s8),
                 Wrap(
@@ -6255,7 +6443,7 @@ class DataCard extends StatelessWidget {
                         ),
                         child: AppText(
                           d,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: Gold.t11,
                             fontWeight: FontWeight.w700,
                             color: Ink.body,
@@ -6309,13 +6497,15 @@ class SyncChip extends StatelessWidget {
             ),
             color: light
                 ? Colors.white.withValues(alpha: 0.18)
-                : Colors.white.withValues(alpha: 0.66),
+                : Ink.surface.withValues(alpha: 0.66),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                enabled ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                enabled
+                    ? CupertinoIcons.checkmark_seal
+                    : CupertinoIcons.wifi_slash,
                 size: Gold.t13,
                 color: fg,
               ),
@@ -6376,7 +6566,7 @@ class EmptyNote extends StatelessWidget {
           AppText(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w700,
               color: Ink.navy,
               fontSize: Gold.t16,
@@ -6387,7 +6577,7 @@ class EmptyNote extends StatelessWidget {
             AppText(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Ink.muted,
                 fontSize: Gold.t13,
                 height: 1.4,
@@ -6404,16 +6594,430 @@ class EmptyNote extends StatelessWidget {
 //  PART 7 — APP ROOT, AUTH, SHELL
 // =============================================================================
 
-class VimoApp extends StatelessWidget {
+/// Apple's text styles (Large Title … Caption 2) on the iOS type scale. Apple
+/// platforms use the system font (San Francisco); elsewhere Inter, whose
+/// letterforms and metrics are closest to it, with matching optical tracking.
+ThemeData appleTheme() {
+  final dark = Ink.dark;
+  final apple =
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+  final family = apple ? null : 'Inter';
+  final typography = Typography.material2021(platform: TargetPlatform.iOS);
+  TextStyle style(double size, FontWeight weight, double tracking) => TextStyle(
+    fontSize: size,
+    fontWeight: weight,
+    letterSpacing: apple ? null : tracking,
+    fontFamily: family,
+  );
+  final text = (dark ? typography.white : typography.black)
+      .merge(
+        TextTheme(
+          displayLarge: style(34, FontWeight.w700, -.7),
+          displayMedium: style(28, FontWeight.w700, -.5),
+          displaySmall: style(22, FontWeight.w700, -.35),
+          headlineLarge: style(34, FontWeight.w700, -.7),
+          headlineMedium: style(28, FontWeight.w700, -.5),
+          headlineSmall: style(22, FontWeight.w700, -.35),
+          titleLarge: style(20, FontWeight.w600, -.3),
+          titleMedium: style(17, FontWeight.w600, -.25),
+          titleSmall: style(15, FontWeight.w600, -.15),
+          bodyLarge: style(17, FontWeight.w400, -.25),
+          bodyMedium: style(15, FontWeight.w400, -.15),
+          bodySmall: style(13, FontWeight.w400, -.05),
+          labelLarge: style(17, FontWeight.w600, -.25),
+          labelMedium: style(13, FontWeight.w500, -.05),
+          labelSmall: style(11, FontWeight.w500, .05),
+        ),
+      )
+      .apply(bodyColor: Ink.body, displayColor: Ink.navy, fontFamily: family);
+  final scheme = ColorScheme(
+    brightness: dark ? Brightness.dark : Brightness.light,
+    primary: Ink.violetDeep,
+    onPrimary: Colors.white,
+    primaryContainer: Ink.lavender,
+    onPrimaryContainer: Ink.violetDeep,
+    secondary: Ink.violet,
+    onSecondary: Colors.white,
+    tertiary: Ink.blue,
+    onTertiary: Colors.white,
+    error: Ink.red,
+    onError: Colors.white,
+    surface: Ink.surface,
+    onSurface: Ink.navy,
+    onSurfaceVariant: Ink.muted,
+    surfaceContainerLowest: Ink.surface,
+    surfaceContainerLow: Ink.surface,
+    surfaceContainer: Ink.surface,
+    surfaceContainerHigh: Ink.surface2,
+    surfaceContainerHighest: Ink.surface2,
+    outline: Ink.separator,
+    outlineVariant: Ink.separator,
+    inverseSurface: Ink.navy,
+    onInverseSurface: Ink.surface,
+    inversePrimary: Ink.violet,
+    shadow: Colors.black,
+    scrim: Colors.black,
+    surfaceTint: Colors.transparent,
+  );
+  const cupertinoMotion = PageTransitionsTheme(
+    builders: {
+      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+    },
+  );
+  final barScrolled = Color.alphaBlend(Ink.bar, Ink.canvasTop);
+  return ThemeData(
+    useMaterial3: true,
+    // iOS behaviour everywhere: back swipe, bouncing lists, adaptive
+    // switches, centred bar titles and iOS text selection.
+    platform: TargetPlatform.iOS,
+    brightness: dark ? Brightness.dark : Brightness.light,
+    fontFamily: family,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: Ink.canvasTop,
+    canvasColor: Ink.canvasTop,
+    cardColor: Ink.surface,
+    dividerColor: Ink.separator,
+    textTheme: text,
+    primaryTextTheme: text,
+    pageTransitionsTheme: cupertinoMotion,
+    splashFactory: NoSplash.splashFactory,
+    highlightColor: Colors.transparent,
+    hoverColor: Ink.fill,
+    iconTheme: IconThemeData(size: 22, color: Ink.violetDeep),
+    cupertinoOverrideTheme: CupertinoThemeData(
+      brightness: dark ? Brightness.dark : Brightness.light,
+      primaryColor: Ink.violetDeep,
+      scaffoldBackgroundColor: Ink.canvasTop,
+      barBackgroundColor: Ink.bar,
+      textTheme: CupertinoTextThemeData(
+        primaryColor: Ink.violetDeep,
+        textStyle: TextStyle(
+          fontFamily: family,
+          fontSize: 17,
+          letterSpacing: apple ? null : -.25,
+          color: Ink.navy,
+        ),
+      ),
+    ),
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: Ink.violetDeep,
+      selectionColor: Ink.violetDeep.withValues(alpha: .28),
+      selectionHandleColor: Ink.violetDeep,
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: liquidActionStyle(primary: true),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: liquidActionStyle(primary: true),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: liquidActionStyle()),
+    textButtonTheme: TextButtonThemeData(
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.disabled)
+              ? Ink.faint
+              : Ink.violetDeep,
+        ),
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.pressed)
+              ? Ink.fill
+              : Colors.transparent,
+        ),
+        minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
+        shape: const WidgetStatePropertyAll(StadiumBorder()),
+        splashFactory: NoSplash.splashFactory,
+        textStyle: WidgetStatePropertyAll(
+          TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w500,
+            letterSpacing: apple ? null : -.25,
+          ),
+        ),
+      ),
+    ),
+    iconButtonTheme: IconButtonThemeData(style: plainIconStyle()),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: Ink.tint,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      shape: const CircleBorder(),
+    ),
+    inputDecorationTheme: InputDecorationThemeData(
+      filled: true,
+      fillColor: Ink.fill,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: const GlassInputBorder(),
+      enabledBorder: const GlassInputBorder(),
+      disabledBorder: const GlassInputBorder(),
+      focusedBorder: GlassInputBorder(
+        borderSide: BorderSide(color: Ink.violetDeep, width: 1.5),
+      ),
+      errorBorder: GlassInputBorder(borderSide: BorderSide(color: Ink.red)),
+      focusedErrorBorder: GlassInputBorder(
+        borderSide: BorderSide(color: Ink.red, width: 1.5),
+      ),
+      labelStyle: TextStyle(color: Ink.muted, fontSize: 15),
+      floatingLabelStyle: TextStyle(color: Ink.muted, fontSize: 15),
+      hintStyle: TextStyle(color: Ink.faint, fontSize: 17),
+      prefixIconColor: Ink.muted,
+      suffixIconColor: Ink.muted,
+    ),
+    chipTheme: ChipThemeData(
+      showCheckmark: false,
+      checkmarkColor: Colors.white,
+      backgroundColor: Ink.fill,
+      selectedColor: Ink.tint,
+      disabledColor: Ink.fill,
+      secondarySelectedColor: Ink.violetDeep,
+      labelStyle: TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+        color: WidgetStateColor.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) ? Colors.white : Ink.navy,
+        ),
+      ),
+      secondaryLabelStyle: const TextStyle(
+        fontSize: 15,
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+      ),
+      side: BorderSide.none,
+      shape: const StadiumBorder(),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      iconTheme: IconThemeData(color: Ink.violetDeep, size: 18),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(
+        backgroundColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) ? Ink.tint : Ink.fill,
+        ),
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) ? Colors.white : Ink.navy,
+        ),
+        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        side: const WidgetStatePropertyAll(BorderSide.none),
+        shape: const WidgetStatePropertyAll(StadiumBorder()),
+        minimumSize: const WidgetStatePropertyAll(Size(44, 40)),
+        textStyle: const WidgetStatePropertyAll(
+          TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+      ),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: const WidgetStatePropertyAll(Colors.white),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.selected) ? Ink.tint : Ink.fillStrong,
+      ),
+      trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? Ink.tint
+            : Colors.transparent,
+      ),
+      checkColor: const WidgetStatePropertyAll(Colors.white),
+      side: BorderSide(color: Ink.faint, width: 1.5),
+      shape: const CircleBorder(),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.selected) ? Ink.violetDeep : Ink.faint,
+      ),
+    ),
+    sliderTheme: SliderThemeData(
+      activeTrackColor: Ink.tint,
+      inactiveTrackColor: Ink.fillStrong,
+      thumbColor: Colors.white,
+      overlayColor: Colors.transparent,
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: Ink.violetDeep,
+      linearTrackColor: Ink.fill,
+      circularTrackColor: Colors.transparent,
+      linearMinHeight: 4,
+    ),
+    listTileTheme: ListTileThemeData(
+      iconColor: Ink.violetDeep,
+      textColor: Ink.navy,
+      titleTextStyle: TextStyle(
+        fontFamily: family,
+        fontSize: 17,
+        fontWeight: FontWeight.w400,
+        letterSpacing: apple ? null : -.25,
+        color: Ink.navy,
+      ),
+      subtitleTextStyle: TextStyle(
+        fontFamily: family,
+        fontSize: 15,
+        letterSpacing: apple ? null : -.15,
+        color: Ink.muted,
+      ),
+      minTileHeight: 44,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: Ink.sheet,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      shape: const RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(30)),
+      ),
+      titleTextStyle: TextStyle(
+        fontFamily: family,
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: Ink.navy,
+      ),
+      contentTextStyle: TextStyle(
+        fontFamily: family,
+        fontSize: 15,
+        color: Ink.body,
+      ),
+      barrierColor: Colors.black.withValues(alpha: .35),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: Ink.sheet,
+      modalBackgroundColor: Ink.sheet,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      modalElevation: 0,
+      showDragHandle: true,
+      dragHandleColor: Ink.faint.withValues(alpha: .55),
+      dragHandleSize: const Size(36, 5),
+      modalBarrierColor: Colors.black.withValues(alpha: .35),
+      shape: const RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
+      ),
+      clipBehavior: Clip.antiAlias,
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: Ink.sheetCell,
+      surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: .25),
+      shape: const RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(18)),
+      ),
+      textStyle: TextStyle(fontFamily: family, fontSize: 17, color: Ink.navy),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Ink.navy.withValues(alpha: .92),
+      contentTextStyle: TextStyle(
+        fontFamily: family,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        color: Ink.surface,
+      ),
+      shape: const StadiumBorder(),
+      elevation: 0,
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: ShapeDecoration(
+        shape: const StadiumBorder(),
+        color: Ink.navy.withValues(alpha: .9),
+      ),
+      textStyle: TextStyle(
+        fontFamily: family,
+        fontSize: 13,
+        color: Ink.surface,
+      ),
+    ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: WidgetStateColor.resolveWith(
+        (states) => states.contains(WidgetState.scrolledUnder)
+            ? barScrolled
+            : Ink.canvasTop,
+      ),
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: .5,
+      shadowColor: Colors.black.withValues(alpha: dark ? .9 : .35),
+      centerTitle: true,
+      foregroundColor: Ink.navy,
+      iconTheme: IconThemeData(color: Ink.violetDeep, size: 24),
+      actionsIconTheme: IconThemeData(color: Ink.violetDeep, size: 24),
+      titleTextStyle: TextStyle(
+        fontFamily: family,
+        color: Ink.navy,
+        fontWeight: FontWeight.w600,
+        fontSize: 17,
+        letterSpacing: apple ? null : -.25,
+      ),
+      systemOverlayStyle: dark
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
+    ),
+    actionIconTheme: ActionIconThemeData(
+      backButtonIconBuilder: (_) =>
+          const Icon(CupertinoIcons.chevron_back, size: 28),
+      closeButtonIconBuilder: (_) => const Icon(CupertinoIcons.xmark, size: 22),
+    ),
+    dividerTheme: DividerThemeData(
+      space: 0,
+      thickness: 0,
+      color: Ink.separator,
+    ),
+  );
+}
+
+class VimoApp extends StatefulWidget {
   const VimoApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final text = Typography.material2021().black.apply(
-      bodyColor: Ink.body,
-      displayColor: Ink.navy,
-    );
+  State<VimoApp> createState() => _VimoAppState();
+}
 
+class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
+  static bool get _systemDark =>
+      WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+      Brightness.dark;
+
+  @override
+  void initState() {
+    super.initState();
+    Ink.dark = _systemDark;
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Follows the system Light / Dark setting while the app is open. Colours
+  /// are read when widgets build, so every element rebuilds once.
+  @override
+  void didChangePlatformBrightness() {
+    final dark = _systemDark;
+    if (dark == Ink.dark) return;
+    Ink.dark = dark;
+    if (!mounted) return;
+    setState(() {});
+    void mark(Element element) {
+      element.markNeedsBuild();
+      element.visitChildren(mark);
+    }
+
+    WidgetsBinding.instance.rootElement?.visitChildren(mark);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return ValueListenableBuilder<Box<dynamic>>(
       valueListenable: Hive.box(
         'settings',
@@ -6429,12 +7033,18 @@ class VimoApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         builder: (context, child) => _GlobalSwipeBack(
           child: AnnotatedRegion<SystemUiOverlayStyle>(
-            value: const SystemUiOverlayStyle(
+            value: SystemUiOverlayStyle(
               statusBarColor: Colors.transparent,
-              statusBarIconBrightness: Brightness.dark,
-              statusBarBrightness: Brightness.light,
-              systemNavigationBarColor: Ink.canvasLow,
-              systemNavigationBarIconBrightness: Brightness.dark,
+              statusBarIconBrightness: Ink.dark
+                  ? Brightness.light
+                  : Brightness.dark,
+              statusBarBrightness: Ink.dark
+                  ? Brightness.dark
+                  : Brightness.light,
+              systemNavigationBarColor: Ink.canvasTop,
+              systemNavigationBarIconBrightness: Ink.dark
+                  ? Brightness.light
+                  : Brightness.dark,
               systemNavigationBarDividerColor: Colors.transparent,
             ),
             child: ColoredBox(
@@ -6444,107 +7054,7 @@ class VimoApp extends StatelessWidget {
           ),
         ),
         scrollBehavior: const _SmoothScroll(),
-        theme: ThemeData(
-          useMaterial3: true,
-          scaffoldBackgroundColor: Ink.canvasTop,
-          textTheme: text,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Ink.violet,
-            primary: Ink.violet,
-            surface: Ink.canvasTop,
-          ),
-          splashFactory: NoSplash.splashFactory,
-          highlightColor: Colors.transparent,
-          iconTheme: const IconThemeData(size: 22, color: Ink.violetDeep),
-          filledButtonTheme: FilledButtonThemeData(
-            style: liquidActionStyle(primary: true),
-          ),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-            style: liquidActionStyle(),
-          ),
-          iconButtonTheme: IconButtonThemeData(
-            style: liquidActionStyle().copyWith(
-              minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
-            ),
-          ),
-          inputDecorationTheme: const InputDecorationThemeData(
-            filled: true,
-            fillColor: Color(0x52FFFFFF),
-            contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-            border: GlassInputBorder(),
-            enabledBorder: GlassInputBorder(),
-            focusedBorder: GlassInputBorder(
-              borderSide: BorderSide(color: Ink.violetDeep, width: 1.5),
-            ),
-            errorBorder: GlassInputBorder(
-              borderSide: BorderSide(color: Ink.red),
-            ),
-            labelStyle: TextStyle(color: Ink.muted, fontSize: 14),
-            hintStyle: TextStyle(color: Ink.muted, fontSize: 15),
-          ),
-          chipTheme: ChipThemeData(
-            showCheckmark: false,
-            backgroundColor: Colors.white.withValues(alpha: .44),
-            selectedColor: Ink.violetDeep,
-            secondaryLabelStyle: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-            side: const BorderSide(color: Color(0xCFFFFFFF)),
-            shape: const SquircleBorder(radius: 15),
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
-            labelStyle: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Ink.body,
-            ),
-          ),
-          segmentedButtonTheme: SegmentedButtonThemeData(
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.resolveWith(
-                (states) => states.contains(WidgetState.selected)
-                    ? Ink.violetDeep
-                    : Colors.white.withValues(alpha: .40),
-              ),
-              foregroundColor: WidgetStateProperty.resolveWith(
-                (states) => states.contains(WidgetState.selected)
-                    ? Colors.white
-                    : Ink.body,
-              ),
-              side: const WidgetStatePropertyAll(
-                BorderSide(color: Color(0xCFFFFFFF)),
-              ),
-              shape: const WidgetStatePropertyAll(SquircleBorder(radius: 20)),
-              minimumSize: const WidgetStatePropertyAll(Size(44, 48)),
-            ),
-          ),
-          dialogTheme: const DialogThemeData(
-            backgroundColor: Color(0xF0F5F7FC),
-            surfaceTintColor: Colors.transparent,
-            shape: SquircleBorder(
-              radius: 30,
-              side: BorderSide(color: Colors.white),
-            ),
-          ),
-          bottomSheetTheme: const BottomSheetThemeData(
-            backgroundColor: Color(0xF0F5F7FC),
-            surfaceTintColor: Colors.transparent,
-            shape: SquircleBorder(radius: 30),
-          ),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            elevation: 0,
-            centerTitle: true,
-            foregroundColor: Ink.navy,
-            titleTextStyle: TextStyle(
-              color: Ink.navy,
-              fontWeight: FontWeight.w600,
-              fontSize: Gold.t16,
-            ),
-          ),
-          dividerTheme: const DividerThemeData(space: 0, thickness: 0),
-        ),
+        theme: appleTheme(),
         home: const AuthGate(),
       ),
     );
@@ -6692,7 +7202,7 @@ class _AccessLoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Ink.canvasTop,
       body: Center(
         child: Column(
@@ -6700,7 +7210,7 @@ class _AccessLoadingScreen extends StatelessWidget {
           children: [
             BrandMark(size: Gold.s89),
             SizedBox(height: Gold.s21),
-            CircularProgressIndicator(color: Ink.violet),
+            CupertinoActivityIndicator(),
             SizedBox(height: Gold.s13),
             AppText(
               'Checking ranch access...',
@@ -6733,20 +7243,20 @@ class _AccessErrorScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   EmptyNote(
-                    icon: Icons.cloud_off_rounded,
+                    icon: CupertinoIcons.wifi_slash,
                     title: 'Could not verify ranch access',
                     message: message,
                   ),
                   const SizedBox(height: Gold.s21),
                   LiquidButton(
                     label: 'Try Again',
-                    icon: Icons.refresh_rounded,
+                    icon: CupertinoIcons.arrow_clockwise,
                     onPressed: onRetry,
                   ),
                   const SizedBox(height: Gold.s13),
                   GhostButton(
                     label: 'Sign Out',
-                    icon: Icons.logout_rounded,
+                    icon: CupertinoIcons.square_arrow_right,
                     onPressed: () => FirebaseAuth.instance.signOut(),
                   ),
                 ],
@@ -7020,14 +7530,14 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                   AppText(
                     bi('Set up your ranch', 'உங்கள் தொழுவத்தை அமைக்கவும்'),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Ink.navy,
-                      fontSize: Gold.t27,
+                      fontSize: 28,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: Gold.s5),
-                  const AppText(
+                  AppText(
                     'Create a private ranch or request access to an existing one.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Ink.muted, height: 1.45),
@@ -7049,7 +7559,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       textCapitalization: TextCapitalization.words,
                       decoration: fieldStyle(
                         bi('Ranch / business name', 'தொழுவம் / வணிகப் பெயர்'),
-                        icon: Icons.home_work_outlined,
+                        icon: CupertinoIcons.house,
                       ),
                     ),
                     const SizedBox(height: Gold.s13),
@@ -7058,7 +7568,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       textCapitalization: TextCapitalization.words,
                       decoration: fieldStyle(
                         'Admin Name',
-                        icon: Icons.admin_panel_settings_outlined,
+                        icon: CupertinoIcons.shield,
                       ),
                     ),
                     const SizedBox(height: Gold.s13),
@@ -7067,7 +7577,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       textCapitalization: TextCapitalization.words,
                       decoration: fieldStyle(
                         'Place (optional)',
-                        icon: Icons.place_outlined,
+                        icon: CupertinoIcons.location,
                       ),
                     ),
                     const SizedBox(height: Gold.s13),
@@ -7082,8 +7592,8 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       elevation: 0.5,
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.phone_iphone_rounded,
+                          Icon(
+                            CupertinoIcons.device_phone_portrait,
                             color: Ink.violet,
                             size: Gold.t21,
                           ),
@@ -7097,7 +7607,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                                     'Use my mobile number for the ranch',
                                     'தொழுவத்திற்கும் என் மொபைல் எண்',
                                   ),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: Ink.navy,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -7105,7 +7615,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                                 if (accountPhone.isNotEmpty)
                                   Text(
                                     accountPhone,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: Ink.muted,
                                       fontSize: Gold.t13,
                                     ),
@@ -7115,7 +7625,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                           ),
                           CupertinoSwitch(
                             value: _sameNumber && accountPhone.isNotEmpty,
-                            activeTrackColor: Ink.violetDeep,
+                            activeTrackColor: Ink.tint,
                             onChanged: accountPhone.isEmpty
                                 ? null
                                 : (v) => setState(() => _sameNumber = v),
@@ -7135,7 +7645,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                                 keyboardType: TextInputType.phone,
                                 decoration: fieldStyle(
                                   bi('Ranch mobile number', 'தொழுவ மொபைல் எண்'),
-                                  icon: Icons.phone_rounded,
+                                  icon: CupertinoIcons.phone_fill,
                                 ),
                               ),
                             ),
@@ -7147,7 +7657,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       textCapitalization: TextCapitalization.none,
                       decoration: fieldStyle(
                         'Create Ranch ID',
-                        icon: Icons.alternate_email_rounded,
+                        icon: CupertinoIcons.at,
                       ),
                       onChanged: _checkAvailability,
                     ),
@@ -7168,7 +7678,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       textCapitalization: TextCapitalization.words,
                       decoration: fieldStyle(
                         'Your Name',
-                        icon: Icons.person_outline_rounded,
+                        icon: CupertinoIcons.person,
                       ),
                     ),
                     const SizedBox(height: Gold.s13),
@@ -7195,7 +7705,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                     ),
                     const SizedBox(height: Gold.s13),
                     const EmptyNote(
-                      icon: Icons.approval_rounded,
+                      icon: CupertinoIcons.checkmark_seal,
                       title: 'Admin approval required',
                       message:
                           'The ranch admin will receive your request. Ranch data stays private until they approve it.',
@@ -7205,8 +7715,8 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                   LiquidButton(
                     label: _mode == 0 ? 'Create Ranch' : 'Request to Join',
                     icon: _mode == 0
-                        ? Icons.add_home_work_rounded
-                        : Icons.send_rounded,
+                        ? CupertinoIcons.house_alt
+                        : CupertinoIcons.paperplane_fill,
                     busy: _busy,
                     onPressed: _submit,
                   ),
@@ -7214,7 +7724,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                     const SizedBox(height: Gold.s13),
                     GhostButton(
                       label: 'Sign Out',
-                      icon: Icons.logout_rounded,
+                      icon: CupertinoIcons.square_arrow_right,
                       onPressed: () => FirebaseAuth.instance.signOut(),
                     ),
                   ],
@@ -7281,7 +7791,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
   Future<void> _cancel() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         shape: const SquircleBorder(radius: Gold.r27),
         title: const AppText(
           'Cancel join request?',
@@ -7297,7 +7807,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const AppText(
+            child: AppText(
               'Cancel Request',
               style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
             ),
@@ -7352,18 +7862,18 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                           padding: const EdgeInsets.all(Gold.s34),
                           child: Column(
                             children: [
-                              const Icon(
-                                Icons.hourglass_top_rounded,
+                              Icon(
+                                CupertinoIcons.hourglass,
                                 color: Ink.violet,
                                 size: Gold.t34,
                               ),
                               const SizedBox(height: Gold.s13),
-                              const AppText(
+                              AppText(
                                 'Waiting for admin approval',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Ink.navy,
-                                  fontSize: Gold.t21,
+                                  fontSize: 22,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -7371,13 +7881,13 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                               AppText(
                                 'Ranch ID  ${widget.ranch}',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Ink.violetDeep,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: Gold.s8),
-                              const AppText(
+                              AppText(
                                 'You will automatically enter the ranch after an admin accepts your request.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
@@ -7387,16 +7897,14 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                               ),
                               if (_activating) ...[
                                 const SizedBox(height: Gold.s21),
-                                const CircularProgressIndicator(
-                                  color: Ink.violet,
-                                ),
+                                CupertinoActivityIndicator(),
                               ],
                               if (_activationError.isNotEmpty) ...[
                                 const SizedBox(height: Gold.s13),
                                 AppText(
                                   _activationError,
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: Ink.red,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -7404,7 +7912,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 const SizedBox(height: Gold.s13),
                                 GhostButton(
                                   label: 'Try Again',
-                                  icon: Icons.refresh_rounded,
+                                  icon: CupertinoIcons.arrow_clockwise,
                                   onPressed: () {
                                     setState(
                                       () => _activationAttempted = false,
@@ -7418,7 +7926,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                         const SizedBox(height: Gold.s21),
                         GhostButton(
                           label: 'Cancel Request',
-                          icon: Icons.close_rounded,
+                          icon: CupertinoIcons.xmark,
                           color: Ink.red,
                           onPressed: _cancel,
                         ),
@@ -7572,7 +8080,7 @@ class _LoginScreenState extends State<LoginScreen> {
           // Backdrop: a soft landscape wash rather than a full-strength photo.
           // The artwork carries no lettering, so nothing competes with the
           // brand lockup, and the veil keeps the sign-in card legible.
-          const Positioned.fill(child: ColoredBox(color: Ink.canvasTop)),
+          Positioned.fill(child: ColoredBox(color: Ink.canvasTop)),
           Positioned.fill(
             child: Opacity(
               opacity: 0.42,
@@ -7623,7 +8131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           AppText(
                             appName(),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: Gold.t34,
                               fontWeight: FontWeight.w700,
                               color: Ink.navy,
@@ -7634,7 +8142,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           AppText(
                             farmName(),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: Gold.t16,
                               fontWeight: FontWeight.w600,
                               color: Ink.muted,
@@ -7652,16 +8160,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         elevation: 1.3,
                         child: Column(
                           children: [
-                            const AppText(
+                            AppText(
                               'Welcome Back!',
                               style: TextStyle(
-                                fontSize: Gold.t21,
+                                fontSize: 22,
                                 fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                               ),
                             ),
                             const SizedBox(height: Gold.s3),
-                            const AppText(
+                            AppText(
                               'Sign in to continue',
                               style: TextStyle(
                                 color: Ink.muted,
@@ -7676,7 +8184,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               textInputAction: TextInputAction.next,
                               decoration: fieldStyle(
                                 'Email',
-                                icon: Icons.mail_outline_rounded,
+                                icon: CupertinoIcons.mail,
                               ),
                             ),
                             const SizedBox(height: Gold.s13),
@@ -7688,13 +8196,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               onSubmitted: (_) => _signIn(),
                               decoration: fieldStyle(
                                 'Password',
-                                icon: Icons.lock_outline_rounded,
+                                icon: CupertinoIcons.lock,
                                 suffix: IconButton(
                                   splashRadius: Gold.s21,
                                   icon: Icon(
                                     _obscure
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
+                                        ? CupertinoIcons.eye
+                                        : CupertinoIcons.eye_slash,
                                     color: Ink.muted,
                                     size: Gold.t21,
                                   ),
@@ -7718,14 +8226,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                   selected: _remember,
-                                  selectedColor: Ink.violetDeep,
+                                  selectedColor: Ink.tint,
                                   onSelected: (v) =>
                                       setState(() => _remember = v),
                                 ),
                                 const Spacer(),
                                 GestureDetector(
                                   onTap: _resetPassword,
-                                  child: const AppText(
+                                  child: AppText(
                                     'Forgot password?',
                                     style: TextStyle(
                                       fontSize: Gold.t11,
@@ -7752,7 +8260,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const AppText(
+                          AppText(
                             'New here? ',
                             style: TextStyle(
                               color: Ink.muted,
@@ -7763,7 +8271,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             onTap: _busy
                                 ? null
                                 : () => push(context, const SignupScreen()),
-                            child: const AppText(
+                            child: AppText(
                               'Create Account',
                               style: TextStyle(
                                 color: Ink.violetDeep,
@@ -7952,7 +8460,7 @@ class RanchNotificationButton extends StatelessWidget {
         icon: Badge(
           isLabelVisible: count > 0,
           label: AppText('$count'),
-          child: const Icon(Icons.notifications_outlined, size: 26),
+          child: const Icon(CupertinoIcons.bell, size: 26),
         ),
       );
     },
@@ -8141,7 +8649,7 @@ class NotificationHistoryScreen extends StatelessWidget {
           child: entries.isEmpty
               ? const Center(
                   child: EmptyNote(
-                    icon: Icons.notifications_none_rounded,
+                    icon: CupertinoIcons.bell,
                     title: 'No notifications',
                     message: '',
                   ),
@@ -8178,8 +8686,8 @@ class NotificationHistoryScreen extends StatelessWidget {
                               children: [
                                 Icon(
                                   notificationRead(n)
-                                      ? Icons.notifications_none_rounded
-                                      : Icons.notifications_active_rounded,
+                                      ? CupertinoIcons.bell
+                                      : CupertinoIcons.bell_fill,
                                   color: notificationRead(n)
                                       ? Ink.faint
                                       : Ink.violetDeep,
@@ -8192,20 +8700,20 @@ class NotificationHistoryScreen extends StatelessWidget {
                                     children: [
                                       AppText(
                                         txt(n, 'title'),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontWeight: FontWeight.w700,
                                           color: Ink.navy,
                                         ),
                                       ),
                                       AppText(
                                         txt(n, 'message'),
-                                        style: const TextStyle(color: Ink.body),
+                                        style: TextStyle(color: Ink.body),
                                       ),
                                       AppText(
                                         '${txt(n, 'date')} • ${txt(n, 'time')}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: Ink.faint,
-                                          fontSize: Gold.t10,
+                                          fontSize: 11,
                                         ),
                                       ),
                                     ],
@@ -8318,7 +8826,7 @@ Future<void> editRecentEntry(
   final saved = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
-      builder: (context, updateDialog) => AlertDialog(
+      builder: (context, updateDialog) => AppleAlert(
         shape: const SquircleBorder(radius: Gold.r27),
         backgroundColor: const Color(0xF2FFFFFF),
         title: AppText(tamilUi ? 'பதிவை மாற்று' : 'Edit entry'),
@@ -8453,7 +8961,7 @@ Future<void> addRecentEntryNote(
   final controller = TextEditingController(text: txt(record, 'notes'));
   final note = await showDialog<String>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
+    builder: (dialogContext) => AppleAlert(
       shape: const SquircleBorder(radius: Gold.r27),
       backgroundColor: const Color(0xF2FFFFFF),
       title: AppText(tamilUi ? 'Note சேர்க்க' : 'Add note'),
@@ -8558,7 +9066,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, updateDialog) => AlertDialog(
+        builder: (context, updateDialog) => AppleAlert(
           title: const AppText('Edit entry'),
           content: SizedBox(
             width: 360,
@@ -8721,7 +9229,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
               subtitle: AppText(
                 '${txt(record, 'date')} ${txt(record, 'time')}',
               ),
-              trailing: const Icon(Icons.edit_outlined),
+              trailing: const Icon(CupertinoIcons.pencil),
               onTap: () => editEntry(txt(record, '_box'), record['_key']),
             ),
           ),
@@ -8846,7 +9354,7 @@ class _MainShellState extends State<MainShell> {
         id: _NavItem(id, navLabel(id), navIcon(id), switch (id) {
           'Ranch' => CupertinoIcons.house,
           'Vendor' => CupertinoIcons.drop,
-          'Reports' => Icons.analytics_outlined,
+          'Reports' => CupertinoIcons.chart_bar,
           'Social' => CupertinoIcons.globe,
           'Chat' => CupertinoIcons.chat_bubble_2,
           _ => CupertinoIcons.person,
@@ -8893,10 +9401,11 @@ class _MainShellState extends State<MainShell> {
                 : navLabel(order[tab]),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
               letterSpacing: -0.4,
+              color: Ink.navy,
             ),
           ),
           actions: [
@@ -8945,7 +9454,7 @@ class _MainShellState extends State<MainShell> {
                 child: Container(
                   width: 52,
                   height: 52,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Ink.violetDeep,
                   ),
@@ -8983,6 +9492,9 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+/// The iOS tab bar: a floating Liquid Glass capsule. Symbols and single-word
+/// labels are monochrome; the selected tab takes the app tint over a soft
+/// capsule that glides between tabs.
 class _NavBar extends StatelessWidget {
   final int index;
   final List<_NavItem> items;
@@ -8996,49 +9508,35 @@ class _NavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Glass(
-      radius: Gold.r27,
-      blur: Gold.s34,
-      opacity: 0.72,
-      elevation: 1.1,
-      padding: const EdgeInsets.symmetric(
-        horizontal: Gold.s8,
-        vertical: Gold.s8,
-      ),
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final selected = index.clamp(0, items.length - 1);
+    return LiquidGlass(
+      radius: 34,
+      padding: const EdgeInsets.all(5),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final cellWidth = constraints.maxWidth / items.length;
           return SizedBox(
-            height: Gold.s55,
+            height: 58,
             child: Stack(
               children: [
                 AnimatedPositioned(
-                  duration: MediaQuery.disableAnimationsOf(context)
+                  duration: reduce
                       ? Duration.zero
-                      : const Duration(milliseconds: 300),
+                      : const Duration(milliseconds: 320),
                   curve: Curves.easeOutCubic,
-                  left: index.clamp(0, items.length - 1) * cellWidth,
+                  left: selected * cellWidth,
                   width: cellWidth,
                   top: 0,
                   bottom: 0,
                   child: IgnorePointer(
-                    child: Glass(
-                      radius: Gold.r21,
-                      blur: Gold.s21,
-                      opacity: 0.58,
-                      specular: 1.2,
-                      elevation: 0.72,
-                      padding: EdgeInsets.zero,
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Ink.violetDeep,
-                          Ink.violetDeep,
-                          Ink.violetDeep,
-                        ],
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: const StadiumBorder(),
+                        color: Ink.dark
+                            ? Colors.white.withValues(alpha: .12)
+                            : Colors.black.withValues(alpha: .06),
                       ),
-                      child: const SizedBox.expand(),
                     ),
                   ),
                 ),
@@ -9048,8 +9546,11 @@ class _NavBar extends StatelessWidget {
                       Expanded(
                         child: _NavCell(
                           item: items[i],
-                          active: index == i,
-                          onTap: () => onChanged(i),
+                          active: selected == i,
+                          onTap: () {
+                            if (selected != i) HapticFeedback.selectionClick();
+                            onChanged(i);
+                          },
                         ),
                       ),
                   ],
@@ -9084,43 +9585,43 @@ class _NavCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? Colors.white : Ink.faint;
-    return TextButton(
-      style: TextButton.styleFrom(
-        padding: EdgeInsets.zero,
-        minimumSize: const Size(44, 55),
-        foregroundColor: color,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      onPressed: onTap,
-      child: AnimatedContainer(
-        duration: Gold.base,
-        curve: Gold.ease,
-        padding: const EdgeInsets.symmetric(vertical: Gold.s5),
+    final color = active ? Ink.violetDeep : Ink.navy;
+    return Semantics(
+      button: true,
+      selected: active,
+      label: item.label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
-              height: Gold.s27,
+              height: 28,
               child: item.id == 'Vendor'
-                  ? MilkVendorIcon(size: 31, color: color)
+                  ? MilkVendorIcon(size: 30, color: color)
                   : item.active == null
-                  ? CowHoofIcon(size: 28, color: color)
+                  ? CowHoofIcon(size: 26, color: color)
                   : Icon(
                       active ? item.active : item.idle,
-                      size: 25,
+                      size: 24,
                       color: color,
                     ),
             ),
-            const SizedBox(height: Gold.s3),
-            Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: Gold.t10,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                color: color,
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  letterSpacing: .05,
+                  color: color,
+                ),
               ),
             ),
           ],
@@ -9180,13 +9681,9 @@ class DashboardScreen extends StatelessWidget {
         type: 'sell',
         label: 'Sell',
         value: '${saleRows().length}',
-        icon: const Icon(
-          Icons.point_of_sale_rounded,
-          size: 29,
-          color: Ink.green,
-        ),
-        ghost: const Icon(
-          Icons.point_of_sale_rounded,
+        icon: Icon(CupertinoIcons.creditcard_fill, size: 29, color: Ink.green),
+        ghost: Icon(
+          CupertinoIcons.creditcard_fill,
           size: Gold.s89,
           color: Ink.green,
         ),
@@ -9197,8 +9694,8 @@ class DashboardScreen extends StatelessWidget {
         type: 'calves',
         label: 'Calves',
         value: '${animalsBy('calf').length}',
-        icon: const CowMark(size: 29, color: Ink.amber),
-        ghost: const CowMark(size: Gold.s89, color: Ink.amber),
+        icon: CowMark(size: 29, color: Ink.amber),
+        ghost: CowMark(size: Gold.s89, color: Ink.amber),
         accent: Ink.amber,
         onTap: onOpenCard,
       ),
@@ -9206,9 +9703,9 @@ class DashboardScreen extends StatelessWidget {
         type: 'stock',
         label: 'Stock',
         value: '${stockRows().length}',
-        icon: const Icon(Icons.inventory_2_rounded, size: 29, color: Ink.blue),
-        ghost: const Icon(
-          Icons.inventory_2_rounded,
+        icon: Icon(CupertinoIcons.cube_box_fill, size: 29, color: Ink.blue),
+        ghost: Icon(
+          CupertinoIcons.cube_box_fill,
           size: Gold.s89,
           color: Ink.blue,
         ),
@@ -9219,13 +9716,9 @@ class DashboardScreen extends StatelessWidget {
         type: 'pregnant',
         label: 'Pregnant Cows',
         value: '${pregnantCowCount()}',
-        icon: const Icon(
-          Icons.favorite_border_rounded,
-          size: 29,
-          color: Ink.violetDeep,
-        ),
-        ghost: const Icon(
-          Icons.favorite_border_rounded,
+        icon: Icon(CupertinoIcons.heart, size: 29, color: Ink.violetDeep),
+        ghost: Icon(
+          CupertinoIcons.heart,
           size: Gold.s89,
           color: Ink.violetDeep,
         ),
@@ -9236,9 +9729,13 @@ class DashboardScreen extends StatelessWidget {
         type: 'reports',
         label: 'Reports',
         value: '${reportDetailRows('income', 'This Month').length}',
-        icon: const Icon(Icons.analytics_rounded, size: 29, color: Ink.amber),
-        ghost: const Icon(
-          Icons.analytics_rounded,
+        icon: Icon(
+          CupertinoIcons.chart_bar_alt_fill,
+          size: 29,
+          color: Ink.amber,
+        ),
+        ghost: Icon(
+          CupertinoIcons.chart_bar_alt_fill,
           size: Gold.s89,
           color: Ink.amber,
         ),
@@ -9339,9 +9836,9 @@ class PendingJoinRequestsBanner extends StatelessWidget {
             radius: Gold.r21,
             padding: const EdgeInsets.all(Gold.s13),
             onTap: () => push(context, const FamilyUsersScreen()),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.sync_problem_rounded, color: Ink.amber),
+                Icon(CupertinoIcons.exclamationmark_circle, color: Ink.amber),
                 SizedBox(width: Gold.s13),
                 Expanded(
                   child: AppText(
@@ -9368,24 +9865,27 @@ class PendingJoinRequestsBanner extends StatelessWidget {
           gradient: LinearGradient(
             colors: [
               Ink.violet.withValues(alpha: 0.18),
-              Colors.white.withValues(alpha: 0.80),
+              Ink.surface.withValues(alpha: 0.80),
             ],
           ),
           onTap: () => push(context, const FamilyUsersScreen()),
           child: Row(
             children: [
-              const Icon(Icons.person_add_alt_1_rounded, color: Ink.violetDeep),
+              Icon(
+                CupertinoIcons.person_badge_plus_fill,
+                color: Ink.violetDeep,
+              ),
               const SizedBox(width: Gold.s13),
               Expanded(
                 child: AppText(
                   '$count ${count == 1 ? 'person wants' : 'people want'} to join your ranch',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.navy,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const AppText(
+              AppText(
                 'Review',
                 style: TextStyle(
                   color: Ink.violetDeep,
@@ -9430,7 +9930,7 @@ class _ActivityRow extends StatelessWidget {
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(
-              entry['icon'] as IconData? ?? Icons.circle,
+              entry['icon'] as IconData? ?? CupertinoIcons.circle_fill,
               size: Gold.t21,
               color: color,
             ),
@@ -9447,7 +9947,7 @@ class _ActivityRow extends StatelessWidget {
                         '${entry['title']}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: Gold.t13,
                           color: Ink.navy,
@@ -9457,7 +9957,7 @@ class _ActivityRow extends StatelessWidget {
                     const SizedBox(width: Gold.s8),
                     AppText(
                       '${entry['value']}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: Gold.t13,
                         color: Ink.navy,
@@ -9469,7 +9969,7 @@ class _ActivityRow extends StatelessWidget {
                   '${entry['sub']}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Ink.muted, fontSize: Gold.t10),
+                  style: TextStyle(color: Ink.muted, fontSize: 11),
                 ),
               ],
             ),
@@ -9480,7 +9980,7 @@ class _ActivityRow extends StatelessWidget {
             padding: EdgeInsets.zero,
             splashRadius: 20,
             elevation: 6,
-            color: const Color(0xF2FFFFFF),
+            color: Ink.sheetCell,
             shape: const SquircleBorder(radius: Gold.r21),
             icon: Icon(
               CupertinoIcons.ellipsis,
@@ -9596,7 +10096,7 @@ class _RanchHero extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: Gold.t27,
+                          fontSize: 28,
                           fontWeight: FontWeight.w700,
                           height: 1.1,
                           letterSpacing: -0.5,
@@ -9738,7 +10238,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                             colors: [Ink.goldLight, Ink.goldBase],
                           ),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
@@ -9765,7 +10265,7 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: Gold.t27,
+                          fontSize: 28,
                           fontWeight: FontWeight.w700,
                           height: 1.1,
                           letterSpacing: -0.5,
@@ -9902,7 +10402,7 @@ class _StatTile extends StatelessWidget {
                     shape: SquircleBorder(
                       radius: Gold.concentric(Gold.r27, Gold.s16),
                     ),
-                    color: Colors.white.withValues(alpha: 0.72),
+                    color: Ink.surface.withValues(alpha: 0.72),
                     shadows: [
                       BoxShadow(
                         color: accent.withValues(alpha: 0.16),
@@ -9918,7 +10418,7 @@ class _StatTile extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: Gold.t13,
                     color: Ink.muted,
                     fontWeight: FontWeight.w700,
@@ -9927,8 +10427,8 @@ class _StatTile extends StatelessWidget {
                 const SizedBox(height: Gold.s2),
                 FlowText(
                   value,
-                  style: const TextStyle(
-                    fontSize: 29,
+                  style: TextStyle(
+                    fontSize: 28,
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     height: 1,
@@ -9994,7 +10494,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
           if (canEditAnimals)
             IconButton(
               tooltip: ui('Add'),
-              icon: const Icon(CupertinoIcons.plus, color: Ink.violetDeep),
+              icon: Icon(CupertinoIcons.plus, color: Ink.violetDeep),
               onPressed: () => guardedPush(
                 context,
                 allowed: canEditAnimals,
@@ -10059,8 +10559,8 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                           tamilUi
                               ? 'மாடுகள் மற்றும் கன்றுகள்'
                               : 'Cows & Calves',
-                          style: const TextStyle(
-                            fontSize: Gold.t27,
+                          style: TextStyle(
+                            fontSize: 28,
                             fontWeight: FontWeight.w700,
                             color: Ink.navy,
                             height: 1.1,
@@ -10084,8 +10584,8 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                             'Only admins and editors can add cows or calves',
                         page: AddAnimalScreen(type: type),
                       ),
-                      child: const Icon(
-                        Icons.add_rounded,
+                      child: Icon(
+                        CupertinoIcons.add,
                         color: Ink.violetDeep,
                         size: Gold.t21,
                       ),
@@ -10115,7 +10615,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
             Reveal(
               index: reveal++,
               child: EmptyNote(
-                icon: Icons.add_circle_outline_rounded,
+                icon: CupertinoIcons.add_circled,
                 title: tamilUi
                     ? (isCow ? 'மாடுகள் இல்லை' : 'கன்றுகள் இல்லை')
                     : (isCow ? 'No cows yet' : 'No calves yet'),
@@ -10166,9 +10666,9 @@ class _BackButton extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.74),
+            color: Ink.surface.withValues(alpha: 0.74),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.84),
+              color: Ink.surface.withValues(alpha: 0.84),
               width: 1,
             ),
             boxShadow: [
@@ -10186,8 +10686,8 @@ class _BackButton extends StatelessWidget {
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: () => Navigator.of(context).maybePop(),
-              child: const Icon(
-                Icons.arrow_back_rounded,
+              child: Icon(
+                CupertinoIcons.chevron_back,
                 size: Gold.t21,
                 color: Ink.violetDeep,
               ),
@@ -10302,11 +10802,11 @@ class _RankedCowCardState extends State<RankedCowCard>
                                     padding: const EdgeInsets.all(3),
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.white.withValues(
+                                      color: Ink.surface.withValues(
                                         alpha: 0.62,
                                       ),
                                       border: Border.all(
-                                        color: Colors.white.withValues(
+                                        color: Ink.surface.withValues(
                                           alpha: 0.86,
                                         ),
                                         width: 1,
@@ -10345,12 +10845,12 @@ class _RankedCowCardState extends State<RankedCowCard>
                                   shape: SquircleBorder(
                                     radius: Gold.r13,
                                     side: BorderSide(
-                                      color: Colors.white.withValues(
+                                      color: Ink.surface.withValues(
                                         alpha: 0.74,
                                       ),
                                     ),
                                   ),
-                                  color: Colors.white.withValues(alpha: 0.84),
+                                  color: Ink.surface.withValues(alpha: 0.84),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -10359,8 +10859,8 @@ class _RankedCowCardState extends State<RankedCowCard>
                                       name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: Gold.t21,
+                                      style: TextStyle(
+                                        fontSize: 22,
                                         fontWeight: FontWeight.w700,
                                         color: Ink.navy,
                                         height: 1.15,
@@ -10369,7 +10869,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                     ),
                                     AppText(
                                       '#${txt(a, 'id')}',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: Gold.t13,
                                         fontWeight: FontWeight.w600,
                                         color: Ink.navy,
@@ -10388,7 +10888,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                           ),
                                           color: Ink.lavender,
                                         ),
-                                        child: const Row(
+                                        child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
@@ -10400,7 +10900,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                             AppText(
                                               'Birthday today',
                                               style: TextStyle(
-                                                fontSize: Gold.t10,
+                                                fontSize: 11,
                                                 fontWeight: FontWeight.w700,
                                                 color: Ink.violetDeep,
                                               ),
@@ -10456,19 +10956,15 @@ class _StatStrip extends StatelessWidget {
       decoration: ShapeDecoration(
         shape: SquircleBorder(
           radius: Gold.r13,
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.55)),
+          side: BorderSide(color: Ink.surface.withValues(alpha: 0.55)),
         ),
-        color: Colors.white.withValues(alpha: 0.84),
+        color: Ink.surface.withValues(alpha: 0.84),
       ),
       child: Row(
         children: [
           for (int i = 0; i < entries.length; i++) ...[
             if (i > 0)
-              Container(
-                width: 1,
-                height: Gold.s21,
-                color: Ink.navy.withValues(alpha: 0.13),
-              ),
+              Container(width: 1, height: Gold.s21, color: Ink.separator),
             Expanded(
               child: Column(
                 children: [
@@ -10477,7 +10973,7 @@ class _StatStrip extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: Gold.t10,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: Ink.navy.withValues(alpha: 0.78),
                     ),
@@ -10487,7 +10983,7 @@ class _StatStrip extends StatelessWidget {
                     entries[i].value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: Gold.t13,
                       fontWeight: FontWeight.w700,
                       color: Ink.navy,
@@ -10535,7 +11031,7 @@ class PlainAnimalCard extends StatelessWidget {
                         txt(a, 'name'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: Gold.t16,
                           fontWeight: FontWeight.w700,
                           color: Ink.navy,
@@ -10545,7 +11041,7 @@ class PlainAnimalCard extends StatelessWidget {
                     const SizedBox(width: Gold.s5),
                     AppText(
                       '#${txt(a, 'id')}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: Gold.t11,
                         fontWeight: FontWeight.w700,
                         color: Ink.faint,
@@ -10564,7 +11060,7 @@ class PlainAnimalCard extends StatelessWidget {
                   ].join(' \u2022 '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.muted,
                     fontSize: Gold.t11,
                     fontWeight: FontWeight.w700,
@@ -10577,9 +11073,9 @@ class PlainAnimalCard extends StatelessWidget {
                       : '${bi('Age', 'வயது')} ${ageShort(a) == '--' ? bi('unknown', 'தெரியாது') : ageShort(a)} \u2022 ${bi('Mother', 'தாய்')} ${ui(txt(a, 'mother', 'Unknown Mother'))}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.muted,
-                    fontSize: Gold.t10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -10602,15 +11098,15 @@ class PlainAnimalCard extends StatelessWidget {
                 child: AppText(
                   tamilUi && status == 'Active' ? 'பண்ணையில்' : status,
                   style: TextStyle(
-                    fontSize: Gold.t10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: statusColor(status),
                   ),
                 ),
               ),
               const SizedBox(height: Gold.s5),
-              const Icon(
-                Icons.chevron_right_rounded,
+              Icon(
+                CupertinoIcons.chevron_right,
                 color: Ink.faint,
                 size: Gold.t21,
               ),
@@ -10668,28 +11164,28 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
     txt(animal, 'arrivalDate'),
     'Joined the ranch',
     txt(animal, 'source', 'Animal added'),
-    Icons.home_work_rounded,
+    CupertinoIcons.house_fill,
     Ink.blue,
   );
   add(
     txt(animal, 'pregnancyStartDate'),
     'Pregnancy started',
     txt(animal, 'pregnancyInjection', 'Pregnancy recorded'),
-    Icons.favorite_rounded,
+    CupertinoIcons.heart_fill,
     Ink.amber,
   );
   add(
     txt(animal, 'milkingStopDate'),
     'Milking stopped',
     'Dry period started',
-    Icons.pause_circle_rounded,
+    CupertinoIcons.pause_circle_fill,
     Ink.red,
   );
   add(
     txt(animal, 'milkingStartDate'),
     'Milking started',
     'Lactation period started',
-    Icons.water_drop_rounded,
+    CupertinoIcons.drop_fill,
     Ink.violet,
   );
   for (final r in doctorRows().where((r) => txt(r, 'cow') == name)) {
@@ -10697,7 +11193,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(r, 'date'),
       txt(r, 'type', 'Treatment'),
       '${txt(r, 'problem', 'Health entry')}${numv(r, 'cost') > 0 ? ' • ${money(numv(r, 'cost'))}' : ''}',
-      Icons.medical_services_rounded,
+      CupertinoIcons.bandage_fill,
       Ink.blue,
       time: txt(r, 'time'),
     );
@@ -10728,7 +11224,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(month, 'date'),
       ui('Milk'),
       bi('Monthly milk total', 'மாத பால் மொத்தம்'),
-      Icons.water_drop_rounded,
+      CupertinoIcons.drop_fill,
       Ink.violet,
       trailing: '${numv(month, 'quantity').toStringAsFixed(1)} L',
       displayDate: monthLabel(txt(month, 'date')),
@@ -10745,7 +11241,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       months == 1
           ? bi('Maintained for 1 month', '1 மாதம் தொடர்ந்தது')
           : bi('Maintained for $months months', '$months மாதங்கள் தொடர்ந்தது'),
-      Icons.workspace_premium_rounded,
+      CupertinoIcons.rosette,
       rankColor(rank),
       trailing: '$months ${months == 1 ? 'month' : 'months'}',
       displayDate: monthLabel(
@@ -10760,7 +11256,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(r, 'date'),
       'Expense',
       '${txt(r, 'name')} • ${money(numv(r, 'amount'))}',
-      Icons.receipt_long_rounded,
+      CupertinoIcons.doc_text_fill,
       Ink.red,
       time: txt(r, 'time'),
     );
@@ -10772,7 +11268,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(r, 'date'),
       'Purchase expense',
       money(numv(r, 'amount')),
-      Icons.shopping_cart_rounded,
+      CupertinoIcons.cart_fill,
       Ink.red,
       time: txt(r, 'time'),
     );
@@ -10782,7 +11278,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(r, 'date'),
       'Income / Sale',
       '${txt(r, 'category', 'Sale')} • ${money(numv(r, 'amount'))}',
-      Icons.payments_rounded,
+      CupertinoIcons.money_dollar_circle_fill,
       Ink.green,
       time: txt(r, 'time'),
     );
@@ -10792,7 +11288,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(r, 'date'),
       'Loss recorded',
       '${txt(r, 'reason')} • ${money(numv(r, 'cost'))}',
-      Icons.warning_amber_rounded,
+      CupertinoIcons.exclamationmark_triangle_fill,
       Ink.red,
       time: txt(r, 'time'),
     );
@@ -10906,7 +11402,7 @@ class _TimelineEvent extends StatelessWidget {
                   const SizedBox(height: Gold.s3),
                   AppText(
                     txt(event, 'detail'),
-                    style: const TextStyle(color: Ink.body),
+                    style: TextStyle(color: Ink.body),
                   ),
                   const SizedBox(height: Gold.s5),
                   AppText(
@@ -10914,7 +11410,7 @@ class _TimelineEvent extends StatelessWidget {
                     style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.w600,
-                      fontSize: Gold.t10,
+                      fontSize: 11,
                     ),
                   ),
                 ],
@@ -10968,7 +11464,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             body: const Shell(
               child: Center(
                 child: EmptyNote(
-                  icon: Icons.search_off_rounded,
+                  icon: CupertinoIcons.search,
                   title: 'Animal not found',
                   message: 'This record may have been removed or synced away.',
                 ),
@@ -11113,8 +11609,8 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: Gold.t27,
+                        style: TextStyle(
+                          fontSize: 28,
                           fontWeight: FontWeight.w700,
                           color: Ink.navy,
                           letterSpacing: -0.4,
@@ -11132,7 +11628,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                       ),
                       child: AppText(
                         '#${txt(a, 'id')}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Ink.violetDeep,
                           fontWeight: FontWeight.w700,
                           fontSize: Gold.t13,
@@ -11153,19 +11649,19 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   ].join(' \u2022 '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.muted,
                     fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontSize: 15,
                   ),
                 ),
                 AppText(
                   '${bi('Age', 'வயது')} ${ageTextLocal(a)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    fontSize: 14,
+                    fontSize: 15,
                     color: Ink.body,
                   ),
                 ),
@@ -11187,7 +11683,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         color: rankColor(rank),
                       ),
                     if (isBirthdayToday(a))
-                      const _Chip(label: 'Birthday today', color: Ink.violet),
+                      _Chip(label: 'Birthday today', color: Ink.violet),
                   ],
                 ),
               ],
@@ -11236,7 +11732,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: Ink.muted,
               fontSize: 12,
               fontWeight: FontWeight.w700,
@@ -11247,8 +11743,8 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 18,
+            style: TextStyle(
+              fontSize: 17,
               fontWeight: FontWeight.w700,
               color: Ink.navy,
             ),
@@ -11304,7 +11800,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 : null,
             child: Row(
               children: [
-                const Icon(Icons.help_outline_rounded, color: Ink.violet),
+                Icon(CupertinoIcons.question_circle, color: Ink.violet),
                 const SizedBox(width: Gold.s13),
                 Expanded(
                   child: Text(
@@ -11312,7 +11808,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                       'Choose what this bull calf is raised for to track its training and work.',
                       'பயிற்சி, வேலைகளைக் கண்காணிக்க இந்தக் காளைக் கன்றின் பயன்பாட்டைத் தேர்வு செய்யவும்.',
                     ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Ink.body,
                       fontWeight: FontWeight.w600,
                       height: 1.4,
@@ -11328,7 +11824,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           InfoRow(
             title: bi('Growth', 'வளர்ச்சி'),
             value: maleReadiness(a)!,
-            icon: Icons.trending_up_rounded,
+            icon: CupertinoIcons.arrow_up_right,
             color: Ink.green,
           ),
           const SizedBox(height: Gold.s13),
@@ -11345,7 +11841,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               _metric(
                 'Today Milk',
                 '${cowMilkToday(name).toStringAsFixed(1)} L',
-                Icons.water_drop_rounded,
+                CupertinoIcons.drop_fill,
                 Ink.violet,
               ),
               _metric(
@@ -11353,13 +11849,13 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 milkForCow.isEmpty
                     ? 'No record'
                     : '${lastMilk.toStringAsFixed(1)} L',
-                Icons.history_rounded,
+                CupertinoIcons.clock,
                 Ink.amber,
               ),
               _metric(
                 'This Month',
                 '${cowMilkForPeriod(name, 'This Month').toStringAsFixed(1)} L',
-                Icons.calendar_month_rounded,
+                CupertinoIcons.calendar,
                 Ink.green,
               ),
               _metric(
@@ -11375,7 +11871,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         InfoRow(
           title: 'Last Doctor Visit',
           value: lastDoctor(name),
-          icon: Icons.medical_services_rounded,
+          icon: CupertinoIcons.bandage_fill,
           color: Ink.blue,
         ),
         if (!male && pregnantDate.isNotEmpty) ...[
@@ -11386,7 +11882,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               '${daysSince(pregnantDate)} days',
               '${daysSince(pregnantDate)} நாள்',
             ),
-            icon: Icons.favorite_rounded,
+            icon: CupertinoIcons.heart_fill,
             color: Ink.amber,
           ),
         ],
@@ -11395,7 +11891,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           InfoRow(
             title: 'Milking Stopped',
             value: '${daysSince(stopDate)} days ago',
-            icon: Icons.pause_circle_rounded,
+            icon: CupertinoIcons.pause_circle_fill,
             color: Ink.red,
           ),
         ],
@@ -11408,7 +11904,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const AppText(
+                AppText(
                   'Notes',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
@@ -11419,7 +11915,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 const SizedBox(height: Gold.s5),
                 AppText(
                   txt(a, 'notes'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.body,
                     fontSize: Gold.t13,
                     height: 1.45,
@@ -11454,7 +11950,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         if (isCow && !male) ...[
           LiquidButton(
             label: tamilUi ? 'பால் பதிவு செய்' : 'Add Milk Record',
-            icon: Icons.add_rounded,
+            icon: CupertinoIcons.add,
             onPressed: () => guardedPush(
               context,
               allowed: canRecordEntries,
@@ -11466,7 +11962,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         ],
         LiquidButton(
           label: tamilUi ? 'மருத்துவர் பதிவு' : 'Add Doctor Visit',
-          icon: Icons.medical_services_rounded,
+          icon: CupertinoIcons.bandage_fill,
           start: Ink.blue,
           end: Ink.violetDeep,
           onPressed: () => guardedPush(
@@ -11480,7 +11976,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           const SizedBox(height: Gold.s13),
           LiquidButton(
             label: tamilUi ? 'பால் கறப்பதை நிறுத்து' : 'Stop Milking',
-            icon: Icons.pause_rounded,
+            icon: CupertinoIcons.pause_fill,
             start: Ink.red,
             end: const Color(0xFFA82638),
             onPressed: () async {
@@ -11549,7 +12045,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           InfoRow(
             title: 'Pregnancy Duration',
             value: '${daysSince(pregnantDate)} days',
-            icon: Icons.favorite_rounded,
+            icon: CupertinoIcons.heart_fill,
             color: Ink.violet,
           ),
         ],
@@ -11558,7 +12054,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           InfoRow(
             title: 'Milking Stop Duration',
             value: '${daysSince(stopDate)} days',
-            icon: Icons.pause_circle_rounded,
+            icon: CupertinoIcons.pause_circle_fill,
             color: Ink.red,
           ),
         ],
@@ -11566,7 +12062,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         panel('Health Records', 'No doctor records yet.', [
           for (final r in doctors)
             _RecordLine(
-              icon: Icons.medical_services_rounded,
+              icon: CupertinoIcons.bandage_fill,
               color: Ink.blue,
               title: '${txt(r, 'type')} \u2022 ${money(numv(r, 'cost'))}',
               subtitle:
@@ -11609,11 +12105,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.water_drop_rounded,
-                      color: Ink.violet,
-                      size: 28,
-                    ),
+                    Icon(CupertinoIcons.drop_fill, color: Ink.violet, size: 28),
                     const SizedBox(width: 13),
                     Expanded(
                       child: Column(
@@ -11628,23 +12120,20 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                           ),
                           AppText(
                             '${txt(r, 'date')} \u2022 ${txt(r, 'time')} \u2022 ${txt(r, 'addedBy')}',
-                            style: const TextStyle(
-                              color: Ink.muted,
-                              fontSize: 13,
-                            ),
+                            style: TextStyle(color: Ink.muted, fontSize: 13),
                           ),
                         ],
                       ),
                     ),
                     AppText(
                       '${numv(r, 'quantity').toStringAsFixed(1)} L',
-                      style: const TextStyle(
-                        fontSize: 18,
+                      style: TextStyle(
+                        fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: Ink.violetDeep,
                       ),
                     ),
-                    const Icon(Icons.chevron_right_rounded, color: Ink.faint),
+                    Icon(CupertinoIcons.chevron_right, color: Ink.faint),
                   ],
                 ),
               ),
@@ -11686,7 +12175,7 @@ class _ProfileMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_horiz_rounded, color: Ink.violetDeep),
+      icon: Icon(CupertinoIcons.ellipsis, color: Ink.violetDeep),
       shape: const SquircleBorder(radius: Gold.r21),
       color: Colors.white,
       onSelected: (value) {
@@ -11717,12 +12206,16 @@ class _ProfileMenu extends StatelessWidget {
             break;
         }
       },
-      itemBuilder: (_) => const [
+      itemBuilder: (_) => [
         PopupMenuItem(
           value: 'edit',
           child: Row(
             children: [
-              Icon(Icons.edit_rounded, size: Gold.t21, color: Ink.violetDeep),
+              Icon(
+                CupertinoIcons.pencil,
+                size: Gold.t21,
+                color: Ink.violetDeep,
+              ),
               SizedBox(width: Gold.s8),
               AppText('Edit details'),
             ],
@@ -11732,7 +12225,7 @@ class _ProfileMenu extends StatelessWidget {
           value: 'sell',
           child: Row(
             children: [
-              Icon(Icons.sell_rounded, size: Gold.t21, color: Ink.green),
+              Icon(CupertinoIcons.tag_fill, size: Gold.t21, color: Ink.green),
               SizedBox(width: Gold.s8),
               AppText('Record sale'),
             ],
@@ -11742,7 +12235,11 @@ class _ProfileMenu extends StatelessWidget {
           value: 'died',
           child: Row(
             children: [
-              Icon(Icons.warning_amber_rounded, size: Gold.t21, color: Ink.red),
+              Icon(
+                CupertinoIcons.exclamationmark_triangle_fill,
+                size: Gold.t21,
+                color: Ink.red,
+              ),
               SizedBox(width: Gold.s8),
               AppText('Record death'),
             ],
@@ -11773,7 +12270,7 @@ class _Chip extends StatelessWidget {
       child: AppText(
         label,
         style: TextStyle(
-          fontSize: Gold.t10,
+          fontSize: 11,
           fontWeight: FontWeight.w700,
           color: color,
         ),
@@ -11818,7 +12315,7 @@ class _RecordLine extends StatelessWidget {
               children: [
                 AppText(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: Gold.t13,
                     color: Ink.navy,
@@ -11827,11 +12324,7 @@ class _RecordLine extends StatelessWidget {
                 const SizedBox(height: Gold.s2),
                 AppText(
                   subtitle,
-                  style: const TextStyle(
-                    color: Ink.muted,
-                    fontSize: Gold.t10,
-                    height: 1.4,
-                  ),
+                  style: TextStyle(color: Ink.muted, fontSize: 11, height: 1.4),
                 ),
               ],
             ),
@@ -11963,7 +12456,7 @@ class _SuggestionFieldState extends State<SuggestionField> {
                     ),
                     title: AppText(
                       choices[index],
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Ink.navy,
                         fontWeight: FontWeight.w700,
                       ),
@@ -12010,15 +12503,15 @@ class DateField extends StatelessWidget {
       onTap: pick,
       decoration: fieldStyle(
         label,
-        icon: Icons.event_rounded,
+        icon: CupertinoIcons.calendar,
         suffix: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (clearable && controller.text.isNotEmpty)
               IconButton(
                 splashRadius: Gold.s21,
-                icon: const Icon(
-                  Icons.close_rounded,
+                icon: Icon(
+                  CupertinoIcons.xmark,
                   size: Gold.t21,
                   color: Ink.muted,
                 ),
@@ -12029,8 +12522,8 @@ class DateField extends StatelessWidget {
               ),
             IconButton(
               splashRadius: Gold.s21,
-              icon: const Icon(
-                Icons.calendar_month_rounded,
+              icon: Icon(
+                CupertinoIcons.calendar,
                 size: Gold.t21,
                 color: Ink.violet,
               ),
@@ -12451,9 +12944,9 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                       width: size,
                       height: size,
                       decoration: ShapeDecoration(
-                        shape: const SquircleBorder(
+                        shape: SquircleBorder(
                           radius: Gold.r55,
-                          side: BorderSide(color: Colors.white, width: 3),
+                          side: BorderSide(color: Ink.surface, width: 3),
                         ),
                         color: Ink.lavender,
                         shadows: [
@@ -12477,13 +12970,12 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Ink.violetDeep,
-                        border: Border.all(color: Colors.white, width: 3),
+                        border: Border.all(color: Ink.surface, width: 3),
                       ),
                       child: _pickingPhoto
                           ? const Padding(
                               padding: EdgeInsets.all(Gold.s8),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                              child: CupertinoActivityIndicator(
                                 color: Colors.white,
                               ),
                             )
@@ -12514,7 +13006,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               ),
               child: AppText(
                 '#$currentId',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.violetDeep,
                   fontWeight: FontWeight.w700,
                   fontSize: Gold.t13,
@@ -12530,7 +13022,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                 }),
                 child: Text(
                   bi('Remove photo', 'புகைப்படத்தை நீக்கு'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.red,
                     fontWeight: FontWeight.w700,
                     fontSize: Gold.t13,
@@ -12553,7 +13045,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: fieldStyle(
               bi('Service fee (optional)', 'கருவூட்டல் கட்டணம் (விருப்பம்)'),
-              icon: Icons.sell_outlined,
+              icon: CupertinoIcons.tag,
             ),
           ),
           const SizedBox(height: Gold.s13),
@@ -12574,7 +13066,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                       'Available for outside cows',
                       'வெளி மாடுகளுக்கும் கருவூட்டல் செய்யலாம்',
                     ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Ink.navy,
                       fontWeight: FontWeight.w600,
                     ),
@@ -12582,7 +13074,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                 ),
                 CupertinoSwitch(
                   value: _outsideService,
-                  activeTrackColor: Ink.violetDeep,
+                  activeTrackColor: Ink.tint,
                   onChanged: (v) => setState(() => _outsideService = v),
                 ),
               ],
@@ -12620,7 +13112,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               borderRadius: BorderRadius.circular(Gold.r21),
               decoration: fieldStyle(
                 bi('Pair partner (optional)', 'ஜோடி மாடு (விருப்பம்)'),
-                icon: Icons.link_rounded,
+                icon: CupertinoIcons.link,
               ),
               items: [
                 DropdownMenuItem(
@@ -12639,7 +13131,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: fieldStyle(
               bi('Usual rate per day (optional)', 'ஒரு நாள் கூலி (விருப்பம்)'),
-              icon: Icons.sell_outlined,
+              icon: CupertinoIcons.tag,
             ),
           ),
         ];
@@ -12688,10 +13180,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           controller: _name,
           textCapitalization: TextCapitalization.words,
           textInputAction: TextInputAction.next,
-          decoration: fieldStyle(
-            nameLabel,
-            icon: Icons.drive_file_rename_outline_rounded,
-          ),
+          decoration: fieldStyle(nameLabel, icon: CupertinoIcons.pencil),
         ),
         const SizedBox(height: Gold.s13),
         Glass(
@@ -12739,7 +13228,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           initialValue: _breed,
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
-          decoration: fieldStyle('Breed', icon: Icons.category_outlined),
+          decoration: fieldStyle('Breed', icon: CupertinoIcons.square_grid_2x2),
           items: [
             for (final b in breeds)
               DropdownMenuItem<String>(value: b, child: AppText(b)),
@@ -12836,7 +13325,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: fieldStyle(
               'Purchase Amount',
-              icon: Icons.payments_outlined,
+              icon: CupertinoIcons.money_dollar_circle,
             ),
           ),
         ],
@@ -12854,7 +13343,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               : (isCow
                     ? (_male ? bi('Save Bull', 'காளையைச் சேமி') : 'Save Cow')
                     : 'Save Calf'),
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           busy: _saving,
           onPressed: _save,
         ),
@@ -13024,7 +13513,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       children: [
         if (cows.isEmpty)
           const EmptyNote(
-            icon: Icons.info_outline_rounded,
+            icon: CupertinoIcons.info_circle,
             title: 'No cows yet',
             message: 'Add a cow before recording milk.',
           )
@@ -13072,7 +13561,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             tamilUi ? 'பால் அளவு (லிட்டர்)' : 'Milk Quantity (Liter)',
-            icon: Icons.water_drop_outlined,
+            icon: CupertinoIcons.drop,
           ),
         ),
       ],
@@ -13098,19 +13587,19 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                     side: BorderSide(
                       color: _stockItem == i
                           ? Colors.transparent
-                          : Colors.white.withValues(alpha: 0.80),
+                          : Ink.surface.withValues(alpha: 0.80),
                     ),
                   ),
                   gradient: _stockItem == i
-                      ? const LinearGradient(
+                      ? LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [Ink.violet, Ink.violetDeep],
                         )
                       : LinearGradient(
                           colors: [
-                            Colors.white.withValues(alpha: 0.72),
-                            Colors.white.withValues(alpha: 0.48),
+                            Ink.surface.withValues(alpha: 0.72),
+                            Ink.surface.withValues(alpha: 0.48),
                           ],
                         ),
                 ),
@@ -13154,7 +13643,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                         color: _stockItem == i
                             ? Colors.white.withValues(alpha: 0.80)
                             : Ink.muted,
-                        fontSize: Gold.t10,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -13171,7 +13660,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             tamilUi
                 ? 'பயன்படுத்திய அளவு (${stockUnit(_stockItems[_stockItem])})'
                 : 'Quantity used (${stockUnit(_stockItems[_stockItem])})',
-            icon: Icons.inventory_2_outlined,
+            icon: CupertinoIcons.cube_box,
           ),
         ),
       ],
@@ -13185,13 +13674,16 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           controller: _expenseName,
           suggestions: frequentNameSuggestions(expenseRows(), 'name'),
           label: 'Expense Name',
-          icon: Icons.receipt_long_outlined,
+          icon: CupertinoIcons.doc_text,
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _amount,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: fieldStyle('Amount', icon: Icons.payments_outlined),
+          decoration: fieldStyle(
+            'Amount',
+            icon: CupertinoIcons.money_dollar_circle,
+          ),
         ),
       ],
     );
@@ -13212,11 +13704,11 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                 ? const ['பால்', 'தீவனம்']
                 : const ['Milk', 'Stock Use', 'Others'],
             icons: tamilUi
-                ? const [Icons.water_drop_rounded, Icons.inventory_2_rounded]
+                ? const [CupertinoIcons.drop_fill, CupertinoIcons.cube_box_fill]
                 : const [
-                    Icons.water_drop_rounded,
-                    Icons.inventory_2_rounded,
-                    Icons.receipt_long_rounded,
+                    CupertinoIcons.drop_fill,
+                    CupertinoIcons.cube_box_fill,
+                    CupertinoIcons.doc_text_fill,
                   ],
             index: _mode,
             onChanged: (value) => setState(() => _mode = value),
@@ -13249,7 +13741,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             1 => tamilUi ? 'தீவனத்தை கழி' : 'Use Stock',
             _ => 'Save Other Expense',
           },
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           busy: _saving,
           onPressed: _save,
         ),
@@ -13368,7 +13860,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
         title: tamilUi ? 'மருத்துவர் பதிவு' : 'Doctor Visit',
         children: const [
           EmptyNote(
-            icon: Icons.search_off_rounded,
+            icon: CupertinoIcons.search,
             title: 'Animal not found',
             message: 'This record is no longer available.',
           ),
@@ -13392,14 +13884,14 @@ class _DoctorScreenState extends State<DoctorScreen> {
           elevation: 0.62,
           child: Row(
             children: [
-              const CowHoofIcon(size: Gold.t21, color: Ink.violet),
+              CowHoofIcon(size: Gold.t21, color: Ink.violet),
               const SizedBox(width: Gold.s13),
               Expanded(
                 child: AppText(
                   txt(animal, 'name'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
@@ -13408,7 +13900,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
               ),
               AppText(
                 '#${txt(animal, 'id')}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.muted,
                   fontWeight: FontWeight.w700,
                   fontSize: Gold.t11,
@@ -13472,7 +13964,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             tamilUi ? 'செலவு' : 'Cost',
-            icon: Icons.payments_outlined,
+            icon: CupertinoIcons.money_dollar_circle,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -13487,7 +13979,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: tamilUi ? 'பதிவை சேமி' : 'Save Doctor Visit',
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           busy: _saving,
           onPressed: _save,
         ),
@@ -13675,7 +14167,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           elevation: 0.62,
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.family_restroom_rounded,
                 color: Ink.violet,
                 size: Gold.t21,
@@ -13686,7 +14178,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
                   '${bi('Mother', 'தாய்')}  ${localizedAnimalLabel(motherName)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
@@ -13702,7 +14194,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           textCapitalization: TextCapitalization.words,
           decoration: fieldStyle(
             'Calf Name (auto if blank)',
-            icon: Icons.drive_file_rename_outline_rounded,
+            icon: CupertinoIcons.pencil,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -13710,7 +14202,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           initialValue: _breed,
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
-          decoration: fieldStyle('Breed', icon: Icons.category_outlined),
+          decoration: fieldStyle('Breed', icon: CupertinoIcons.square_grid_2x2),
           items: [
             for (final b in breeds)
               DropdownMenuItem<String>(value: b, child: AppText(b)),
@@ -13739,7 +14231,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: 'Save Newborn Calf',
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           start: Ink.green,
           end: const Color(0xFF1B7A4A),
           busy: _saving,
@@ -13818,7 +14310,7 @@ class PregnantCowsScreen extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       child: EmptyNote(
-                        icon: Icons.favorite_border_rounded,
+                        icon: CupertinoIcons.heart,
                         title: bi('No pregnant cows', 'சினை மாடுகள் இல்லை'),
                         message: bi(
                           'Record a pregnancy injection from a cow profile to see her here.',
@@ -13856,7 +14348,7 @@ class _PregnancySummary extends StatelessWidget {
         Container(
           width: Gold.s55,
           height: Gold.s55,
-          decoration: const ShapeDecoration(
+          decoration: ShapeDecoration(
             shape: SquircleBorder(radius: Gold.r21),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -13865,7 +14357,7 @@ class _PregnancySummary extends StatelessWidget {
             ),
           ),
           child: const Icon(
-            Icons.favorite_rounded,
+            CupertinoIcons.heart_fill,
             color: Colors.white,
             size: Gold.t27,
           ),
@@ -13877,7 +14369,7 @@ class _PregnancySummary extends StatelessWidget {
             children: [
               AppText(
                 '$count',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.navy,
                   fontSize: Gold.t34,
                   fontWeight: FontWeight.w800,
@@ -13889,7 +14381,7 @@ class _PregnancySummary extends StatelessWidget {
                   count == 1 ? 'Pregnant cow' : 'Pregnant cows',
                   'சினை மாடுகள்',
                 ),
-                style: const TextStyle(
+                style: TextStyle(
                   color: Ink.muted,
                   fontSize: Gold.t13,
                   fontWeight: FontWeight.w700,
@@ -13940,7 +14432,7 @@ class _PregnancyCard extends StatelessWidget {
                       txt(animal, 'name'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: Gold.t16,
                         fontWeight: FontWeight.w700,
                         color: Ink.navy,
@@ -13955,7 +14447,7 @@ class _PregnancyCard extends StatelessWidget {
                       ].join(' \u2022 '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Ink.muted,
                         fontSize: Gold.t11,
                         fontWeight: FontWeight.w700,
@@ -13964,7 +14456,7 @@ class _PregnancyCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Ink.faint),
+              Icon(CupertinoIcons.chevron_right, color: Ink.faint),
             ],
           ),
           const SizedBox(height: Gold.s13),
@@ -13983,7 +14475,7 @@ class _PregnancyCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   bi('Day $days of $total', '$total-ல் $days-வது நாள்'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.body,
                     fontSize: Gold.t13,
                     fontWeight: FontWeight.w700,
@@ -14054,10 +14546,16 @@ class _GlobalSwipeBackState extends State<_GlobalSwipeBack>
   }
 
   Offset? _start;
+  bool _pageAbove = false;
   @override
   Widget build(BuildContext context) => Listener(
     behavior: HitTestBehavior.translucent,
-    onPointerDown: (event) => _start = event.position,
+    onPointerDown: (event) {
+      _start = event.position;
+      // A pushed page has the native interactive back swipe from the leading
+      // edge; this listener only handles that edge on the root workspace.
+      _pageAbove = rootNavigatorKey.currentState?.canPop() ?? false;
+    },
     onPointerCancel: (_) => _start = null,
     onPointerUp: (event) {
       final start = _start;
@@ -14067,7 +14565,7 @@ class _GlobalSwipeBackState extends State<_GlobalSwipeBack>
       final width = MediaQuery.sizeOf(context).width;
       if (start.dx > 28 && start.dx < width - 28) return;
       final delta = event.position - start;
-      if (((start.dx <= 28 && delta.dx > 78) ||
+      if (((start.dx <= 28 && delta.dx > 78 && !_pageAbove) ||
               (start.dx >= width - 28 && delta.dx < -78)) &&
           delta.dy.abs() < 56) {
         FocusManager.instance.primaryFocus?.unfocus();
@@ -14119,7 +14617,7 @@ Future<Map<String, dynamic>?> showAddRanchCustomer(BuildContext context) async {
   final result = await showDialog<Map<String, dynamic>>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
-      builder: (context, update) => AlertDialog(
+      builder: (context, update) => AppleAlert(
         shape: const SquircleBorder(radius: Gold.r27),
         backgroundColor: const Color(0xF7FFFFFF),
         title: AppText(tamilUi ? 'வாடிக்கையாளரை சேர்' : 'Add customer'),
@@ -14151,7 +14649,7 @@ Future<Map<String, dynamic>?> showAddRanchCustomer(BuildContext context) async {
               ),
               if (error != null) ...[
                 const SizedBox(height: 8),
-                AppText(error!, style: const TextStyle(color: Ink.red)),
+                AppText(error!, style: TextStyle(color: Ink.red)),
               ],
             ],
           ),
@@ -14214,7 +14712,7 @@ Widget customerPicker({
               isExpanded: true,
               decoration: fieldStyle(
                 tamilUi ? 'வாடிக்கையாளரை தேர்வு செய்' : 'Select customer',
-                icon: Icons.person_outline_rounded,
+                icon: CupertinoIcons.person,
               ),
               items: [
                 for (final item in customers)
@@ -14242,7 +14740,7 @@ Widget customerPicker({
               contact.text = txt(saved, 'contact');
               refresh();
             },
-            icon: const Icon(Icons.person_add_alt_1_rounded),
+            icon: const Icon(CupertinoIcons.person_badge_plus_fill),
             label: AppText(tamilUi ? 'சேர்' : 'Add customer'),
           ),
         ],
@@ -14256,7 +14754,7 @@ Widget customerPicker({
             label: const AppText(ownUseCustomerName),
             selected: isOwnUseCustomer(customer.text),
             showCheckmark: false,
-            selectedColor: Ink.violetDeep,
+            selectedColor: Ink.tint,
             labelStyle: TextStyle(
               color: isOwnUseCustomer(customer.text)
                   ? Colors.white
@@ -14286,7 +14784,7 @@ Widget customerPicker({
                   place.text,
                   contact.text,
                 ].where((value) => value.trim().isNotEmpty).join(' · '),
-          style: const TextStyle(color: Ink.muted, fontSize: 12),
+          style: TextStyle(color: Ink.muted, fontSize: 12),
         ),
       ],
     ],
@@ -14415,7 +14913,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
         title: 'Sell Animal',
         children: [
           EmptyNote(
-            icon: Icons.search_off_rounded,
+            icon: CupertinoIcons.search,
             title: 'Animal not found',
             message: 'This record is no longer available.',
           ),
@@ -14442,7 +14940,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
                   txt(animal, 'name'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
@@ -14466,7 +14964,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             'Sale Price / Income',
-            icon: Icons.payments_outlined,
+            icon: CupertinoIcons.money_dollar_circle,
           ),
         ),
         if (calfCount > 0) ...[
@@ -14478,7 +14976,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
               vertical: Gold.s5,
             ),
             elevation: 0.62,
-            child: SwitchListTile(
+            child: SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               value: _withCalves,
               activeThumbColor: Ink.violet,
@@ -14489,7 +14987,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
                         'Sell $calfCount calves together',
                         '$calfCount கன்றுகளையும் சேர்த்து விற்கவும்',
                       ),
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: Gold.t13,
                   color: Ink.navy,
@@ -14509,7 +15007,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: 'Save Sale',
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           start: Ink.green,
           end: const Color(0xFF1B7A4A),
           busy: _saving,
@@ -14568,9 +15066,9 @@ class _DeathScreenState extends State<DeathScreen> {
     setState(() => _saving = true);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         shape: const SquircleBorder(radius: Gold.r27),
-        backgroundColor: Colors.white,
+        backgroundColor: Ink.surface,
         title: const AppText(
           'Record this death?',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: Gold.t16),
@@ -14587,7 +15085,7 @@ class _DeathScreenState extends State<DeathScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const AppText(
+            child: AppText(
               'Confirm',
               style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
             ),
@@ -14643,7 +15141,7 @@ class _DeathScreenState extends State<DeathScreen> {
         title: 'Death Record',
         children: [
           EmptyNote(
-            icon: Icons.search_off_rounded,
+            icon: CupertinoIcons.search,
             title: 'Animal not found',
             message: 'This record is no longer available.',
           ),
@@ -14661,14 +15159,14 @@ class _DeathScreenState extends State<DeathScreen> {
           elevation: 0.62,
           child: Row(
             children: [
-              const CowHoofIcon(size: Gold.t21, color: Ink.red),
+              CowHoofIcon(size: Gold.t21, color: Ink.red),
               const SizedBox(width: Gold.s13),
               Expanded(
                 child: AppText(
                   txt(animal, 'name'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
@@ -14683,7 +15181,10 @@ class _DeathScreenState extends State<DeathScreen> {
           initialValue: _reason,
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
-          decoration: fieldStyle('Reason', icon: Icons.help_outline_rounded),
+          decoration: fieldStyle(
+            'Reason',
+            icon: CupertinoIcons.question_circle,
+          ),
           items: [
             for (final r in deathReasons)
               DropdownMenuItem<String>(value: r, child: AppText(r)),
@@ -14696,7 +15197,7 @@ class _DeathScreenState extends State<DeathScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             'Cost / Expense',
-            icon: Icons.payments_outlined,
+            icon: CupertinoIcons.money_dollar_circle,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -14709,7 +15210,7 @@ class _DeathScreenState extends State<DeathScreen> {
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: 'Save Death Record',
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           start: Ink.red,
           end: const Color(0xFFA82638),
           busy: _saving,
@@ -14982,7 +15483,7 @@ class _SellScreenState extends State<SellScreen> {
         children: [
           AppText(
             tamilUi ? 'இன்றைய பால் இருப்பு' : "Today's Milk Balance",
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: Gold.t16,
               fontWeight: FontWeight.w700,
               color: Ink.navy,
@@ -15113,7 +15614,7 @@ class _SellScreenState extends State<SellScreen> {
                           (i == 0 ? Ink.amber : Ink.violet).withValues(
                             alpha: 0.19,
                           ),
-                          Colors.white.withValues(alpha: 0.55),
+                          Ink.surface.withValues(alpha: 0.55),
                         ],
                       ),
                       child: Column(
@@ -15122,7 +15623,7 @@ class _SellScreenState extends State<SellScreen> {
                           Icon(
                             i == 0
                                 ? Icons.grass_rounded
-                                : Icons.inventory_2_rounded,
+                                : CupertinoIcons.cube_box_fill,
                             color: i == 0 ? Ink.amber : Ink.violet,
                           ),
                           const SizedBox(height: Gold.s13),
@@ -15130,16 +15631,16 @@ class _SellScreenState extends State<SellScreen> {
                             tamilUi
                                 ? (i == 0 ? 'வைக்கோல்' : 'தவிடு')
                                 : _stockItems[i],
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Ink.muted,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                           AppText(
                             '${stockBalance(_stockItems[i]).toStringAsFixed(1)} ${stockUnit(_stockItems[i])}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Ink.navy,
-                              fontSize: Gold.t27,
+                              fontSize: 28,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -15193,7 +15694,7 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                     decoration: fieldStyle(
                       tamilUi ? 'மொத்த தொகை' : 'Total Purchase Amount',
-                      icon: Icons.payments_outlined,
+                      icon: CupertinoIcons.money_dollar_circle,
                     ),
                   ),
                   const SizedBox(height: Gold.s13),
@@ -15207,7 +15708,7 @@ class _SellScreenState extends State<SellScreen> {
                   const SizedBox(height: Gold.s21),
                   LiquidButton(
                     label: tamilUi ? 'இருப்பில் சேர்' : 'Add to Stock',
-                    icon: Icons.add_box_rounded,
+                    icon: CupertinoIcons.plus_square_fill,
                     busy: _saving,
                     onPressed: _saveStockPurchase,
                   ),
@@ -15231,8 +15732,8 @@ class _SellScreenState extends State<SellScreen> {
                       children: [
                         Icon(
                           txt(record, 'movement') == 'Usage'
-                              ? Icons.remove_circle_outline_rounded
-                              : Icons.add_circle_outline_rounded,
+                              ? CupertinoIcons.minus_circle
+                              : CupertinoIcons.add_circled,
                           color: txt(record, 'movement') == 'Usage'
                               ? Ink.red
                               : Ink.green,
@@ -15244,14 +15745,14 @@ class _SellScreenState extends State<SellScreen> {
                             children: [
                               AppText(
                                 '${txt(record, 'item')} · ${txt(record, 'movement')}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Ink.navy,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               AppText(
                                 '${txt(record, 'date')} · ${txt(record, 'target', txt(record, 'addedBy'))}',
-                                style: const TextStyle(color: Ink.muted),
+                                style: TextStyle(color: Ink.muted),
                               ),
                             ],
                           ),
@@ -15291,8 +15792,8 @@ class _SellScreenState extends State<SellScreen> {
                     padding: const EdgeInsets.only(right: Gold.s8),
                     child: IconButton(
                       tooltip: ui('Export'),
-                      icon: const Icon(
-                        Icons.file_download_outlined,
+                      icon: Icon(
+                        CupertinoIcons.arrow_down_doc,
                         color: Ink.violetDeep,
                       ),
                       onPressed: () => push(
@@ -15379,7 +15880,7 @@ class _SellScreenState extends State<SellScreen> {
                     index: 4,
                     child: list.isEmpty
                         ? EmptyNote(
-                            icon: Icons.inbox_rounded,
+                            icon: CupertinoIcons.tray_fill,
                             title: 'Nothing to sell',
                             message: _type == 1
                                 ? 'There are no active cows on the ranch.'
@@ -15422,7 +15923,7 @@ class _SellScreenState extends State<SellScreen> {
                       ),
                       decoration: fieldStyle(
                         'Sale Amount',
-                        icon: Icons.payments_outlined,
+                        icon: CupertinoIcons.money_dollar_circle,
                       ),
                     ),
                   ),
@@ -15436,7 +15937,7 @@ class _SellScreenState extends State<SellScreen> {
                       ),
                       decoration: fieldStyle(
                         tamilUi ? 'பால் அளவு (லிட்டர்)' : 'Quantity ($_unit)',
-                        icon: Icons.inventory_2_outlined,
+                        icon: CupertinoIcons.cube_box,
                       ),
                     ),
                   ),
@@ -15455,7 +15956,7 @@ class _SellScreenState extends State<SellScreen> {
                             : (_type == 0
                                   ? 'Price per Liter'
                                   : 'Price per Load'),
-                        icon: Icons.sell_outlined,
+                        icon: CupertinoIcons.tag,
                       ),
                     ),
                   ),
@@ -15482,7 +15983,7 @@ class _SellScreenState extends State<SellScreen> {
                             shape: const SquircleBorder(radius: Gold.r13),
                             color: Ink.green.withValues(alpha: 0.18),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.calculate_rounded,
                             color: Ink.green,
                             size: Gold.t21,
@@ -15492,7 +15993,7 @@ class _SellScreenState extends State<SellScreen> {
                         Expanded(
                           child: AppText(
                             tamilUi ? 'மொத்த தொகை' : 'Calculated Amount',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: Ink.navy,
                               fontSize: Gold.t13,
@@ -15501,9 +16002,9 @@ class _SellScreenState extends State<SellScreen> {
                         ),
                         FlowText(
                           money(_amount),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            fontSize: Gold.t21,
+                            fontSize: 22,
                             color: Ink.navy,
                           ),
                         ),
@@ -15535,7 +16036,7 @@ class _SellScreenState extends State<SellScreen> {
                             'Save ${_types[_type]} Sale',
                             '${ui(_types[_type])} விற்பனையைச் சேமி',
                           ),
-                    icon: Icons.check_circle_rounded,
+                    icon: CupertinoIcons.checkmark_circle_fill,
                     start: Ink.green,
                     end: const Color(0xFF1B7A4A),
                     busy: _saving,
@@ -15689,7 +16190,7 @@ class RecordListScreen extends StatelessWidget {
               const Reveal(
                 index: 1,
                 child: EmptyNote(
-                  icon: Icons.receipt_long_rounded,
+                  icon: CupertinoIcons.doc_text_fill,
                   title: 'No records',
                   message: 'Entries you add will appear here.',
                 ),
@@ -15702,7 +16203,7 @@ class RecordListScreen extends StatelessWidget {
                         title: txt(list[i], 'cow'),
                         subtitle:
                             '${txt(list[i], 'date')} \u2022 ${txt(list[i], 'time')}',
-                        icon: Icons.water_drop_rounded,
+                        icon: CupertinoIcons.drop_fill,
                         color: Ink.violet,
                         details: [
                           '${bi('Session', 'நேரம்')}: ${ui(txt(list[i], 'session'))}',
@@ -15714,7 +16215,7 @@ class RecordListScreen extends StatelessWidget {
                         title: txt(list[i], 'cat'),
                         subtitle:
                             '${txt(list[i], 'date')} \u2022 ${txt(list[i], 'time', '--')}',
-                        icon: Icons.payments_rounded,
+                        icon: CupertinoIcons.money_dollar_circle_fill,
                         color: Ink.red,
                         details: [
                           '${bi('Details', 'விவரம்')}: ${cleanFoodLabel(txt(list[i], 'foodLabel', txt(list[i], 'type', txt(list[i], 'reason', '-'))))}',
@@ -15754,7 +16255,7 @@ class _MiniStat extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: Gold.t13,
               color: Ink.muted,
               fontWeight: FontWeight.w700,
@@ -15866,7 +16367,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ReportDetailsScreen(kind: 'collected', period: _period),
                     ),
                     value: '${milkTotal(_period).toStringAsFixed(1)} L',
-                    icon: Icons.water_drop_rounded,
+                    icon: CupertinoIcons.drop_fill,
                     color: Ink.violet,
                   ),
                   _SummaryTile(
@@ -15887,7 +16388,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ReportDetailsScreen(kind: 'income', period: _period),
                     ),
                     value: money(income),
-                    icon: Icons.trending_up_rounded,
+                    icon: CupertinoIcons.arrow_up_right,
                     color: Ink.green,
                   ),
                   _SummaryTile(
@@ -15897,7 +16398,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ReportDetailsScreen(kind: 'expense', period: _period),
                     ),
                     value: money(expense),
-                    icon: Icons.trending_down_rounded,
+                    icon: CupertinoIcons.arrow_down_right,
                     color: Ink.red,
                   ),
                 ],
@@ -15915,7 +16416,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: AppText(
                           'Net Result',
                           style: TextStyle(
@@ -15928,7 +16429,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       FlowText(
                         money(net),
                         style: TextStyle(
-                          fontSize: Gold.t27,
+                          fontSize: 28,
                           fontWeight: FontWeight.w700,
                           color: net >= 0 ? Ink.green : Ink.red,
                           letterSpacing: -0.8,
@@ -15949,9 +16450,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             'Loss for ${_period.toLowerCase()}',
                             '${ui(_period)} நஷ்டம்',
                           ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Ink.muted,
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -15969,7 +16470,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             child: _ReportLink(
               title: 'Daily Totals',
               subtitle: 'Day by day milk, expense, feed and sales',
-              icon: Icons.calendar_today_rounded,
+              icon: CupertinoIcons.calendar_today,
               color: Ink.violet,
               onTap: () =>
                   push(context, const ReportDetailScreen(kind: 'daily')),
@@ -15980,7 +16481,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             child: _ReportLink(
               title: 'Monthly Totals',
               subtitle: 'Full month milk, expense and profit',
-              icon: Icons.bar_chart_rounded,
+              icon: CupertinoIcons.chart_bar_fill,
               color: Ink.blue,
               onTap: () =>
                   push(context, const ReportDetailScreen(kind: 'monthly')),
@@ -15991,7 +16492,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             child: _ReportLink(
               title: 'Business Summary',
               subtitle: 'Overall performance across the whole ranch',
-              icon: Icons.pie_chart_rounded,
+              icon: CupertinoIcons.chart_pie_fill,
               color: Ink.green,
               onTap: () =>
                   push(context, const ReportDetailScreen(kind: 'business')),
@@ -16044,8 +16545,8 @@ class _SummaryTile extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 14,
+            style: TextStyle(
+              fontSize: 15,
               color: Ink.muted,
               fontWeight: FontWeight.w700,
             ),
@@ -16053,8 +16554,8 @@ class _SummaryTile extends StatelessWidget {
           const SizedBox(height: Gold.s2),
           FlowText(
             value,
-            style: const TextStyle(
-              fontSize: Gold.t21,
+            style: TextStyle(
+              fontSize: 22,
               fontWeight: FontWeight.w700,
               color: Ink.navy,
               height: 1,
@@ -16093,7 +16594,7 @@ class ProfitBar extends StatelessWidget {
               children: [
                 Expanded(
                   flex: math.max(1, (incomeShare * 1000).round()),
-                  child: const DecoratedBox(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [Ink.green, Color(0xFF1B7A4A)],
@@ -16172,7 +16673,7 @@ class _ProfitLegend extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: Gold.t13,
                 fontWeight: FontWeight.w600,
                 color: Ink.muted,
@@ -16187,7 +16688,7 @@ class _ProfitLegend extends StatelessWidget {
         alignment: end ? Alignment.centerRight : Alignment.centerLeft,
         child: AppText(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: Gold.t16,
             fontWeight: FontWeight.w800,
             color: Ink.navy,
@@ -16255,7 +16756,7 @@ class _ReportLink extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t16,
@@ -16264,11 +16765,7 @@ class _ReportLink extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: Ink.faint,
-            size: Gold.t21,
-          ),
+          Icon(CupertinoIcons.chevron_right, color: Ink.faint, size: Gold.t21),
         ],
       ),
     );
@@ -16370,15 +16867,15 @@ class ReportDetailScreen extends StatelessWidget {
             children: [
               AppText(
                 farmName(),
-                style: const TextStyle(
-                  fontSize: Gold.t21,
+                style: TextStyle(
+                  fontSize: 22,
                   fontWeight: FontWeight.w700,
                   color: Ink.navy,
                 ),
               ),
               AppText(
                 '${ownerName()} \u2022 ${placeName()}',
-                style: const TextStyle(color: Ink.muted, fontSize: Gold.t11),
+                style: TextStyle(color: Ink.muted, fontSize: Gold.t11),
               ),
               const SizedBox(height: Gold.s16),
               ProfitBar(income: lifeIncome, expense: lifeExpense),
@@ -16409,13 +16906,13 @@ class ReportDetailScreen extends StatelessWidget {
             _SummaryTile(
               label: 'Sold',
               value: '$sold',
-              icon: Icons.sell_rounded,
+              icon: CupertinoIcons.tag_fill,
               color: Ink.green,
             ),
             _SummaryTile(
               label: 'Lost',
               value: '$died',
-              icon: Icons.warning_amber_rounded,
+              icon: CupertinoIcons.exclamationmark_triangle_fill,
               color: Ink.red,
             ),
           ],
@@ -16424,34 +16921,34 @@ class ReportDetailScreen extends StatelessWidget {
         InfoRow(
           title: 'Lifetime Milk',
           value: '${milkTotal('All').toStringAsFixed(1)} L',
-          icon: Icons.water_drop_rounded,
+          icon: CupertinoIcons.drop_fill,
           color: Ink.violet,
         ),
         const SizedBox(height: Gold.s13),
         InfoRow(
           title: 'Lifetime Income',
           value: money(lifeIncome),
-          icon: Icons.trending_up_rounded,
+          icon: CupertinoIcons.arrow_up_right,
           color: Ink.green,
         ),
         const SizedBox(height: Gold.s13),
         InfoRow(
           title: 'Lifetime Expense',
           value: money(lifeExpense),
-          icon: Icons.trending_down_rounded,
+          icon: CupertinoIcons.arrow_down_right,
           color: Ink.red,
         ),
         const SizedBox(height: Gold.s13),
         InfoRow(
           title: 'Net Result',
           value: money(lifeIncome - lifeExpense),
-          icon: Icons.account_balance_rounded,
+          icon: CupertinoIcons.building_2_fill,
           color: lifeIncome - lifeExpense >= 0 ? Ink.green : Ink.red,
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: 'Export Reports',
-          icon: Icons.file_download_outlined,
+          icon: CupertinoIcons.arrow_down_doc,
           onPressed: () =>
               push(context, const ExportReportScreen(ranchOnly: true)),
         ),
@@ -16499,7 +16996,7 @@ class ReportDetailScreen extends StatelessWidget {
               const Reveal(
                 index: 0,
                 child: EmptyNote(
-                  icon: Icons.insights_rounded,
+                  icon: CupertinoIcons.graph_circle_fill,
                   title: 'Nothing to report yet',
                   message: 'Totals appear here once you record milk or money.',
                 ),
@@ -16527,7 +17024,7 @@ class ReportDetailScreen extends StatelessWidget {
                               Expanded(
                                 child: AppText(
                                   buckets[i].key,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     color: Ink.navy,
                                     fontSize: Gold.t16,
@@ -16589,8 +17086,8 @@ class _Cell extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: Gold.t10,
+            style: TextStyle(
+              fontSize: 11,
               color: Ink.muted,
               fontWeight: FontWeight.w700,
             ),
@@ -16600,7 +17097,7 @@ class _Cell extends StatelessWidget {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: Gold.t11,
               fontWeight: FontWeight.w700,
               color: Ink.navy,
@@ -16791,7 +17288,7 @@ class ExportReportScreen extends StatelessWidget {
               : 'All Data - Excel Workbook',
           subtitle:
               'Animals, milk, stock, sales, expenses, visits and settings in one file',
-          icon: Icons.dataset_rounded,
+          icon: CupertinoIcons.square_stack_3d_up_fill,
           color: Ink.green,
           onTap: () async {
             if (await downloadExcelFile(
@@ -16808,7 +17305,7 @@ class ExportReportScreen extends StatelessWidget {
         _ExportTile(
           title: 'Milk Records',
           subtitle: '${milkRows().length} entries',
-          icon: Icons.water_drop_rounded,
+          icon: CupertinoIcons.drop_fill,
           color: Ink.violet,
           onTap: () async {
             if (await downloadCsvFile('milk_$stamp.csv', _milkCsv()) &&
@@ -16820,7 +17317,7 @@ class ExportReportScreen extends StatelessWidget {
         _ExportTile(
           title: 'Expenses',
           subtitle: 'Stock, others, doctor, purchase and loss',
-          icon: Icons.payments_rounded,
+          icon: CupertinoIcons.money_dollar_circle_fill,
           color: Ink.red,
           onTap: () async {
             if (await downloadCsvFile('expenses_$stamp.csv', _expenseCsv()) &&
@@ -16832,7 +17329,7 @@ class ExportReportScreen extends StatelessWidget {
         _ExportTile(
           title: 'Sales',
           subtitle: '${saleRows().length} entries',
-          icon: Icons.sell_rounded,
+          icon: CupertinoIcons.tag_fill,
           color: Ink.green,
           onTap: () async {
             if (await downloadCsvFile('sales_$stamp.csv', _saleCsv()) &&
@@ -16857,7 +17354,7 @@ class ExportReportScreen extends StatelessWidget {
         _ExportTile(
           title: 'Full Backup',
           subtitle: 'Everything, as a JSON file you can restore later',
-          icon: Icons.backup_rounded,
+          icon: CupertinoIcons.cloud_upload_fill,
           color: Ink.violetDeep,
           onTap: () async {
             if (await downloadJsonFile(
@@ -16919,7 +17416,7 @@ class _ExportTile extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
@@ -16928,11 +17425,7 @@ class _ExportTile extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.file_download_outlined,
-            color: Ink.faint,
-            size: Gold.t21,
-          ),
+          Icon(CupertinoIcons.arrow_down_doc, color: Ink.faint, size: Gold.t21),
         ],
       ),
     );
@@ -16986,8 +17479,8 @@ class SettingsScreen extends StatelessWidget {
                               appName(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: Gold.t27,
+                              style: TextStyle(
+                                fontSize: 28,
                                 fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                                 letterSpacing: 1.8,
@@ -17003,7 +17496,7 @@ class SettingsScreen extends StatelessWidget {
                                   : farmName(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: Gold.t16,
                                 fontWeight: FontWeight.w600,
                                 color: Ink.body,
@@ -17015,7 +17508,7 @@ class SettingsScreen extends StatelessWidget {
                                 ranchDetails(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: Gold.t13,
                                   color: Ink.muted,
                                   fontWeight: FontWeight.w700,
@@ -17034,7 +17527,7 @@ class SettingsScreen extends StatelessWidget {
               _InsetGroup(
                 children: [
                   ListTile(
-                    leading: const Icon(CupertinoIcons.globe, color: _blue),
+                    leading: Icon(CupertinoIcons.globe, color: _blue),
                     title: const AppText('Language'),
                     trailing: DropdownButton<String>(
                       value: tamilUi ? 'Tamil' : 'English',
@@ -17074,7 +17567,7 @@ class SettingsScreen extends StatelessWidget {
                   child: _SettingLink(
                     title: 'App Settings',
                     subtitle: 'Farm name, owner, currency and milk price',
-                    icon: Icons.tune_rounded,
+                    icon: CupertinoIcons.slider_horizontal_3,
                     color: Ink.violet,
                     onTap: () => push(context, const AppSettingsScreen()),
                   ),
@@ -17084,7 +17577,7 @@ class SettingsScreen extends StatelessWidget {
                   child: _SettingLink(
                     title: 'Family Users',
                     subtitle: 'Admin, Editor and Data Entry access',
-                    icon: Icons.groups_rounded,
+                    icon: CupertinoIcons.person_3_fill,
                     color: Ink.blue,
                     onTap: () => push(context, const FamilyUsersScreen()),
                   ),
@@ -17097,7 +17590,7 @@ class SettingsScreen extends StatelessWidget {
                 child: _SettingLink(
                   title: 'Cloud Sync',
                   subtitle: 'Sync status, manual upload and download',
-                  icon: Icons.cloud_sync_rounded,
+                  icon: CupertinoIcons.arrow_2_circlepath,
                   color: Ink.green,
                   onTap: () => push(context, const FirebaseSyncScreen()),
                 ),
@@ -17107,7 +17600,7 @@ class SettingsScreen extends StatelessWidget {
                 child: _SettingLink(
                   title: 'Export and Backup',
                   subtitle: 'Excel workbook, CSV reports or a full backup',
-                  icon: Icons.file_download_outlined,
+                  icon: CupertinoIcons.arrow_down_doc,
                   color: Ink.violetDeep,
                   onTap: () => push(context, const ExportReportScreen()),
                 ),
@@ -17117,14 +17610,14 @@ class SettingsScreen extends StatelessWidget {
                 child: _SettingLink(
                   title: 'Restore Backup',
                   subtitle: 'Load a previously downloaded backup file',
-                  icon: Icons.restore_rounded,
+                  icon: CupertinoIcons.arrow_counterclockwise,
                   color: Ink.red,
                   onTap: () async {
                     final ok = await showDialog<bool>(
                       context: context,
-                      builder: (ctx) => AlertDialog(
+                      builder: (ctx) => AppleAlert(
                         shape: const SquircleBorder(radius: Gold.r27),
-                        backgroundColor: Colors.white,
+                        backgroundColor: Ink.surface,
                         title: const AppText(
                           'Restore from backup?',
                           style: TextStyle(
@@ -17144,7 +17637,7 @@ class SettingsScreen extends StatelessWidget {
                           ),
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, true),
-                            child: const AppText(
+                            child: AppText(
                               'Choose file',
                               style: TextStyle(
                                 color: Ink.violetDeep,
@@ -17173,7 +17666,7 @@ class SettingsScreen extends StatelessWidget {
                   index: 9,
                   child: GhostButton(
                     label: 'Sign Out',
-                    icon: Icons.logout_rounded,
+                    icon: CupertinoIcons.square_arrow_right,
                     color: Ink.red,
                     onPressed: () async {
                       await FirebaseAuth.instance.signOut();
@@ -17183,12 +17676,12 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: Gold.s21),
-              const Center(
+              Center(
                 child: AppText(
                   'VIMO \u2022 Manage. Care. Grow.',
                   style: TextStyle(
                     color: Ink.faint,
-                    fontSize: Gold.t10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -17246,7 +17739,7 @@ class _SettingLink extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                     fontSize: Gold.t13,
@@ -17255,11 +17748,7 @@ class _SettingLink extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: Ink.faint,
-            size: Gold.t21,
-          ),
+          Icon(CupertinoIcons.chevron_right, color: Ink.faint, size: Gold.t21),
         ],
       ),
     );
@@ -17344,29 +17833,26 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
         TextField(
           controller: _farm,
           textCapitalization: TextCapitalization.words,
-          decoration: fieldStyle('Farm Name', icon: Icons.home_work_outlined),
+          decoration: fieldStyle('Farm Name', icon: CupertinoIcons.house),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _owner,
           textCapitalization: TextCapitalization.words,
-          decoration: fieldStyle(
-            'Owner Name',
-            icon: Icons.person_outline_rounded,
-          ),
+          decoration: fieldStyle('Owner Name', icon: CupertinoIcons.person),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _place,
           textCapitalization: TextCapitalization.words,
-          decoration: fieldStyle('Place', icon: Icons.place_outlined),
+          decoration: fieldStyle('Place', icon: CupertinoIcons.location),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
           controller: _currency,
           decoration: fieldStyle(
             'Currency Symbol',
-            icon: Icons.currency_exchange_rounded,
+            icon: CupertinoIcons.arrow_right_arrow_left,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -17375,7 +17861,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             'Default Milk Price per Liter',
-            icon: Icons.local_offer_outlined,
+            icon: CupertinoIcons.tag,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -17384,7 +17870,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
           readOnly: true,
           decoration: fieldStyle(
             'Ranch ID (permanent)',
-            icon: Icons.key_outlined,
+            icon: CupertinoIcons.lock_shield,
           ),
         ),
         const SizedBox(height: Gold.s8),
@@ -17392,7 +17878,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: 'Save Settings',
-          icon: Icons.check_rounded,
+          icon: CupertinoIcons.checkmark_alt,
           busy: _saving,
           onPressed: canManageRanch
               ? _save
@@ -17421,10 +17907,10 @@ class FamilyUsersScreen extends StatelessWidget {
   };
 
   static IconData roleIcon(String role) => switch (normalizeFamilyRole(role)) {
-    'Admin' => Icons.admin_panel_settings_rounded,
-    'Editor' => Icons.edit_note_rounded,
-    'Data Entry' => Icons.playlist_add_check_circle_rounded,
-    _ => Icons.visibility_rounded,
+    'Admin' => CupertinoIcons.shield_lefthalf_fill,
+    'Editor' => CupertinoIcons.square_pencil,
+    'Data Entry' => CupertinoIcons.checkmark_circle,
+    _ => CupertinoIcons.eye_fill,
   };
 
   Future<void> _reviewRequest(
@@ -17435,7 +17921,7 @@ class FamilyUsersScreen extends StatelessWidget {
     final approved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
+        builder: (ctx, setLocal) => AppleAlert(
           shape: const SquircleBorder(radius: Gold.r27),
           title: AppText(
             '${txt(request, 'name', 'New member')} wants to join',
@@ -17447,7 +17933,7 @@ class FamilyUsersScreen extends StatelessWidget {
             children: [
               AppText(
                 txt(request, 'email'),
-                style: const TextStyle(color: Ink.muted),
+                style: TextStyle(color: Ink.muted),
               ),
               const SizedBox(height: Gold.s13),
               DropdownButtonFormField<String>(
@@ -17455,7 +17941,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 isExpanded: true,
                 decoration: fieldStyle(
                   'Permission after approval',
-                  icon: Icons.badge_outlined,
+                  icon: CupertinoIcons.person_crop_rectangle,
                 ),
                 items: [
                   for (final value in familyRoles.where((r) => r != 'Admin'))
@@ -17467,7 +17953,7 @@ class FamilyUsersScreen extends StatelessWidget {
               const SizedBox(height: Gold.s13),
               AppText(
                 rolePermissionSummary(role),
-                style: const TextStyle(color: Ink.muted, height: 1.35),
+                style: TextStyle(color: Ink.muted, height: 1.35),
               ),
             ],
           ),
@@ -17478,14 +17964,14 @@ class FamilyUsersScreen extends StatelessWidget {
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const AppText(
+              child: AppText(
                 'Reject',
                 style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
               ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const AppText(
+              child: AppText(
                 'Accept',
                 style: TextStyle(color: Ink.green, fontWeight: FontWeight.w700),
               ),
@@ -17522,7 +18008,7 @@ class FamilyUsersScreen extends StatelessWidget {
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
+        builder: (ctx, setLocal) => AppleAlert(
           shape: const SquircleBorder(radius: Gold.r27),
           title: AppText(
             bi(
@@ -17539,7 +18025,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 isExpanded: true,
                 decoration: fieldStyle(
                   'Permission',
-                  icon: Icons.manage_accounts_rounded,
+                  icon: CupertinoIcons.person_crop_circle_badge_checkmark,
                 ),
                 items: [
                   for (final value in familyRoles.where((r) => r != 'Admin'))
@@ -17550,14 +18036,14 @@ class FamilyUsersScreen extends StatelessWidget {
               const SizedBox(height: Gold.s13),
               AppText(
                 rolePermissionSummary(role),
-                style: const TextStyle(color: Ink.muted, height: 1.35),
+                style: TextStyle(color: Ink.muted, height: 1.35),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'remove'),
-              child: const AppText(
+              child: AppText(
                 'Remove',
                 style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
               ),
@@ -17568,7 +18054,7 @@ class FamilyUsersScreen extends StatelessWidget {
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'save'),
-              child: const AppText(
+              child: AppText(
                 'Save Role',
                 style: TextStyle(
                   color: Ink.violetDeep,
@@ -17596,7 +18082,7 @@ class FamilyUsersScreen extends StatelessWidget {
       } else {
         final confirm = await showDialog<bool>(
           context: context,
-          builder: (ctx) => AlertDialog(
+          builder: (ctx) => AppleAlert(
             shape: const SquircleBorder(radius: Gold.r27),
             title: const AppText(
               'Remove from ranch?',
@@ -17612,7 +18098,7 @@ class FamilyUsersScreen extends StatelessWidget {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const AppText(
+                child: AppText(
                   'Remove',
                   style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
                 ),
@@ -17662,7 +18148,7 @@ class FamilyUsersScreen extends StatelessWidget {
               children: [
                 AppText(
                   '${txt(member, 'name', 'Ranch Member')}${self ? ' (You)' : ''}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.navy,
                     fontWeight: FontWeight.w700,
                     fontSize: Gold.t13,
@@ -17672,7 +18158,7 @@ class FamilyUsersScreen extends StatelessWidget {
                   txt(member, 'email'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Ink.muted, fontSize: Gold.t10),
+                  style: TextStyle(color: Ink.muted, fontSize: 11),
                 ),
               ],
             ),
@@ -17691,7 +18177,7 @@ class FamilyUsersScreen extends StatelessWidget {
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w700,
-                fontSize: Gold.t10,
+                fontSize: 11,
               ),
             ),
           ),
@@ -17730,22 +18216,19 @@ class FamilyUsersScreen extends StatelessWidget {
               padding: const EdgeInsets.all(Gold.s16),
               child: Row(
                 children: [
-                  const Icon(Icons.key_rounded, color: Ink.violet),
+                  Icon(Icons.key_rounded, color: Ink.violet),
                   const SizedBox(width: Gold.s13),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const AppText(
+                        AppText(
                           'Ranch ID',
-                          style: TextStyle(
-                            color: Ink.muted,
-                            fontSize: Gold.t10,
-                          ),
+                          style: TextStyle(color: Ink.muted, fontSize: 11),
                         ),
                         AppText(
                           ranchId(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Ink.navy,
                             fontWeight: FontWeight.w700,
                             fontSize: Gold.t16,
@@ -17757,7 +18240,7 @@ class FamilyUsersScreen extends StatelessWidget {
                   if (canManageRanch)
                     const Chip(
                       avatar: Icon(
-                        Icons.admin_panel_settings_rounded,
+                        CupertinoIcons.shield_lefthalf_fill,
                         size: Gold.t13,
                       ),
                       label: AppText('Admin'),
@@ -17767,11 +18250,11 @@ class FamilyUsersScreen extends StatelessWidget {
             ),
             if (canManageRanch) ...[
               const SizedBox(height: Gold.s21),
-              const AppText(
+              AppText(
                 'Join Requests',
                 style: TextStyle(
                   color: Ink.navy,
-                  fontSize: Gold.t21,
+                  fontSize: 22,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -17781,15 +18264,13 @@ class FamilyUsersScreen extends StatelessWidget {
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return EmptyNote(
-                      icon: Icons.sync_problem_rounded,
+                      icon: CupertinoIcons.exclamationmark_circle,
                       title: 'Could not load join requests',
                       message: '${snapshot.error}',
                     );
                   }
                   if (!snapshot.hasData) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: Ink.violet),
-                    );
+                    return Center(child: CupertinoActivityIndicator());
                   }
                   final rows =
                       snapshot.data?.docs
@@ -17799,7 +18280,7 @@ class FamilyUsersScreen extends StatelessWidget {
                       <Map<String, dynamic>>[];
                   if (rows.isEmpty) {
                     return const EmptyNote(
-                      icon: Icons.mark_email_read_rounded,
+                      icon: CupertinoIcons.envelope_open,
                       title: 'No pending requests',
                       message:
                           'New requests will appear here for admin approval.',
@@ -17815,8 +18296,8 @@ class FamilyUsersScreen extends StatelessWidget {
                           onTap: () => _reviewRequest(context, request),
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.person_add_alt_1_rounded,
+                              Icon(
+                                CupertinoIcons.person_badge_plus_fill,
                                 color: Ink.violet,
                               ),
                               const SizedBox(width: Gold.s13),
@@ -17826,22 +18307,22 @@ class FamilyUsersScreen extends StatelessWidget {
                                   children: [
                                     AppText(
                                       txt(request, 'name', 'New member'),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         color: Ink.navy,
                                       ),
                                     ),
                                     AppText(
                                       txt(request, 'email'),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: Ink.muted,
-                                        fontSize: Gold.t10,
+                                        fontSize: 11,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              const AppText(
+                              AppText(
                                 'Review',
                                 style: TextStyle(
                                   color: Ink.violetDeep,
@@ -17857,11 +18338,11 @@ class FamilyUsersScreen extends StatelessWidget {
               ),
             ],
             const SizedBox(height: Gold.s21),
-            const AppText(
+            AppText(
               'Members',
               style: TextStyle(
                 color: Ink.navy,
-                fontSize: Gold.t21,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -17888,7 +18369,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 });
                 if (snapshot.hasError) {
                   return EmptyNote(
-                    icon: Icons.error_outline_rounded,
+                    icon: CupertinoIcons.exclamationmark_circle,
                     title: 'Could not load members',
                     message: '${snapshot.error}',
                   );
@@ -17917,9 +18398,9 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
   };
 
   static IconData roleIcon(String role) {
-    if (role == 'Owner') return Icons.workspace_premium_rounded;
-    if (role == 'Manager') return Icons.groups_rounded;
-    return Icons.visibility_rounded;
+    if (role == 'Owner') return CupertinoIcons.rosette;
+    if (role == 'Manager') return CupertinoIcons.person_3_fill;
+    return CupertinoIcons.eye_fill;
   }
 
   static Color roleColor(String role) {
@@ -17935,9 +18416,9 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
+        builder: (ctx, setLocal) => AppleAlert(
           shape: const SquircleBorder(radius: Gold.r27),
-          backgroundColor: Colors.white,
+          backgroundColor: Ink.surface,
           title: const AppText(
             'Add family user',
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: Gold.t16),
@@ -17948,17 +18429,17 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
               TextField(
                 controller: name,
                 textCapitalization: TextCapitalization.words,
-                decoration: fieldStyle(
-                  'Name',
-                  icon: Icons.person_outline_rounded,
-                ),
+                decoration: fieldStyle('Name', icon: CupertinoIcons.person),
               ),
               const SizedBox(height: Gold.s13),
               DropdownButtonFormField<String>(
                 initialValue: role,
                 isExpanded: true,
                 borderRadius: BorderRadius.circular(Gold.r21),
-                decoration: fieldStyle('Role', icon: Icons.badge_outlined),
+                decoration: fieldStyle(
+                  'Role',
+                  icon: CupertinoIcons.person_crop_rectangle,
+                ),
                 items: [
                   for (final r in familyRoles)
                     DropdownMenuItem<String>(value: r, child: AppText(r)),
@@ -17974,7 +18455,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const AppText(
+              child: AppText(
                 'Add',
                 style: TextStyle(
                   color: Ink.violetDeep,
@@ -18044,7 +18525,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                 const Reveal(
                   index: 0,
                   child: EmptyNote(
-                    icon: Icons.groups_rounded,
+                    icon: CupertinoIcons.person_3_fill,
                     title: 'Manage together as a family',
                     message:
                         'Everyone sharing your Ranch ID sees the same animals and records.',
@@ -18093,7 +18574,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                       txt(u, 'name'),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         color: Ink.navy,
                                         fontSize: Gold.t16,
@@ -18103,9 +18584,9 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                       roleNotes[role] ?? role,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: Ink.muted,
-                                        fontSize: Gold.t10,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -18125,7 +18606,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                 child: AppText(
                                   role,
                                   style: TextStyle(
-                                    fontSize: Gold.t10,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     color: color,
                                   ),
@@ -18140,7 +18621,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                 const SizedBox(height: Gold.s8),
                 LiquidButton(
                   label: 'Add Family User',
-                  icon: Icons.person_add_alt_rounded,
+                  icon: CupertinoIcons.person_badge_plus_fill,
                   onPressed: () => _addUser(context),
                 ),
               ],
@@ -18223,8 +18704,8 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                           children: [
                             Icon(
                               signedIn
-                                  ? Icons.cloud_done_rounded
-                                  : Icons.cloud_off_rounded,
+                                  ? CupertinoIcons.checkmark_seal
+                                  : CupertinoIcons.wifi_slash,
                               color: signedIn ? Ink.green : Ink.amber,
                               size: Gold.t27,
                             ),
@@ -18234,8 +18715,8 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                                 signedIn && isOnlineNow()
                                     ? 'Signed in'
                                     : 'Working offline',
-                                style: const TextStyle(
-                                  fontSize: Gold.t21,
+                                style: TextStyle(
+                                  fontSize: 22,
                                   fontWeight: FontWeight.w700,
                                   color: Ink.navy,
                                 ),
@@ -18253,7 +18734,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                   child: InfoRow(
                     title: 'Last Synced',
                     value: lastSyncedText(),
-                    icon: Icons.schedule_rounded,
+                    icon: CupertinoIcons.clock,
                     color: Ink.violet,
                   ),
                 ),
@@ -18263,7 +18744,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                   child: InfoRow(
                     title: 'Status',
                     value: settingText('syncStatus', 'Waiting'),
-                    icon: Icons.info_outline_rounded,
+                    icon: CupertinoIcons.info_circle,
                     color: Ink.blue,
                   ),
                 ),
@@ -18273,7 +18754,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                   child: InfoRow(
                     title: 'Pending Records',
                     value: '${pendingSyncCount()}',
-                    icon: Icons.pending_actions_rounded,
+                    icon: CupertinoIcons.clock_fill,
                     color: pendingSyncCount() > 0 ? Ink.amber : Ink.green,
                   ),
                 ),
@@ -18282,10 +18763,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                   Glass(
                     child: AppText(
                       syncFailureHint(settingText('lastSyncError', '')),
-                      style: const TextStyle(
-                        color: Ink.amber,
-                        fontSize: Gold.t13,
-                      ),
+                      style: TextStyle(color: Ink.amber, fontSize: Gold.t13),
                     ),
                   ),
                 ],
@@ -18295,7 +18773,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                   child: InfoRow(
                     title: 'Ranch ID',
                     value: ranchId(),
-                    icon: Icons.key_outlined,
+                    icon: CupertinoIcons.lock_shield,
                     color: Ink.violetDeep,
                   ),
                 ),
@@ -18310,7 +18788,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     ),
                     elevation: 0.8,
                     child: ListTile(
-                      leading: const Icon(
+                      leading: Icon(
                         CupertinoIcons.arrow_2_circlepath,
                         color: Ink.violet,
                       ),
@@ -18329,7 +18807,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                   const Reveal(
                     index: 6,
                     child: EmptyNote(
-                      icon: Icons.login_rounded,
+                      icon: CupertinoIcons.square_arrow_left,
                       title: 'Sign in to sync',
                       message:
                           'Cloud actions need an account. Your local data stays safe either way.',
@@ -18340,7 +18818,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     index: 8,
                     child: GhostButton(
                       label: 'Download Cloud to This Device',
-                      icon: Icons.cloud_download_rounded,
+                      icon: CupertinoIcons.cloud_download_fill,
                       onPressed: _busy
                           ? null
                           : () => _run(
@@ -18354,7 +18832,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     index: 9,
                     child: GhostButton(
                       label: 'Check Cloud Record Counts',
-                      icon: Icons.fact_check_outlined,
+                      icon: CupertinoIcons.checkmark_rectangle,
                       onPressed: _busy
                           ? null
                           : () => _run(() async {
@@ -18377,7 +18855,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                               Expanded(
                                 child: AppText(
                                   entry.key.replaceAll('_', ' '),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: Gold.t11,
                                     color: Ink.body,
                                     fontWeight: FontWeight.w600,
@@ -18386,7 +18864,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                               ),
                               AppText(
                                 '${entry.value}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: Gold.t11,
                                   fontWeight: FontWeight.w700,
                                   color: Ink.navy,
@@ -18458,7 +18936,7 @@ class WorksOfflineScreen extends StatelessWidget {
             const Reveal(
               index: 0,
               child: EmptyNote(
-                icon: Icons.wifi_off_rounded,
+                icon: CupertinoIcons.wifi_slash,
                 title: 'Use anytime, anywhere',
                 message:
                     'The ranch does not wait for a signal, and neither does this app.',
@@ -18483,8 +18961,8 @@ class WorksOfflineScreen extends StatelessWidget {
                           shape: const SquircleBorder(radius: Gold.r8),
                           color: Ink.green.withValues(alpha: 0.14),
                         ),
-                        child: const Icon(
-                          Icons.check_rounded,
+                        child: Icon(
+                          CupertinoIcons.checkmark_alt,
                           color: Ink.green,
                           size: Gold.t13,
                         ),
@@ -18496,7 +18974,7 @@ class WorksOfflineScreen extends StatelessWidget {
                           children: [
                             AppText(
                               _points[i][0],
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                                 fontSize: Gold.t13,
@@ -18505,9 +18983,9 @@ class WorksOfflineScreen extends StatelessWidget {
                             const SizedBox(height: Gold.s2),
                             AppText(
                               _points[i][1],
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Ink.muted,
-                                fontSize: Gold.t10,
+                                fontSize: 11,
                                 height: 1.45,
                               ),
                             ),

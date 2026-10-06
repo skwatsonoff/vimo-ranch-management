@@ -212,7 +212,7 @@ void main() {
     // The saving spinner intentionally animates while confirmation is open.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(AppleAlert), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.runAsync(() => pending);
     await tester.pumpAndSettle();

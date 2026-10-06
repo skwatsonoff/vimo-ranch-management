@@ -391,7 +391,13 @@ void main() {
     await tester.scrollUntilVisible(
       field,
       200,
-      scrollable: find.byType(Scrollable).last,
+      // The form's own list, not a text field's inner scrollable.
+      scrollable: find
+          .descendant(
+            of: find.byType(VendorPersonForm),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.tap(field);
     await tester.pump();

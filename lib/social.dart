@@ -266,7 +266,7 @@ class _SocialScreenState extends State<SocialScreen> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(CupertinoIcons.person_3, size: 52, color: _blue),
+            Icon(CupertinoIcons.person_3, size: 52, color: _blue),
             const SizedBox(height: 16),
             Text(
               bi('Start a conversation', 'உரையாடலைத் தொடங்குங்கள்'),
@@ -388,7 +388,7 @@ class _NewPostsPill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: ShapeDecoration(
           shape: const StadiumBorder(),
-          gradient: const LinearGradient(colors: [Ink.violet, Ink.violetDeep]),
+          gradient: LinearGradient(colors: [Ink.violet, Ink.violetDeep]),
           shadows: [
             BoxShadow(
               color: Ink.violetDeep.withValues(alpha: .32),
@@ -413,7 +413,7 @@ class _NewPostsPill extends StatelessWidget {
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
-                fontSize: 14,
+                fontSize: 15,
               ),
             ),
           ],
@@ -453,7 +453,7 @@ class _SocialUploadBar extends StatelessWidget {
                                 gaplessPlayback: true,
                                 cacheWidth: 96,
                               )
-                            : const ColoredBox(
+                            : ColoredBox(
                                 color: Ink.lavender,
                                 child: Icon(
                                   CupertinoIcons.text_bubble,
@@ -509,7 +509,7 @@ class _SocialUploadBar extends StatelessWidget {
                       ),
                     ),
                     if (upload.status == 'done')
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8),
                         child: Icon(
                           CupertinoIcons.check_mark_circled_solid,
@@ -665,17 +665,20 @@ class _SocialPhotoViewerState extends State<SocialPhotoViewer> {
               padding: const EdgeInsets.only(right: 8),
               child: PopupMenuButton<String>(
                 tooltip: ui('More'),
-                color: const Color(0xF5FFFFFF),
+                color: Ink.sheetCell,
                 shape: const SquircleBorder(radius: Gold.r21),
-                icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                icon: const Icon(
+                  CupertinoIcons.ellipsis_vertical,
+                  color: Colors.white,
+                ),
                 itemBuilder: (_) => [
                   PopupMenuItem(
                     value: 'save',
                     onTap: _save,
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.download_rounded,
+                        Icon(
+                          CupertinoIcons.arrow_down_circle,
                           color: Ink.violetDeep,
                         ),
                         const SizedBox(width: 12),
@@ -853,9 +856,9 @@ class _SocialComposerState extends State<SocialComposer> {
             accountUsername.isEmpty
                 ? bi('Choose a username', 'பயனர்பெயரைத் தேர்ந்தெடுங்கள்')
                 : accountUsername,
-            style: const TextStyle(
+            style: TextStyle(
               color: _blue,
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1098,7 +1101,7 @@ class _SocialPostState extends State<_SocialPost> {
   Future<void> _deletePost() async {
     final yes = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         shape: const SquircleBorder(radius: Gold.r27),
         title: Text(bi('Delete this post?', 'இந்தப் பதிவை நீக்கவா?')),
         actions: [
@@ -1122,7 +1125,7 @@ class _SocialPostState extends State<_SocialPost> {
   Future<void> _showLikes() async {
     final likes = await widget.post.reference.collection('likes').get();
     if (!mounted) return;
-    await showModalBottomSheet<void>(
+    await showAppleSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Glass(
@@ -1137,7 +1140,7 @@ class _SocialPostState extends State<_SocialPost> {
                 AppText(
                   '${likes.size} ${bi('likes', 'விருப்பங்கள்')}',
                   style: const TextStyle(
-                    fontSize: 21,
+                    fontSize: 22,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1174,7 +1177,7 @@ class _SocialPostState extends State<_SocialPost> {
                               ),
                               subtitle: Text(
                                 txt(data, 'username'),
-                                style: const TextStyle(color: Ink.violetDeep),
+                                style: TextStyle(color: Ink.violetDeep),
                               ),
                               onTap: () {
                                 Navigator.pop(context);
@@ -1267,17 +1270,14 @@ class _SocialPostState extends State<_SocialPost> {
                         ),
                         Text(
                           _relative(stamp),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Ink.muted,
-                          ),
+                          style: TextStyle(fontSize: 13, color: Ink.muted),
                         ),
                       ],
                     ),
                   ),
                   PopupMenuButton<String>(
                     padding: EdgeInsets.zero,
-                    color: const Color(0xF5FFFFFF),
+                    color: Ink.sheetCell,
                     shape: const SquircleBorder(radius: Gold.r21),
                     icon: const Icon(CupertinoIcons.ellipsis, size: 22),
                     onSelected: (value) async {
@@ -1438,7 +1438,7 @@ class _SocialPostState extends State<_SocialPost> {
                           ),
                           label: AppText(
                             '${snapshot.data?.size ?? 0}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: Ink.body,
                             ),
@@ -1456,7 +1456,7 @@ class _SocialPostState extends State<_SocialPost> {
                             count.data == null
                                 ? bi('Comments', 'கருத்துகள்')
                                 : '${count.data}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: Ink.body,
                             ),
@@ -1466,10 +1466,7 @@ class _SocialPostState extends State<_SocialPost> {
                       const Spacer(),
                       IconButton(
                         tooltip: bi('Share', 'பகிர்'),
-                        icon: const Icon(
-                          CupertinoIcons.paperplane,
-                          color: _blue,
-                        ),
+                        icon: Icon(CupertinoIcons.paperplane, color: _blue),
                         onPressed: () => showShareSheet(
                           context,
                           () async => ShareCard.post(widget.post),
@@ -1713,7 +1710,7 @@ class _SocialCommentsState extends State<_SocialComments> {
                         'Be the first to comment.',
                         'முதல் கருத்தைப் பகிருங்கள்.',
                       ),
-                      style: const TextStyle(color: Ink.muted),
+                      style: TextStyle(color: Ink.muted),
                     ),
                   ),
                 );
@@ -1739,7 +1736,7 @@ class _SocialCommentsState extends State<_SocialComments> {
                   padding: const EdgeInsets.only(top: 6),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         CupertinoIcons.arrow_turn_down_right,
                         size: 15,
                         color: Ink.muted,
@@ -1753,7 +1750,7 @@ class _SocialCommentsState extends State<_SocialComments> {
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Ink.muted,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -1849,7 +1846,7 @@ class _SocialCommentCardState extends State<_SocialCommentCard> {
 
   Future<void> _longPress() async {
     final own = txt(widget.comment.data(), 'authorUid') == signedInUid;
-    final action = await showModalBottomSheet<String>(
+    final action = await showAppleSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Glass(
@@ -1964,7 +1961,7 @@ class _SocialCommentCardState extends State<_SocialCommentCard> {
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: Ink.navy,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1974,10 +1971,7 @@ class _SocialCommentCardState extends State<_SocialCommentCard> {
                           const SizedBox(width: 6),
                           Text(
                             _ago(data['createdAt'] as Timestamp?),
-                            style: const TextStyle(
-                              color: Ink.faint,
-                              fontSize: 12,
-                            ),
+                            style: TextStyle(color: Ink.faint, fontSize: 12),
                           ),
                         ],
                       ),
@@ -1987,7 +1981,7 @@ class _SocialCommentCardState extends State<_SocialCommentCard> {
                         mentions: data['mentions'] is List
                             ? List.from(data['mentions'])
                             : const [],
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           height: 1.4,
                           color: Ink.body,

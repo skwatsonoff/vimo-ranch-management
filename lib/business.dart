@@ -188,7 +188,7 @@ String navLabel(String tab) => switch (tab) {
 IconData navIcon(String tab) => switch (tab) {
   'Ranch' => CupertinoIcons.house_fill,
   'Vendor' => CupertinoIcons.drop_fill,
-  'Reports' => Icons.analytics_rounded,
+  'Reports' => CupertinoIcons.chart_bar_alt_fill,
   'Social' => CupertinoIcons.globe,
   'Chat' => CupertinoIcons.chat_bubble_2_fill,
   _ => CupertinoIcons.person_fill,
@@ -289,7 +289,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   }
 
   Future<void> _chooseSlotFor(String tab) async {
-    final slot = await showModalBottomSheet<int>(
+    final slot = await showAppleSheet<int>(
       context: context,
       showDragHandle: true,
       builder: (sheet) => SafeArea(
@@ -312,7 +312,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 title: Text(navLabel(_order[i])),
                 trailing: AppText(
                   '${i + 1}',
-                  style: const TextStyle(color: Ink.muted),
+                  style: TextStyle(color: Ink.muted),
                 ),
                 onTap: () => Navigator.pop(sheet, i),
               ),
@@ -328,7 +328,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
     child: Text(
       text.toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         color: Ink.muted,
         fontSize: 13,
         fontWeight: FontWeight.w600,
@@ -341,7 +341,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
     child: AppText(
       text,
-      style: const TextStyle(color: Ink.muted, fontSize: 13, height: 1.4),
+      style: TextStyle(color: Ink.muted, fontSize: 13, height: 1.4),
     ),
   );
 
@@ -356,7 +356,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             height: 38,
             decoration: ShapeDecoration(
               shape: const SquircleBorder(radius: 11),
-              color: on ? Ink.violetDeep : Ink.violet.withValues(alpha: .12),
+              color: on ? Ink.tint : Ink.violet.withValues(alpha: .12),
             ),
             child: Center(
               child: workspaceIcon(
@@ -373,7 +373,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               children: [
                 Text(
                   workspaceTitle(kind),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
                     color: Ink.navy,
@@ -382,7 +382,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 const SizedBox(height: 2),
                 Text(
                   workspaceSubtitle(kind),
-                  style: const TextStyle(color: Ink.muted, fontSize: 13),
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
                 ),
               ],
             ),
@@ -390,7 +390,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           const SizedBox(width: 8),
           CupertinoSwitch(
             value: on,
-            activeTrackColor: Ink.violetDeep,
+            activeTrackColor: Ink.tint,
             onChanged: (v) => _toggleWorkspace(kind, v),
           ),
         ],
@@ -406,13 +406,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           decoration: ShapeDecoration(
             shape: SquircleBorder(
               radius: 16,
-              side: BorderSide(
-                color: muted ? const Color(0x33788298) : Colors.white,
-              ),
+              side: BorderSide(color: muted ? Ink.separator : Ink.surface),
             ),
             color: dragging
-                ? Ink.violetDeep
-                : Colors.white.withValues(alpha: muted ? .40 : .78),
+                ? Ink.tint
+                : Ink.surface.withValues(alpha: muted ? .40 : .78),
             shadows: dragging
                 ? [
                     BoxShadow(
@@ -464,13 +462,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           shape: SquircleBorder(
             radius: 18,
             side: BorderSide(
-              color: hovering ? Ink.violetDeep : Colors.white,
+              color: hovering ? Ink.tint : Ink.surface,
               width: hovering ? 1.5 : 1,
             ),
           ),
           color: hovering
               ? Ink.violet.withValues(alpha: .10)
-              : Colors.white.withValues(alpha: .62),
+              : Ink.surface.withValues(alpha: .62),
         ),
         child: LongPressDraggable<String>(
           data: tab,
@@ -492,13 +490,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           width: 26,
           height: 26,
           alignment: Alignment.center,
-          decoration: const ShapeDecoration(
+          decoration: ShapeDecoration(
             shape: SquircleBorder(radius: 8),
             color: Ink.lavender,
           ),
           child: AppText(
             '${i + 1}',
-            style: const TextStyle(
+            style: TextStyle(
               color: Ink.violetDeep,
               fontWeight: FontWeight.w700,
               fontSize: 13,
@@ -513,14 +511,14 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         Expanded(
           child: Text(
             navLabel(tab),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Ink.navy,
             ),
           ),
         ),
-        const Icon(CupertinoIcons.line_horizontal_3, color: Ink.faint),
+        Icon(CupertinoIcons.line_horizontal_3, color: Ink.faint),
       ],
     ),
   );
@@ -573,7 +571,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'VIMO-வை எதற்காகப் பயன்படுத்தப் போகிறீர்கள்?',
                 ),
                 style: const TextStyle(
-                  fontSize: 27,
+                  fontSize: 28,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -.6,
                 ),
@@ -584,7 +582,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'You can switch on more later in Settings → Preferences.',
                   'மற்ற பகுதிகளைப் பின்னர் செட்டிங்ஸ் → விருப்பங்களில் இயக்கலாம்.',
                 ),
-                style: const TextStyle(color: Ink.muted, fontSize: 15),
+                style: TextStyle(color: Ink.muted, fontSize: 15),
               ),
               const SizedBox(height: 21),
               _purposeChoice(),
@@ -626,7 +624,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                                 'Sync with ranch people',
                                 'தொழுவ உறுப்பினர்களுடன் ஒத்திசை',
                               ),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w600,
                                 color: Ink.navy,
@@ -635,7 +633,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                           ),
                           CupertinoSwitch(
                             value: CloudSyncService.sharedDataEnabled,
-                            activeTrackColor: Ink.violetDeep,
+                            activeTrackColor: Ink.tint,
                             onChanged: (value) async {
                               await setSetting('workspaceSyncEnabled', value);
                               await CollaborationRealtimeSyncService.stop();
@@ -958,7 +956,7 @@ class _VendorScreenState extends State<VendorScreen> {
                     ? bi('Buy milk', 'பால் கொள்முதல்')
                     : bi('Sell milk', 'பால் விற்பனை'),
                 style: const TextStyle(
-                  fontSize: 30,
+                  fontSize: 28,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -1,
                 ),
@@ -969,7 +967,7 @@ class _VendorScreenState extends State<VendorScreen> {
                   'Every litre. Every delivery.',
                   'ஒவ்வொரு லிட்டரும். ஒவ்வொரு விநியோகமும்.',
                 ),
-                style: const TextStyle(color: Ink.muted),
+                style: TextStyle(color: Ink.muted),
               ),
               const SizedBox(height: 20),
               Glass(
@@ -986,7 +984,7 @@ class _VendorScreenState extends State<VendorScreen> {
                               'VENDOR MILK STORAGE',
                               'விற்பனையாளர் பால் இருப்பு',
                             ),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _blue,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -1053,7 +1051,7 @@ class _VendorScreenState extends State<VendorScreen> {
                   '${ui(session)} · ${bi('Deliveries remaining', 'மீதமுள்ள விநியோகங்கள்')}',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 18,
+                    fontSize: 17,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1339,7 +1337,7 @@ class _BusinessMetric extends StatelessWidget {
         value,
         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
       ),
-      Text(label, style: const TextStyle(color: Ink.muted, fontSize: 12)),
+      Text(label, style: TextStyle(color: Ink.muted, fontSize: 12)),
     ],
   );
 }
@@ -1541,7 +1539,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                             tooltip: MaterialLocalizations.of(
                               context,
                             ).backButtonTooltip,
-                            icon: const Icon(Icons.arrow_back_rounded),
+                            icon: const Icon(CupertinoIcons.chevron_back),
                             onPressed: () => Navigator.of(context).maybePop(),
                           ),
                         ),
@@ -1835,7 +1833,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                     if (rows.isEmpty)
                       Text(
                         bi('No transactions yet.', 'பரிவர்த்தனைகள் இல்லை.'),
-                        style: const TextStyle(color: Ink.muted),
+                        style: TextStyle(color: Ink.muted),
                       ),
                     for (final r in rows)
                       Padding(
@@ -1885,9 +1883,9 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                                         if (txt(r, 'notes').isNotEmpty)
                                           txt(r, 'notes'),
                                       ].join('\n'),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: Ink.muted,
-                                        fontSize: 12.5,
+                                        fontSize: 13,
                                       ),
                                     ),
                                   ],
@@ -1935,7 +1933,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
     final controller = TextEditingController(text: txt(row, 'notes'));
     final note = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         title: Text(bi('Add a note', 'குறிப்பைச் சேர்க்கவும்')),
         content: TextField(controller: controller, maxLength: 500, maxLines: 3),
         actions: [
@@ -1978,17 +1976,14 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color color;
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-    this.color = Ink.body,
-  });
+  final Color? _color;
+  Color get color => _color ?? Ink.body;
+  const _InfoChip({required this.icon, required this.label, this._color});
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
     decoration: ShapeDecoration(
-      color: Colors.white.withValues(alpha: .72),
+      color: Ink.surface.withValues(alpha: .72),
       shape: StadiumBorder(
         side: BorderSide(color: Ink.violetDeep.withValues(alpha: .10)),
       ),
@@ -2017,12 +2012,9 @@ class _InfoChip extends StatelessWidget {
 
 class _PersonStat extends StatelessWidget {
   final String label, value;
-  final Color color;
-  const _PersonStat({
-    required this.label,
-    required this.value,
-    this.color = Ink.navy,
-  });
+  final Color? _color;
+  Color get color => _color ?? Ink.navy;
+  const _PersonStat({required this.label, required this.value, this._color});
   @override
   Widget build(BuildContext context) => Column(
     children: [
@@ -2031,7 +2023,7 @@ class _PersonStat extends StatelessWidget {
         child: AppText(
           value,
           style: TextStyle(
-            fontSize: 19,
+            fontSize: 20,
             fontWeight: FontWeight.w800,
             color: color,
           ),
@@ -2042,7 +2034,7 @@ class _PersonStat extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+        style: TextStyle(color: Ink.muted, fontSize: 13),
       ),
     ],
   );

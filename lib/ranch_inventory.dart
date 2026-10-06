@@ -247,7 +247,7 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                       shape: BoxShape.circle,
                       color: Ink.violetDeep.withValues(alpha: .1),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       CupertinoIcons.person_crop_rectangle_fill,
                       color: Ink.violetDeep,
                       size: 21,
@@ -263,7 +263,7 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                             'Customer profile reports',
                             'வாடிக்கையாளர் அறிக்கைகள்',
                           ),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
                             color: Ink.navy,
@@ -274,15 +274,12 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                             'Each customer, month by month',
                             'ஒவ்வொரு வாடிக்கையாளருக்கும் மாத வாரியாக',
                           ),
-                          style: const TextStyle(
-                            color: Ink.muted,
-                            fontSize: 12.5,
-                          ),
+                          style: TextStyle(color: Ink.muted, fontSize: 13),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(
+                  Icon(
                     CupertinoIcons.chevron_right,
                     size: 16,
                     color: Ink.faint,
@@ -296,8 +293,8 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                 Expanded(
                   child: Text(
                     bi('Entries', 'பதிவுகள்'),
-                    style: const TextStyle(
-                      fontSize: 21,
+                    style: TextStyle(
+                      fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: Ink.navy,
                     ),
@@ -309,8 +306,8 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                       'Export vendor report',
                       'விற்பனையாளர் அறிக்கையைப் பதிவிறக்கு',
                     ),
-                    icon: const Icon(
-                      Icons.file_download_outlined,
+                    icon: Icon(
+                      CupertinoIcons.arrow_down_doc,
                       color: Ink.violetDeep,
                     ),
                     onPressed: () => _export(rows),
@@ -323,7 +320,7 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                 padding: const EdgeInsets.symmetric(vertical: 34),
                 child: Column(
                   children: [
-                    const MilkVendorIcon(size: 55, color: Ink.faint),
+                    MilkVendorIcon(size: 55, color: Ink.faint),
                     const SizedBox(height: 13),
                     Text(
                       bi(
@@ -331,7 +328,7 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                         'இந்தக் காலத்தில் விற்பனையாளர் பதிவுகள் இல்லை.',
                       ),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Ink.muted),
+                      style: TextStyle(color: Ink.muted),
                     ),
                   ],
                 ),
@@ -341,7 +338,7 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                 padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
                 child: Text(
                   ui(chatDateLabel(date)),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.muted,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -415,7 +412,7 @@ class _VendorProfitCard extends StatelessWidget {
                   children: [
                     Text(
                       good ? bi('Profit', 'லாபம்') : bi('Loss', 'நஷ்டம்'),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Ink.muted,
                         fontWeight: FontWeight.w600,
                       ),
@@ -494,14 +491,14 @@ class _MoneyLine extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Ink.muted, fontSize: 12),
+                style: TextStyle(color: Ink.muted, fontSize: 12),
               ),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
                 child: AppText(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
@@ -543,8 +540,8 @@ class _VendorReportTile extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: AppText(
                   value,
-                  style: const TextStyle(
-                    fontSize: 21,
+                  style: TextStyle(
+                    fontSize: 22,
                     fontWeight: FontWeight.w800,
                     color: Ink.navy,
                   ),
@@ -554,7 +551,7 @@ class _VendorReportTile extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+                style: TextStyle(color: Ink.muted, fontSize: 13),
               ),
             ],
           ),
@@ -623,7 +620,7 @@ class _VendorReportRow extends StatelessWidget {
                     vendorEntryPersonName(row),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: Ink.navy,
@@ -637,7 +634,7 @@ class _VendorReportRow extends StatelessWidget {
                     ].join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+                    style: TextStyle(color: Ink.muted, fontSize: 13),
                   ),
                 ],
               ),
@@ -659,7 +656,7 @@ class _VendorReportRow extends StatelessWidget {
                 if (!payment && !clearance)
                   Text(
                     money(numv(row, 'amount')),
-                    style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+                    style: TextStyle(color: Ink.muted, fontSize: 13),
                   ),
               ],
             ),

@@ -392,8 +392,8 @@ class AppText extends Text {
   }
 }
 
-const _surface = Color(0xFFF5F5F7);
-const _blue = Ink.violetDeep;
+Color get _surface => Ink.canvasTop;
+Color get _blue => Ink.violetDeep;
 
 Future<void> showEntryActions(BuildContext context) async {
   await push(context, const AddEntryScreen());
@@ -415,11 +415,11 @@ class _InsetGroup extends StatelessWidget {
         children: [
           for (var i = 0; i < children.length; i++) ...[
             if (i > 0)
-              const Divider(
+              Divider(
                 height: 1,
                 thickness: .5,
                 indent: 54,
-                color: Color(0x24788298),
+                color: Ink.separator,
               ),
             children[i],
           ],
@@ -446,11 +446,7 @@ class _ActionRow extends StatelessWidget {
       label,
       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
     ),
-    trailing: const Icon(
-      CupertinoIcons.chevron_forward,
-      size: 15,
-      color: Colors.grey,
-    ),
+    trailing: Icon(CupertinoIcons.chevron_forward, size: 15, color: Ink.faint),
     onTap: onTap,
   );
 }
@@ -642,7 +638,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                           ),
                         ),
                         ListTile(
-                          leading: const Icon(
+                          leading: Icon(
                             CupertinoIcons.calendar,
                             color: _blue,
                             size: 24,
@@ -670,7 +666,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                                 },
                         ),
                         ListTile(
-                          leading: const Icon(
+                          leading: Icon(
                             CupertinoIcons.clock,
                             color: _blue,
                             size: 24,
@@ -701,7 +697,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                       child: FilledButton(
                         onPressed: _saving ? null : _save,
                         style: FilledButton.styleFrom(
-                          backgroundColor: _blue,
+                          backgroundColor: Ink.tint,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -898,7 +894,7 @@ class _ConversationViewState extends State<_ConversationView> {
     if (key == null || _pendingMessages.contains(key)) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         shape: const SquircleBorder(radius: Gold.r27),
         title: const AppText(
           'Delete this message?',
@@ -914,7 +910,7 @@ class _ConversationViewState extends State<_ConversationView> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const AppText(
+            child: AppText(
               'Delete',
               style: TextStyle(color: Ink.red, fontWeight: FontWeight.w700),
             ),
@@ -978,7 +974,7 @@ class _ConversationViewState extends State<_ConversationView> {
                   : const [],
               mentionColor: mine ? Colors.white : Ink.violetDeep,
               style: TextStyle(
-                fontSize: 17.5,
+                fontSize: 17,
                 height: 1.3,
                 color: mine ? Colors.white : Ink.navy,
               ),
@@ -1016,7 +1012,7 @@ class _ConversationViewState extends State<_ConversationView> {
                     ? const Color(0xFF34C759)
                     : canComplete
                     ? _blue
-                    : Colors.grey,
+                    : Ink.faint,
               ),
             ),
           ),
@@ -1050,8 +1046,8 @@ class _ConversationViewState extends State<_ConversationView> {
                   const SizedBox(height: 6),
                   Text(
                     txt(task, 'note'),
-                    style: const TextStyle(
-                      fontSize: 14,
+                    style: TextStyle(
+                      fontSize: 15,
                       height: 1.4,
                       color: Ink.muted,
                     ),
@@ -1150,7 +1146,7 @@ class _ConversationViewState extends State<_ConversationView> {
               Expanded(
                 child: _section == 1
                     ? tasks.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: AppText(
                                 'No tasks',
                                 style: TextStyle(color: Ink.muted),
@@ -1167,7 +1163,7 @@ class _ConversationViewState extends State<_ConversationView> {
                               ),
                             )
                     : messages.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: AppText(
                           'No messages',
                           style: TextStyle(color: Ink.muted),
@@ -1200,7 +1196,7 @@ class _ConversationViewState extends State<_ConversationView> {
                                       vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xEFFFFFFF),
+                                      color: Ink.surface.withValues(alpha: .94),
                                       borderRadius: BorderRadius.circular(999),
                                       boxShadow: const [
                                         BoxShadow(
@@ -1212,7 +1208,7 @@ class _ConversationViewState extends State<_ConversationView> {
                                     ),
                                     child: AppText(
                                       chatDateLabel(txt(m, 'date')),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
                                         color: Ink.muted,
                                         fontWeight: FontWeight.w700,
@@ -1246,7 +1242,7 @@ class _ConversationViewState extends State<_ConversationView> {
                         vertical: 2,
                       ),
                       decoration: ShapeDecoration(
-                        color: Colors.white.withValues(alpha: .94),
+                        color: Ink.surface.withValues(alpha: .94),
                         shape: StadiumBorder(
                           side: BorderSide(
                             color: Ink.faint.withValues(alpha: .35),
@@ -1268,7 +1264,7 @@ class _ConversationViewState extends State<_ConversationView> {
                                   onPressed: _sendingVoice
                                       ? null
                                       : _cancelVoiceRecording,
-                                  icon: const Icon(
+                                  icon: Icon(
                                     CupertinoIcons.delete,
                                     color: Ink.red,
                                   ),
@@ -1280,8 +1276,8 @@ class _ConversationViewState extends State<_ConversationView> {
                                         )
                                       : Row(
                                           children: [
-                                            const Icon(
-                                              Icons.fiber_manual_record,
+                                            Icon(
+                                              CupertinoIcons.circle_fill,
                                               size: 13,
                                               color: Ink.red,
                                             ),
@@ -1290,14 +1286,14 @@ class _ConversationViewState extends State<_ConversationView> {
                                               voiceDurationLabel(
                                                 _recordingSeconds,
                                               ),
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w700,
                                                 color: Ink.navy,
                                               ),
                                             ),
                                             const SizedBox(width: 8),
-                                            const Expanded(
+                                            Expanded(
                                               child: AppText(
                                                 'Voice message',
                                                 style: TextStyle(
@@ -1313,7 +1309,7 @@ class _ConversationViewState extends State<_ConversationView> {
                                   onPressed: _sendingVoice
                                       ? null
                                       : _finishVoiceRecording,
-                                  icon: const Icon(
+                                  icon: Icon(
                                     CupertinoIcons.arrow_up_circle_fill,
                                     size: 34,
                                     color: _blue,
@@ -1332,7 +1328,7 @@ class _ConversationViewState extends State<_ConversationView> {
                                           context,
                                           const TaskComposerScreen(),
                                         ),
-                                  icon: const Icon(
+                                  icon: Icon(
                                     CupertinoIcons.checkmark_square,
                                     size: 25,
                                     color: Ink.violetDeep,
@@ -1675,7 +1671,7 @@ class AppInfoScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       tamilUi ? entry.$3 : entry.$2,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         height: 1.6,
                         color: Ink.muted,
@@ -1697,7 +1693,8 @@ class AppleBubble extends StatelessWidget {
   final bool mine;
   final Widget child;
   final String? sender;
-  final Color senderColor;
+  final Color? _senderColor;
+  Color get senderColor => _senderColor ?? Ink.violetDeep;
   final String time;
   final bool pending;
   const AppleBubble({
@@ -1705,7 +1702,7 @@ class AppleBubble extends StatelessWidget {
     required this.mine,
     required this.child,
     this.sender,
-    this.senderColor = Ink.violetDeep,
+    this._senderColor,
     this.time = '',
     this.pending = false,
   });
@@ -1744,14 +1741,11 @@ class AppleBubble extends StatelessWidget {
             ),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
-              gradient: mine
-                  ? const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF8C6BFF), Ink.violetDeep],
-                    )
-                  : null,
-              color: mine ? null : const Color(0xFFE9E9EB),
+              color: mine
+                  ? Ink.tint
+                  : Ink.dark
+                  ? const Color(0xFF2C2C2E)
+                  : const Color(0xFFE9E9EB),
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(20),
                 topRight: const Radius.circular(20),
@@ -1766,7 +1760,7 @@ class AppleBubble extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(8, 3, 8, 2),
               child: Text(
                 pending ? bi('Sending…', 'அனுப்புகிறது…') : time,
-                style: const TextStyle(fontSize: 12, color: Ink.faint),
+                style: TextStyle(fontSize: 12, color: Ink.faint),
               ),
             ),
         ],
@@ -1790,7 +1784,7 @@ class AppleComposer extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
     decoration: ShapeDecoration(
-      color: Colors.white.withValues(alpha: .92),
+      color: Ink.surface.withValues(alpha: .92),
       shape: StadiumBorder(
         side: BorderSide(color: Ink.faint.withValues(alpha: .35)),
       ),

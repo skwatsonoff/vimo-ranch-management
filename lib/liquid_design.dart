@@ -1,24 +1,64 @@
 part of 'main.dart';
 
-/// The standard outline painter keeps the field fill behind editable content.
-/// InputDecoration owns the fill, avoiding a second painted overlay.
-class GlassInputBorder extends OutlineInputBorder {
+/// The iOS field shape: a fully rounded, filled rectangle. It behaves as a
+/// filled (not outlined) border, so a field's label sits inside the field
+/// above its value. A visible [borderSide] draws a rounded outline, used for
+/// the focused field; transparent sides draw nothing.
+class GlassInputBorder extends UnderlineInputBorder {
   const GlassInputBorder({
-    super.borderSide = const BorderSide(color: Color(0xCFFFFFFF)),
-    super.borderRadius = const BorderRadius.all(Radius.circular(20)),
-    super.gapPadding = 5,
+    super.borderSide = const BorderSide(color: Color(0x00000000), width: 0),
+    super.borderRadius = const BorderRadius.all(Radius.circular(14)),
   });
 
   @override
   GlassInputBorder copyWith({
     BorderSide? borderSide,
     BorderRadius? borderRadius,
-    double? gapPadding,
   }) => GlassInputBorder(
     borderSide: borderSide ?? this.borderSide,
     borderRadius: borderRadius ?? this.borderRadius,
-    gapPadding: gapPadding ?? this.gapPadding,
   );
+
+  @override
+  GlassInputBorder scale(double t) => GlassInputBorder(
+    borderSide: borderSide.scale(t),
+    borderRadius: borderRadius * t,
+  );
+
+  @override
+  ShapeBorder? lerpFrom(ShapeBorder? a, double t) {
+    if (a is GlassInputBorder) {
+      return GlassInputBorder(
+        borderSide: BorderSide.lerp(a.borderSide, borderSide, t),
+        borderRadius: BorderRadius.lerp(a.borderRadius, borderRadius, t)!,
+      );
+    }
+    return super.lerpFrom(a, t);
+  }
+
+  @override
+  ShapeBorder? lerpTo(ShapeBorder? b, double t) {
+    if (b is GlassInputBorder) {
+      return GlassInputBorder(
+        borderSide: BorderSide.lerp(borderSide, b.borderSide, t),
+        borderRadius: BorderRadius.lerp(borderRadius, b.borderRadius, t)!,
+      );
+    }
+    return super.lerpTo(b, t);
+  }
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      Path()..addRRect(borderRadius.resolve(textDirection).toRRect(rect));
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) => Path()
+    ..addRRect(
+      borderRadius
+          .resolve(textDirection)
+          .toRRect(rect)
+          .deflate(borderSide.width),
+    );
 
   @override
   void paint(
@@ -29,91 +69,84 @@ class GlassInputBorder extends OutlineInputBorder {
     double gapPercentage = 0,
     TextDirection? textDirection,
   }) {
-    super.paint(
-      canvas,
-      rect,
-      gapStart: gapStart,
-      gapExtent: gapExtent,
-      gapPercentage: gapPercentage,
-      textDirection: textDirection,
+    if (borderSide.style == BorderStyle.none ||
+        borderSide.width <= 0 ||
+        borderSide.color.a == 0) {
+      return;
+    }
+    canvas.drawRRect(
+      borderRadius
+          .resolve(textDirection)
+          .toRRect(rect)
+          .deflate(borderSide.width / 2),
+      borderSide.toPaint(),
     );
   }
 }
 
-Widget _glassButtonLayer(
-  BuildContext context,
-  Set<WidgetState> states,
-  Widget? child, {
-  bool primary = false,
-}) {
-  final disabled = states.contains(WidgetState.disabled);
-  final pressed = states.contains(WidgetState.pressed);
-  final highContrast = MediaQuery.highContrastOf(context);
-  return AnimatedScale(
-    scale: pressed && !MediaQuery.disableAnimationsOf(context) ? .98 : 1,
-    duration: MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 160),
-    curve: Curves.easeOutCubic,
-    child: Glass(
-      tint: primary ? Ink.violetDeep : null,
-      radius: 24,
-      blur: highContrast ? 0 : 12,
-      elevation: disabled ? .15 : .45,
-      specular: primary ? .7 : 1.1,
-      padding: EdgeInsets.zero,
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: primary
-            ? [
-                disabled ? const Color(0xFF9793B2) : const Color(0xFF8266EE),
-                disabled ? const Color(0xFF89869F) : Ink.violetDeep,
-              ]
-            : [
-                Colors.white.withValues(
-                  alpha: highContrast
-                      ? .98
-                      : pressed
-                      ? .85
-                      : .65,
-                ),
-                Colors.white.withValues(alpha: highContrast ? .95 : .22),
-              ],
-      ),
-      child: child ?? const SizedBox.shrink(),
-    ),
-  );
-}
-
+/// Button styles for the theme. [primary] is the prominent (filled tint)
+/// style; otherwise the gray style (system fill with a tinted label). Both are
+/// capsules with a 44 pt minimum target and a dim press state, no ripple.
 ButtonStyle liquidActionStyle({bool primary = false}) => ButtonStyle(
-  backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+  backgroundColor: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.disabled)
+        ? Ink.fill
+        : primary
+        ? Ink.tint
+        : Ink.fill,
+  ),
+  foregroundColor: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.disabled)
+        ? Ink.faint
+        : primary
+        ? Colors.white
+        : Ink.violetDeep,
+  ),
+  overlayColor: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.pressed)
+        ? Colors.black.withValues(alpha: .10)
+        : Colors.transparent,
+  ),
   surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
   shadowColor: const WidgetStatePropertyAll(Colors.transparent),
-  foregroundColor: WidgetStatePropertyAll(
-    primary ? Colors.white : Ink.violetDeep,
-  ),
-  overlayColor: const WidgetStatePropertyAll(Colors.transparent),
   elevation: const WidgetStatePropertyAll(0),
-  minimumSize: const WidgetStatePropertyAll(Size(44, 48)),
-  shape: const WidgetStatePropertyAll(SquircleBorder(radius: 24)),
-  side: const WidgetStatePropertyAll(BorderSide.none),
-  textStyle: const WidgetStatePropertyAll(
-    TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -.15),
+  minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
+  padding: const WidgetStatePropertyAll(
+    EdgeInsets.symmetric(horizontal: 18, vertical: 10),
   ),
-  backgroundBuilder: (context, states, child) =>
-      _glassButtonLayer(context, states, child, primary: primary),
+  shape: const WidgetStatePropertyAll(StadiumBorder()),
+  side: const WidgetStatePropertyAll(BorderSide.none),
+  splashFactory: NoSplash.splashFactory,
+  animationDuration: const Duration(milliseconds: 150),
+  textStyle: const WidgetStatePropertyAll(
+    TextStyle(fontSize: 17, fontWeight: FontWeight.w600, letterSpacing: -.2),
+  ),
+);
+
+/// Borderless symbol buttons for bars and rows, as Apple recommends.
+ButtonStyle plainIconStyle() => ButtonStyle(
+  foregroundColor: WidgetStateProperty.resolveWith(
+    (states) =>
+        states.contains(WidgetState.disabled) ? Ink.faint : Ink.violetDeep,
+  ),
+  overlayColor: WidgetStateProperty.resolveWith(
+    (states) =>
+        states.contains(WidgetState.pressed) ? Ink.fill : Colors.transparent,
+  ),
+  minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
+  splashFactory: NoSplash.splashFactory,
 );
 
 /// Milk delivery bicycle with two cans, shared by every Vendor surface.
 class MilkVendorIcon extends StatelessWidget {
   final double size;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? Ink.violetDeep;
   final bool detailed;
   const MilkVendorIcon({
     super.key,
     this.size = 30,
-    this.color = Ink.violetDeep,
+    this._color,
     this.detailed = false,
   });
   @override
@@ -131,7 +164,8 @@ class MilkVendorIcon extends StatelessWidget {
 
 class _MilkCyclePainter extends CustomPainter {
   final Color color;
-  const _MilkCyclePainter(this.color);
+  final bool dark;
+  _MilkCyclePainter(this.color) : dark = Ink.dark;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -157,7 +191,7 @@ class _MilkCyclePainter extends CustomPainter {
 
     for (final x in [15.5, 48.5]) {
       canvas.drawCircle(Offset(x, 46), 11.2, fill);
-      canvas.drawCircle(Offset(x, 46), 7.6, Paint()..color = Colors.white);
+      canvas.drawCircle(Offset(x, 46), 7.6, Paint()..color = Ink.surface);
       canvas.drawCircle(Offset(x, 46), 7.6, disc);
       canvas.drawCircle(Offset(x, 46), 2.2, fill);
     }
@@ -223,7 +257,8 @@ class _MilkCyclePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_MilkCyclePainter old) => old.color != color;
+  bool shouldRepaint(_MilkCyclePainter old) =>
+      old.color != color || old.dark != dark;
 }
 
 final Map<String, ImageProvider> _photoCache = {};
@@ -272,11 +307,13 @@ class GlassAvatar extends StatelessWidget {
     final size = radius * 2;
     final rim = math.max(2.0, radius * .08);
     final fallback = DecoratedBox(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFF1EBFF), Color(0xFFDCD2FF)],
+          colors: Ink.dark
+              ? const [Color(0xFF3A3358), Color(0xFF2A2446)]
+              : const [Color(0xFFF1EBFF), Color(0xFFDCD2FF)],
         ),
       ),
       child: Center(
@@ -306,11 +343,11 @@ class GlassAvatar extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: halo
-              ? const [Color(0xFF9D7BFF), Ink.violetDeep, Color(0xFF6F8BFF)]
+              ? [Color(0xFF9D7BFF), Ink.violetDeep, Color(0xFF6F8BFF)]
               : [
-                  Colors.white,
-                  Colors.white.withValues(alpha: .55),
-                  Colors.white.withValues(alpha: .9),
+                  Ink.surface,
+                  Ink.surface.withValues(alpha: .55),
+                  Ink.surface.withValues(alpha: .9),
                 ],
         ),
         boxShadow: [
@@ -323,10 +360,7 @@ class GlassAvatar extends StatelessWidget {
       ),
       child: Container(
         padding: EdgeInsets.all(halo ? rim * .6 : 0),
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white,
-        ),
+        decoration: BoxDecoration(shape: BoxShape.circle, color: Ink.surface),
         child: ClipOval(
           child: Stack(
             fit: StackFit.expand,
@@ -381,7 +415,7 @@ class GlassPortrait extends StatelessWidget {
       fit: BoxFit.cover,
       gaplessPlayback: true,
       filterQuality: FilterQuality.medium,
-      errorBuilder: (_, _, _) => const ColoredBox(color: Ink.lavender),
+      errorBuilder: (_, _, _) => ColoredBox(color: Ink.lavender),
     );
     return Semantics(
       label: title,
@@ -411,12 +445,14 @@ class GlassPortrait extends StatelessWidget {
               if (hasPhoto)
                 photo()
               else
-                const DecoratedBox(
+                DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [Color(0xFFEDE6FF), Color(0xFFCFC2FF)],
+                      colors: Ink.dark
+                          ? const [Color(0xFF3A3358), Color(0xFF2A2446)]
+                          : const [Color(0xFFEDE6FF), Color(0xFFCFC2FF)],
                     ),
                   ),
                 ),
@@ -481,7 +517,7 @@ class GlassPortrait extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: .8),
+                      color: Ink.surface.withValues(alpha: .8),
                       width: math.max(2, size * .012),
                     ),
                   ),
@@ -517,7 +553,7 @@ class GlassPortrait extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: size * .105,
+                          fontSize: math.max(13, size * .105),
                           fontWeight: FontWeight.w700,
                           letterSpacing: -.3,
                           color: hasPhoto ? Colors.white : Ink.navy,
@@ -538,7 +574,7 @@ class GlassPortrait extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: size * .066,
+                            fontSize: math.max(11, size * .066),
                             fontWeight: FontWeight.w600,
                             color: hasPhoto
                                 ? const Color(0xFFFFE9A8)
@@ -568,8 +604,9 @@ class GlassPortrait extends StatelessWidget {
 /// The VIMO signature wordmark from the reference design.
 class VimoScript extends StatelessWidget {
   final double size;
-  final Color color;
-  const VimoScript({super.key, this.size = 52, this.color = Ink.violetDark});
+  final Color? _color;
+  Color get color => _color ?? Ink.violetDark;
+  const VimoScript({super.key, this.size = 52, this._color});
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
     child: AppText(

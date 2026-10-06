@@ -247,8 +247,8 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                             ).toUpperCase(),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 21,
+                                            style: TextStyle(
+                                              fontSize: 22,
                                               fontWeight: FontWeight.w800,
                                               letterSpacing: .2,
                                               color: Ink.navy,
@@ -268,7 +268,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                                         'பயனர்பெயரைத் தேர்ந்தெடு',
                                                       )
                                                     : '@$name',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   color: Ink.muted,
                                                   fontWeight: FontWeight.w500,
                                                 ),
@@ -283,7 +283,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                               ),
                                               child: Row(
                                                 children: [
-                                                  const Icon(
+                                                  Icon(
                                                     CupertinoIcons
                                                         .location_solid,
                                                     size: 16,
@@ -296,7 +296,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                                       maxLines: 1,
                                                       overflow:
                                                           TextOverflow.ellipsis,
-                                                      style: const TextStyle(
+                                                      style: TextStyle(
                                                         color: Ink.body,
                                                       ),
                                                     ),
@@ -355,7 +355,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                   mentions: data['bioMentions'] is List
                                       ? List.from(data['bioMentions'])
                                       : const [],
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
                                     height: 1.4,
                                     color: Ink.body,
@@ -462,7 +462,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                             child: OutlinedButton.icon(
                                               style: OutlinedButton.styleFrom(
                                                 shape: const StadiumBorder(),
-                                                backgroundColor: Colors.white
+                                                backgroundColor: Ink.surface
                                                     .withValues(alpha: .7),
                                                 foregroundColor: Ink.navy,
                                                 side: BorderSide(
@@ -558,7 +558,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                     vertical: 12,
                                   ),
                                   backgroundColor: _tab == item.$1
-                                      ? Ink.violetDeep
+                                      ? Ink.tint
                                       : Colors.transparent,
                                   foregroundColor: _tab == item.$1
                                       ? Colors.white
@@ -686,7 +686,7 @@ class _ProfilePostListState extends State<ProfilePostList> {
       builder: (context, snap) {
         if (snap.hasError) return Text(accountError(snap.error!));
         if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: CupertinoActivityIndicator());
         }
         if (snap.data!.isEmpty) {
           return Padding(
@@ -742,7 +742,7 @@ class _FollowsYou extends StatelessWidget {
                   ),
                   child: Text(
                     bi('Follows you', 'உங்களைப் பின்தொடர்கிறார்'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: Ink.muted,
@@ -782,7 +782,7 @@ class _ProfileCount extends StatelessWidget {
                 children: [
                   Text(
                     count == null ? '–' : compact(count),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: Ink.navy,
@@ -793,7 +793,7 @@ class _ProfileCount extends StatelessWidget {
                     kind == 'followers'
                         ? bi('Followers', 'பின்தொடர்பவர்கள்')
                         : bi('Following', 'பின்தொடர்பவை'),
-                    style: const TextStyle(color: Ink.muted, fontSize: 13),
+                    style: TextStyle(color: Ink.muted, fontSize: 13),
                   ),
                 ],
               ),
@@ -806,13 +806,14 @@ class _ProfileCount extends StatelessWidget {
 class _ProfileAction extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color iconColor;
+  final Color? _iconColor;
+  Color get iconColor => _iconColor ?? Ink.violetDeep;
   final VoidCallback onTap;
   const _ProfileAction({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.iconColor = Ink.violetDeep,
+    this._iconColor,
   });
   @override
   Widget build(BuildContext context) => Glass(
@@ -829,10 +830,7 @@ class _ProfileAction extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Ink.navy,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w600, color: Ink.navy),
           ),
         ),
       ],
@@ -864,7 +862,7 @@ class ProfilePeopleScreen extends StatelessWidget {
             return Center(child: Text(accountError(snapshot.error!)));
           }
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           if (snapshot.data!.docs.isEmpty) {
             return Center(
@@ -970,7 +968,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
   }
 
   Future<void> _photoMenu() async {
-    await showModalBottomSheet<void>(
+    await showAppleSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Glass(
@@ -990,7 +988,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
               ),
               if (_photo.isNotEmpty)
                 ListTile(
-                  leading: const Icon(CupertinoIcons.trash, color: Ink.red),
+                  leading: Icon(CupertinoIcons.trash, color: Ink.red),
                   title: Text(bi('Remove photo', 'புகைப்படத்தை நீக்கு')),
                   onTap: () {
                     Navigator.pop(context);
@@ -1030,11 +1028,11 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          Colors.white.withValues(alpha: .96),
+                          Ink.surface.withValues(alpha: .96),
                           Ink.violet.withValues(alpha: .28),
                         ],
                       ),
-                      border: Border.all(color: Colors.white, width: 2),
+                      border: Border.all(color: Ink.surface, width: 2),
                       boxShadow: [
                         BoxShadow(
                           color: Ink.violetDeep.withValues(alpha: .28),
@@ -1043,7 +1041,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       CupertinoIcons.pencil,
                       size: 22,
                       color: Ink.violetDeep,
@@ -1094,7 +1092,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
           ),
         ),
       ),
-      SwitchListTile(
+      SwitchListTile.adaptive(
         value: _shareRanch,
         title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
         subtitle: Text(
@@ -1107,7 +1105,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
             ? (v) => setState(() => _shareRanch = v)
             : null,
       ),
-      SwitchListTile(
+      SwitchListTile.adaptive(
         value: _shareShop,
         title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
         onChanged: (v) => setState(() => _shareShop = v),
