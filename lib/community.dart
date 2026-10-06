@@ -173,7 +173,7 @@ class _MentionInputState extends State<MentionInput> {
                   ),
                   subtitle: Text(
                     txt(person, 'username'),
-                    style: const TextStyle(color: Ink.violetDeep),
+                    style: TextStyle(color: Ink.violetDeep),
                   ),
                   onTap: () => _select(person),
                 ),
@@ -188,13 +188,14 @@ class MentionText extends StatelessWidget {
   final String text;
   final List<dynamic> mentions;
   final TextStyle? style;
-  final Color mentionColor;
+  final Color? _mentionColor;
+  Color get mentionColor => _mentionColor ?? Ink.violetDeep;
   const MentionText(
     this.text, {
     super.key,
     this.mentions = const [],
     this.style,
-    this.mentionColor = Ink.violetDeep,
+    this._mentionColor,
   });
   @override
   Widget build(BuildContext context) {
@@ -219,7 +220,7 @@ class MentionText extends StatelessWidget {
           style: TextStyle(
             color: mentionColor,
             fontWeight: FontWeight.w700,
-            decoration: mentionColor == Colors.white
+            decoration: mentionColor == Ink.surface
                 ? TextDecoration.underline
                 : null,
             decorationColor: mentionColor,
@@ -411,7 +412,7 @@ class PublicRanchView extends StatelessWidget {
           builder: (context, snapshot) {
             if (snapshot.hasError) return Text(accountError(snapshot.error!));
             if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: CupertinoActivityIndicator());
             }
             if (snapshot.data!.docs.isEmpty) {
               return Padding(
@@ -461,7 +462,7 @@ class PublicRanchView extends StatelessWidget {
                         txt(cow.data(), 'breed'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Ink.muted, fontSize: 12),
+                        style: TextStyle(color: Ink.muted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -480,13 +481,13 @@ class PublicRanchView extends StatelessWidget {
                           Text(
                             txt(cow.data(), 'name'),
                             style: const TextStyle(
-                              fontSize: 18,
+                              fontSize: 17,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                           Text(
                             txt(cow.data(), 'breed'),
-                            style: const TextStyle(color: Ink.muted),
+                            style: TextStyle(color: Ink.muted),
                           ),
                         ],
                       ),
@@ -654,7 +655,7 @@ class _CommunitySearchScreenState extends State<CommunitySearchScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          if (_busy) const Center(child: CircularProgressIndicator()),
+          if (_busy) const Center(child: CupertinoActivityIndicator()),
           if (_error != null) Text(_error!),
           for (final person in _people)
             ListTile(
@@ -668,7 +669,7 @@ class _CommunitySearchScreenState extends State<CommunitySearchScreen> {
               ),
               subtitle: Text(
                 txt(person.data(), 'username'),
-                style: const TextStyle(color: Ink.violetDeep),
+                style: TextStyle(color: Ink.violetDeep),
               ),
               trailing: widget.addPersonal && person.id != signedInUid
                   ? IconButton(
@@ -912,7 +913,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                                 avatar: Container(
                                   width: 52,
                                   height: 52,
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: LinearGradient(
                                       begin: Alignment.topLeft,
@@ -944,7 +945,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                                           ),
                                           Text(
                                             farmName(),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
                                               color: Ink.violetDeep,
                                             ),
@@ -987,7 +988,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                           }
                           if (!chats.hasData) {
                             return const Center(
-                              child: CircularProgressIndicator(),
+                              child: CupertinoActivityIndicator(),
                             );
                           }
                           final peers = <String>{
@@ -1065,7 +1066,7 @@ class _ChatRow extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
                             color: Ink.navy,
@@ -1076,15 +1077,12 @@ class _ChatRow extends StatelessWidget {
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Ink.muted,
-                          ),
+                          style: TextStyle(fontSize: 15, color: Ink.muted),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(
+                  Icon(
                     CupertinoIcons.chevron_right,
                     size: 15,
                     color: Ink.faint,
@@ -1155,7 +1153,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     return Text(
       text,
       style: TextStyle(
-        fontSize: 18,
+        fontSize: 17,
         height: 1.3,
         color: mine ? Colors.white : Ink.navy,
       ),
@@ -1164,11 +1162,11 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.white,
+    backgroundColor: Ink.surface,
     appBar: AppBar(
       centerTitle: true,
       toolbarHeight: 96,
-      backgroundColor: Colors.white.withValues(alpha: .96),
+      backgroundColor: Ink.surface.withValues(alpha: .96),
       title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('profiles')
@@ -1206,7 +1204,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                           ),
                         ),
                       ),
-                      const Icon(
+                      Icon(
                         CupertinoIcons.chevron_right,
                         size: 13,
                         color: Ink.faint,
@@ -1255,7 +1253,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                     return Center(
                       child: Text(
                         bi('Say hello 👋', 'வணக்கம் சொல்லுங்கள் 👋'),
-                        style: const TextStyle(color: Ink.muted),
+                        style: TextStyle(color: Ink.muted),
                       ),
                     );
                   }
@@ -1386,7 +1384,7 @@ class MilkOriginScreen extends StatelessWidget {
                 'Stock is pooled. These are the recorded inflows and outflows.',
                 'பால் கலந்த இருப்பாக உள்ளது. இவை பதிவுசெய்யப்பட்ட வரவு–செலவு விவரங்கள்.',
               ),
-              style: const TextStyle(color: Ink.muted),
+              style: TextStyle(color: Ink.muted),
             ),
             const SizedBox(height: 16),
             for (final row in rows)

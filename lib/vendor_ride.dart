@@ -282,8 +282,8 @@ class _VendorPill extends StatelessWidget {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       decoration: ShapeDecoration(
-        color: selected ? Ink.violetDeep : Colors.white.withValues(alpha: .58),
-        shape: const SquircleBorder(radius: 16),
+        color: selected ? Ink.tint : Ink.fill,
+        shape: const StadiumBorder(),
       ),
       child: TextButton(
         style: TextButton.styleFrom(
@@ -470,7 +470,7 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: Ink.violetDeep,
-                              border: Border.all(color: Colors.white, width: 2),
+                              border: Border.all(color: Ink.surface, width: 2),
                             ),
                             child: const Icon(
                               CupertinoIcons.camera_fill,
@@ -611,7 +611,7 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                 _cycle == 'Weekly'
                     ? bi('Which day?', 'எந்த நாள்?')
                     : bi('Receive payment on', 'பணம் பெறும் நாட்கள்'),
-                style: const TextStyle(color: Ink.muted),
+                style: TextStyle(color: Ink.muted),
               ),
               const SizedBox(height: 8),
               VendorWeekRow(
@@ -1140,7 +1140,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     if (remaining > 0 && done + skipped > 0) {
       final finish = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => AppleAlert(
           title: Text(bi('End ride?', 'பயணத்தை முடிக்கவா?')),
           content: Text(
             bi(
@@ -1257,8 +1257,8 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                               : CupertinoIcons.play_fill,
                           height: 56,
                           radius: 28,
-                          start: _active ? const Color(0xFFFF7A85) : Ink.violet,
-                          end: _active ? Ink.red : Ink.violetDeep,
+                          start: _active ? Ink.red : Ink.tint,
+                          end: _active ? Ink.red : Ink.tint,
                           onPressed: _busy || !canRecordEntries
                               ? null
                               : () => _active
@@ -1318,7 +1318,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                           ),
                           child: AppText(
                             '${_done.length + _skipped.length}/${_stops.length}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Ink.violetDeep,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1366,7 +1366,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                           'Volume ↑ Complete · ↓ Skip · Editing off',
                           'Volume ↑ முடி · ↓ தவிர் · மாற்ற முடியாது',
                         ),
-                        style: const TextStyle(color: Ink.muted),
+                        style: TextStyle(color: Ink.muted),
                       ),
                     ),
                   const SizedBox(height: 12),
@@ -1379,7 +1379,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                           'Add a milk buyer to begin. No customers scheduled for this session.',
                           'பால் வாங்குபவரைச் சேர்க்கவும். இந்த நேரத்திற்கு வாடிக்கையாளர்கள் இல்லை.',
                         ),
-                        style: const TextStyle(color: Ink.muted),
+                        style: TextStyle(color: Ink.muted),
                       ),
                     )
                   else if (_groups)
@@ -1407,7 +1407,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                     const SizedBox(height: 14),
                     Text(
                       bi('Other customers', 'மற்ற வாடிக்கையாளர்கள்'),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Ink.muted,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1443,15 +1443,15 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                                       txt(p, 'place'),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: Ink.muted,
-                                        fontSize: 12.5,
+                                        fontSize: 13,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              const Icon(
+                              Icon(
                                 CupertinoIcons.chevron_right,
                                 size: 16,
                                 color: Ink.faint,
@@ -1578,10 +1578,10 @@ class _VendorRideScreenState extends State<VendorRideScreen>
             height: 64,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Colors.white, Color(0xFFEDE6FF)],
+                colors: [Ink.surface, Ink.lavender],
               ),
               boxShadow: [
                 BoxShadow(
@@ -1602,7 +1602,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
               children: [
                 Text(
                   bi('Milk balance', 'பால் இருப்பு'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Ink.muted,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1678,7 +1678,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
             child: Glass(
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     CupertinoIcons.check_mark_circled_solid,
                     color: Ink.green,
                     size: 28,
@@ -1703,11 +1703,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
           padding: const EdgeInsets.only(bottom: 10),
           child: Row(
             children: [
-              const Icon(
-                CupertinoIcons.hand_draw_fill,
-                size: 15,
-                color: Ink.muted,
-              ),
+              Icon(CupertinoIcons.hand_draw_fill, size: 15, color: Ink.muted),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -1715,7 +1711,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                     'Swipe any customer, in any order',
                     'எந்த வாடிக்கையாளரையும், எந்த வரிசையிலும் நகர்த்தலாம்',
                   ),
-                  style: const TextStyle(color: Ink.muted, fontSize: 13),
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
                 ),
               ),
             ],
@@ -1770,7 +1766,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
               padding: const EdgeInsets.only(right: 10),
               child: AppText(
                 '${vendorFieldNumber(qty)} L',
-                style: const TextStyle(color: Ink.muted),
+                style: TextStyle(color: Ink.muted),
               ),
             ),
           ConstrainedBox(
@@ -1843,13 +1839,13 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                   children: [
                     Text(
                       vendorFieldNumber(qty),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: Ink.violetDeep,
                       ),
                     ),
-                    const AppText(
+                    AppText(
                       ' L',
                       style: TextStyle(
                         fontSize: 13,
@@ -1870,7 +1866,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 19,
+                        fontSize: 20,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -.2,
                       ),
@@ -1880,7 +1876,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                       txt(p, 'place'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Ink.muted, fontSize: 13.5),
+                      style: TextStyle(color: Ink.muted, fontSize: 13),
                     ),
                   ],
                 ),
@@ -1899,7 +1895,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                       child: Text(
                         money(amount),
                         style: const TextStyle(
-                          fontSize: 21,
+                          fontSize: 22,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -.3,
                         ),
@@ -1912,7 +1908,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: timing.color,
                       ),
@@ -1927,7 +1923,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: now ? Ink.greenText : Ink.muted,
-                          fontSize: 11.5,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1980,7 +1976,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
         child: AppText(
           '${bi('Amount', 'தொகை')} ${money(litres * price)}'
           '${due > 0.001 ? '  ·  ${bi('Due', 'நிலுவை')} ${money(due)}' : ''}',
-          style: const TextStyle(color: Ink.body, fontWeight: FontWeight.w600),
+          style: TextStyle(color: Ink.body, fontWeight: FontWeight.w600),
         ),
       ),
       Row(
@@ -2015,10 +2011,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
             Expanded(
               child: Text(
                 bi('Amount received', 'பெற்ற தொகை'),
-                style: const TextStyle(
-                  color: Ink.muted,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: Ink.muted, fontWeight: FontWeight.w600),
               ),
             ),
             SizedBox(
@@ -2048,13 +2041,10 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                   ),
                   focusedBorder: GlassInputBorder(
                     borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(
-                      color: Ink.violetDeep,
-                      width: 1.4,
-                    ),
+                    borderSide: BorderSide(color: Ink.violetDeep, width: 1.4),
                   ),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: .7),
+                  fillColor: Ink.surface.withValues(alpha: .7),
                 ),
               ),
             ),
@@ -2088,7 +2078,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
           'மீண்டும் நகர்த்தினால் இன்று தவிர்க்கப்படும்',
         ),
         textAlign: TextAlign.center,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           color: Ink.amberText,
           fontWeight: FontWeight.w600,
@@ -2133,7 +2123,7 @@ class _ClearanceChip extends StatelessWidget {
           shape: StadiumBorder(
             side: BorderSide(color: Ink.blue.withValues(alpha: .28)),
           ),
-          color: Colors.white.withValues(alpha: .7),
+          color: Ink.surface.withValues(alpha: .7),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -2188,15 +2178,12 @@ class _GroupHeader extends StatelessWidget {
             style: TextStyle(
               color: highlighted ? Ink.violetDeep : Ink.muted,
               fontWeight: FontWeight.w700,
-              fontSize: 14,
+              fontSize: 15,
             ),
           ),
         ),
         const SizedBox(width: 6),
-        Text(
-          '· $count',
-          style: const TextStyle(color: Ink.faint, fontSize: 13),
-        ),
+        Text('· $count', style: TextStyle(color: Ink.faint, fontSize: 13)),
         const SizedBox(width: 10),
         Expanded(child: Divider(color: Ink.violetDeep.withValues(alpha: .1))),
       ],
@@ -2286,7 +2273,7 @@ class _ProviderBubble extends StatelessWidget {
                 height: 60,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [Ink.violet, Ink.violetDeep],
@@ -2313,7 +2300,7 @@ class _ProviderBubble extends StatelessWidget {
                 txt(p, 'place'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Ink.muted, fontSize: 11),
+                style: TextStyle(color: Ink.muted, fontSize: 11),
               ),
           ],
         ),
@@ -2364,7 +2351,7 @@ class VendorProvidersScreen extends StatelessWidget {
             return Center(
               child: Text(
                 bi('No milk providers yet.', 'பால் வழங்குநர்கள் இல்லை.'),
-                style: const TextStyle(color: Ink.muted),
+                style: TextStyle(color: Ink.muted),
               ),
             );
           }
@@ -2411,7 +2398,7 @@ class VendorProvidersScreen extends StatelessWidget {
                             txt(p, 'place'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Ink.muted),
+                            style: TextStyle(color: Ink.muted),
                           ),
                         ],
                       ),
@@ -2429,7 +2416,7 @@ class VendorProvidersScreen extends StatelessWidget {
                           ),
                           Text(
                             bi('To pay', 'கொடுக்க'),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Ink.amberText,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -2438,7 +2425,7 @@ class VendorProvidersScreen extends StatelessWidget {
                         ],
                       )
                     else
-                      const Icon(
+                      Icon(
                         CupertinoIcons.chevron_right,
                         size: 16,
                         color: Ink.faint,
@@ -2701,7 +2688,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                   height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [Ink.violet, Ink.violetDeep],
@@ -2727,8 +2714,8 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                     children: [
                       Text(
                         bi('Route maps', 'பாதை வரைபடங்கள்'),
-                        style: const TextStyle(
-                          fontSize: 18,
+                        style: TextStyle(
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                           color: Ink.navy,
                         ),
@@ -2739,16 +2726,12 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                           'சுற்றைப் பதிவு செய், குறிப்பு சேர், ஒரு நாள் கொடு',
                         ),
                         maxLines: 2,
-                        style: const TextStyle(color: Ink.muted, fontSize: 13),
+                        style: TextStyle(color: Ink.muted, fontSize: 13),
                       ),
                     ],
                   ),
                 ),
-                const Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: Ink.faint,
-                ),
+                Icon(CupertinoIcons.chevron_right, size: 16, color: Ink.faint),
               ],
             ),
           ),
@@ -2766,7 +2749,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                     shape: BoxShape.circle,
                     color: Ink.violetDeep.withValues(alpha: .1),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     CupertinoIcons.person_crop_rectangle_fill,
                     color: Ink.violetDeep,
                     size: 23,
@@ -2782,8 +2765,8 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                           'Customer profile reports',
                           'வாடிக்கையாளர் அறிக்கைகள்',
                         ),
-                        style: const TextStyle(
-                          fontSize: 18,
+                        style: TextStyle(
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                           color: Ink.navy,
                         ),
@@ -2793,16 +2776,12 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                           'Each customer, month by month',
                           'ஒவ்வொரு வாடிக்கையாளருக்கும் மாத வாரியாக',
                         ),
-                        style: const TextStyle(color: Ink.muted, fontSize: 13),
+                        style: TextStyle(color: Ink.muted, fontSize: 13),
                       ),
                     ],
                   ),
                 ),
-                const Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: Ink.faint,
-                ),
+                Icon(CupertinoIcons.chevron_right, size: 16, color: Ink.faint),
               ],
             ),
           ),
@@ -2814,7 +2793,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
               contentPadding: EdgeInsets.zero,
               value: _groups,
               activeTrackColor: Ink.violetDeep,
-              secondary: const Icon(
+              secondary: Icon(
                 CupertinoIcons.location_solid,
                 color: Ink.violetDeep,
               ),
@@ -2834,7 +2813,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
           const SizedBox(height: 27),
           Text(
             bi('Customer order', 'வாடிக்கையாளர் வரிசை'),
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 16),
           Row(
@@ -2864,7 +2843,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
               'Hold and drag to arrange',
               'அழுத்திப் பிடித்து வரிசையை மாற்றவும்',
             ),
-            style: const TextStyle(color: Ink.muted),
+            style: TextStyle(color: Ink.muted),
           ),
           ReorderableListView.builder(
             shrinkWrap: true,
@@ -2893,18 +2872,12 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                             Text(txt(_people[i], 'name')),
                             Text(
                               txt(_people[i], 'place'),
-                              style: const TextStyle(
-                                color: Ink.muted,
-                                fontSize: 12,
-                              ),
+                              style: TextStyle(color: Ink.muted, fontSize: 12),
                             ),
                           ],
                         ),
                       ),
-                      const Icon(
-                        CupertinoIcons.line_horizontal_3,
-                        color: Ink.muted,
-                      ),
+                      Icon(CupertinoIcons.line_horizontal_3, color: Ink.muted),
                     ],
                   ),
                 ),
@@ -2918,7 +2891,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
           ),
           const SizedBox(height: 12),
           Glass(
-            child: SwitchListTile(
+            child: SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               value: _volume,
               title: Text(bi('Volume buttons', 'Volume பொத்தான்கள்')),
@@ -2931,7 +2904,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                         defaultTargetPlatform != TargetPlatform.android)) {
                   await showDialog<void>(
                     context: context,
-                    builder: (ctx) => AlertDialog(
+                    builder: (ctx) => AppleAlert(
                       title: Text(bi('Volume controls', 'Volume கட்டுப்பாடு')),
                       content: Text(
                         bi(
@@ -2953,7 +2926,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                 if (v) {
                   await showDialog<void>(
                     context: context,
-                    builder: (ctx) => AlertDialog(
+                    builder: (ctx) => AppleAlert(
                       title: Text(bi('Volume mode', 'Volume முறை')),
                       content: Text(
                         bi(
@@ -3099,7 +3072,7 @@ class VendorRideSummary extends StatelessWidget {
                     )
                   : bi('Ride ended', 'பயணம் முடிந்தது'),
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 24),
             Glass(
@@ -3170,10 +3143,7 @@ class VendorRideSummary extends StatelessWidget {
                   leading: _VendorAvatar(person: top),
                   title: Text(txt(top, 'name')),
                   subtitle: Text(txt(top, 'place')),
-                  trailing: const Icon(
-                    CupertinoIcons.star_fill,
-                    color: Ink.amber,
-                  ),
+                  trailing: Icon(CupertinoIcons.star_fill, color: Ink.amber),
                 ),
               ),
             ],
@@ -3213,7 +3183,7 @@ class VendorRideSummary extends StatelessWidget {
                               ),
                               Text(
                                 payDay(item.on),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Ink.redText,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
@@ -3225,7 +3195,7 @@ class VendorRideSummary extends StatelessWidget {
                         Text(
                           money(item.amount),
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 17,
                             fontWeight: FontWeight.w800,
                           ),
                         ),

@@ -160,7 +160,7 @@ class ReportDetailsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(21),
           children: [
-            Text(ui(period), style: const TextStyle(color: Ink.muted)),
+            Text(ui(period), style: TextStyle(color: Ink.muted)),
             const SizedBox(height: 16),
             if (records.isEmpty)
               Text(
@@ -200,16 +200,13 @@ class ReportDetailsScreen extends StatelessWidget {
                                 : money(numv(row, '_value')),
                           ),
                           const SizedBox(width: 8),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Ink.faint,
-                          ),
+                          Icon(CupertinoIcons.chevron_right, color: Ink.faint),
                         ],
                       ),
                       const SizedBox(height: 8),
                       AppText(
                         '${txt(row, 'date')} · ${txt(row, 'time')} ${ui(txt(row, 'session'))}',
-                        style: const TextStyle(color: Ink.muted),
+                        style: TextStyle(color: Ink.muted),
                       ),
                       if (txt(row, 'notes').isNotEmpty) Text(txt(row, 'notes')),
                     ],
@@ -355,7 +352,7 @@ class RecordFullDetailsScreen extends StatelessWidget {
                     flex: 4,
                     child: AppText(
                       _label(entry.key),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Ink.muted,
                         fontWeight: FontWeight.w600,
                       ),
@@ -367,7 +364,7 @@ class RecordFullDetailsScreen extends StatelessWidget {
                     child: AppText(
                       '${entry.value}',
                       textAlign: TextAlign.right,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Ink.navy,
                         fontWeight: FontWeight.w700,
                       ),

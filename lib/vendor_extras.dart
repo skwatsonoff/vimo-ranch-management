@@ -155,7 +155,7 @@ class _VendorPlaceFieldState extends State<VendorPlaceField> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 CupertinoIcons.location_solid,
                                 size: 16,
                                 color: Ink.violetDeep,
@@ -166,7 +166,7 @@ class _VendorPlaceFieldState extends State<VendorPlaceField> {
                                   option,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     color: Ink.navy,
                                   ),
@@ -174,9 +174,9 @@ class _VendorPlaceFieldState extends State<VendorPlaceField> {
                               ),
                               Text(
                                 '${_counts[vendorPlaceKey(option)] ?? 0}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Ink.muted,
-                                  fontSize: 12.5,
+                                  fontSize: 13,
                                 ),
                               ),
                             ],
@@ -275,32 +275,8 @@ class _PlaceBubble extends StatelessWidget {
             curve: Gold.ease,
             padding: const EdgeInsets.fromLTRB(13, 0, 6, 0),
             decoration: ShapeDecoration(
-              shape: StadiumBorder(
-                side: BorderSide(
-                  color: selected
-                      ? Colors.white.withValues(alpha: .55)
-                      : Colors.white.withValues(alpha: .9),
-                ),
-              ),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: selected
-                    ? const [Ink.violet, Ink.violetDeep]
-                    : [
-                        Colors.white.withValues(alpha: .82),
-                        Colors.white.withValues(alpha: .52),
-                      ],
-              ),
-              shadows: [
-                BoxShadow(
-                  color: (selected ? Ink.violetDeep : Ink.navy).withValues(
-                    alpha: selected ? .26 : .06,
-                  ),
-                  blurRadius: selected ? 16 : 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
+              shape: const StadiumBorder(),
+              color: selected ? Ink.tint : Ink.surface,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -319,7 +295,7 @@ class _PlaceBubble extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 14,
+                      fontSize: 15,
                       color: selected ? Colors.white : Ink.navy,
                     ),
                   ),
@@ -377,7 +353,7 @@ Future<void> showMilkClearance(BuildContext context) async {
     );
     return;
   }
-  await showModalBottomSheet<void>(
+  await showAppleSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -520,7 +496,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                         ],
                       ),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       CupertinoIcons.tray_arrow_down_fill,
                       color: Ink.blue,
                     ),
@@ -532,7 +508,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                       children: [
                         Text(
                           bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
                             color: Ink.navy,
@@ -540,7 +516,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                         ),
                         AppText(
                           '${bi('In hand', 'கையிருப்பு')} ${vendorFieldNumber(_balance)} L',
-                          style: const TextStyle(color: Ink.muted),
+                          style: TextStyle(color: Ink.muted),
                         ),
                       ],
                     ),
@@ -624,7 +600,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                                   padding: const EdgeInsets.all(21),
                                   child: Text(
                                     bi('No people found.', 'யாரும் இல்லை.'),
-                                    style: const TextStyle(color: Ink.muted),
+                                    style: TextStyle(color: Ink.muted),
                                   ),
                                 )
                               : ListView(
@@ -651,11 +627,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                     tint: Ink.blue.withValues(alpha: .05),
                     child: Row(
                       children: [
-                        const Icon(
-                          CupertinoIcons.snow,
-                          color: Ink.blue,
-                          size: 30,
-                        ),
+                        Icon(CupertinoIcons.snow, color: Ink.blue, size: 30),
                         const SizedBox(width: 13),
                         Expanded(
                           child: Text(
@@ -663,7 +635,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                               'The milk goes into the fridge and leaves today\'s stock. No money changes.',
                               'பால் ஃப்ரிட்ஜுக்குச் செல்லும்; இன்றைய இருப்பிலிருந்து குறையும். பணக் கணக்கு மாறாது.',
                             ),
-                            style: const TextStyle(color: Ink.body),
+                            style: TextStyle(color: Ink.body),
                           ),
                         ),
                       ],
@@ -707,7 +679,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                       )
                     : bi('Clear milk', 'பாலை கிளியர் செய்'),
                 icon: CupertinoIcons.checkmark_alt,
-                start: const Color(0xFF6D8BFF),
+                start: Ink.blue,
                 end: Ink.blue,
                 busy: _busy,
                 height: 56,
@@ -752,7 +724,7 @@ class _PickRow extends StatelessWidget {
                   txt(person, 'name'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Ink.navy,
                   ),
@@ -766,7 +738,7 @@ class _PickRow extends StatelessWidget {
                   ].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
                 ),
               ],
             ),
@@ -777,14 +749,18 @@ class _PickRow extends StatelessWidget {
             height: 24,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: selected ? Ink.violetDeep : Colors.transparent,
+              color: selected ? Ink.tint : Colors.transparent,
               border: Border.all(
-                color: selected ? Ink.violetDeep : Ink.faint,
+                color: selected ? Ink.tint : Ink.faint,
                 width: 1.6,
               ),
             ),
             child: selected
-                ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
+                ? const Icon(
+                    CupertinoIcons.checkmark_alt,
+                    size: 16,
+                    color: Colors.white,
+                  )
                 : null,
           ),
         ],
@@ -898,7 +874,7 @@ class _CustomerReportsScreenState extends State<CustomerReportsScreen> {
                   child: Text(
                     bi('No people yet.', 'யாரும் இல்லை.'),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Ink.muted),
+                    style: TextStyle(color: Ink.muted),
                   ),
                 ),
               for (final (i, p) in people.indexed)
@@ -962,7 +938,7 @@ class _CustomerReportRow extends StatelessWidget {
                   txt(person, 'name'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
@@ -975,7 +951,7 @@ class _CustomerReportRow extends StatelessWidget {
                   ].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Ink.muted, fontSize: 13),
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
                 ),
               ],
             ),
@@ -992,11 +968,7 @@ class _CustomerReportRow extends StatelessWidget {
                   color: due > .001 ? Ink.redText : Ink.greenText,
                 ),
               ),
-              const Icon(
-                CupertinoIcons.chevron_right,
-                size: 14,
-                color: Ink.faint,
-              ),
+              Icon(CupertinoIcons.chevron_right, size: 14, color: Ink.faint),
             ],
           ),
         ],
@@ -1113,8 +1085,8 @@ class _CustomerMonthlyReportScreenState
                 actions: [
                   IconButton(
                     tooltip: bi('Export report', 'அறிக்கையைப் பதிவிறக்கு'),
-                    icon: const Icon(
-                      Icons.file_download_outlined,
+                    icon: Icon(
+                      CupertinoIcons.arrow_down_doc,
                       color: Ink.violetDeep,
                     ),
                     onPressed: monthRows.isEmpty
@@ -1164,8 +1136,8 @@ class _CustomerMonthlyReportScreenState
                                 monthLabel('$_key-01'),
                                 key: ValueKey(_key),
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 18,
+                                style: TextStyle(
+                                  fontSize: 17,
                                   fontWeight: FontWeight.w700,
                                   color: Ink.navy,
                                 ),
@@ -1265,8 +1237,8 @@ class _CustomerMonthlyReportScreenState
                     const SizedBox(height: 27),
                     Text(
                       bi('Day by day', 'நாள் வாரியாக'),
-                      style: const TextStyle(
-                        fontSize: 21,
+                      style: TextStyle(
+                        fontSize: 22,
                         fontWeight: FontWeight.w700,
                         color: Ink.navy,
                       ),
@@ -1281,7 +1253,7 @@ class _CustomerMonthlyReportScreenState
                             'இந்த மாதத்தில் பதிவுகள் இல்லை.',
                           ),
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Ink.muted),
+                          style: TextStyle(color: Ink.muted),
                         ),
                       ),
                     if (days.isNotEmpty)
@@ -1338,7 +1310,7 @@ class _ReportFigure extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: AppText(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
               color: Ink.navy,
@@ -1350,7 +1322,7 @@ class _ReportFigure extends StatelessWidget {
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+          style: TextStyle(color: Ink.muted, fontSize: 13),
         ),
       ],
     ),
@@ -1389,7 +1361,7 @@ class _ReportDay extends StatelessWidget {
               children: [
                 AppText(
                   day == null ? date : '${day.day}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                     color: Ink.navy,
@@ -1401,7 +1373,7 @@ class _ReportDay extends StatelessWidget {
                         .characters
                         .take(3)
                         .toString(),
-                    style: const TextStyle(color: Ink.muted, fontSize: 11.5),
+                    style: TextStyle(color: Ink.muted, fontSize: 12),
                   ),
               ],
             ),
@@ -1436,7 +1408,7 @@ class _ReportDay extends StatelessWidget {
           if (amount > 0)
             AppText(
               money(amount),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: Ink.navy,
@@ -1473,7 +1445,7 @@ class _SessionPill extends StatelessWidget {
           label,
           style: TextStyle(
             color: color,
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
         ),

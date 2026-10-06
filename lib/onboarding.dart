@@ -176,9 +176,7 @@ class _Dots extends StatelessWidget {
           height: 7,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(4),
-            color: i == index
-                ? Ink.violetDeep
-                : Ink.faint.withValues(alpha: .35),
+            color: i == index ? Ink.tint : Ink.faint.withValues(alpha: .35),
           ),
         ),
     ],
@@ -205,7 +203,7 @@ class _StepFrame extends StatelessWidget {
     children: [
       Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           color: Ink.navy,
           fontSize: Gold.t34,
           fontWeight: FontWeight.w700,
@@ -216,11 +214,7 @@ class _StepFrame extends StatelessWidget {
       const SizedBox(height: Gold.s8),
       Text(
         subtitle,
-        style: const TextStyle(
-          color: Ink.muted,
-          fontSize: Gold.t16,
-          height: 1.4,
-        ),
+        style: TextStyle(color: Ink.muted, fontSize: Gold.t16, height: 1.4),
       ),
       const SizedBox(height: Gold.s34),
       child,
@@ -242,7 +236,7 @@ class _Welcome extends StatelessWidget {
         const Spacer(flex: 3),
         const Reveal(index: 0, child: BrandMark(size: Gold.s89 + Gold.s34)),
         const SizedBox(height: Gold.s34),
-        const Reveal(
+        Reveal(
           index: 1,
           child: Text(
             'Welcome to VIMO',
@@ -256,20 +250,20 @@ class _Welcome extends StatelessWidget {
           ),
         ),
         const SizedBox(height: Gold.s8),
-        const Reveal(
+        Reveal(
           index: 2,
           child: Text(
             'VIMO-க்கு வரவேற்கிறோம்',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Ink.violetDeep,
-              fontSize: Gold.t21,
+              fontSize: 22,
               fontWeight: FontWeight.w600,
             ),
           ),
         ),
         const SizedBox(height: Gold.s13),
-        const Reveal(
+        Reveal(
           index: 3,
           child: Text(
             'Ranch · Vendor · Market',
@@ -322,7 +316,7 @@ class _LanguageStep extends StatelessWidget {
               subtitle: 'Use VIMO in English',
               leading: const Text(
                 'Aa',
-                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
               ),
               onTap: () => setSetting('languageMode', 'English'),
             ),
@@ -333,7 +327,7 @@ class _LanguageStep extends StatelessWidget {
               subtitle: 'VIMO-வைத் தமிழில் பயன்படுத்துங்கள்',
               leading: const Text(
                 'அ',
-                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
               ),
               onTap: () => setSetting('languageMode', 'Tamil'),
             ),
@@ -415,13 +409,11 @@ class _ChoiceCard extends StatelessWidget {
           shape: SquircleBorder(
             radius: Gold.r27,
             side: BorderSide(
-              color: selected ? Ink.violetDeep : Colors.white,
+              color: selected ? Ink.tint : Ink.surface,
               width: 1.2,
             ),
           ),
-          color: selected
-              ? Ink.violetDeep
-              : Colors.white.withValues(alpha: .66),
+          color: selected ? Ink.tint : Ink.surface.withValues(alpha: .66),
           shadows: [
             BoxShadow(
               color: Ink.violetDeep.withValues(alpha: selected ? .22 : .06),
@@ -485,7 +477,7 @@ class _ChoiceCard extends StatelessWidget {
 
 /// Asks a user who just switched Ranch on how they want to start it.
 Future<void> promptRanchSetup(BuildContext context) async {
-  final choice = await showModalBottomSheet<int>(
+  final choice = await showAppleSheet<int>(
     context: context,
     showDragHandle: true,
     builder: (sheet) => SafeArea(
@@ -497,9 +489,9 @@ Future<void> promptRanchSetup(BuildContext context) async {
           children: [
             Text(
               bi('Set up your ranch', 'உங்கள் தொழுவத்தை அமைக்கவும்'),
-              style: const TextStyle(
+              style: TextStyle(
                 color: Ink.navy,
-                fontSize: Gold.t21,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -509,12 +501,12 @@ Future<void> promptRanchSetup(BuildContext context) async {
                 'Create a new ranch or join one with its Ranch ID.',
                 'புதிய தொழுவத்தை உருவாக்கவும் அல்லது Ranch ID மூலம் இருக்கும் தொழுவத்தில் சேரவும்.',
               ),
-              style: const TextStyle(color: Ink.muted, height: 1.4),
+              style: TextStyle(color: Ink.muted, height: 1.4),
             ),
             const SizedBox(height: Gold.s21),
             LiquidButton(
               label: bi('Create a ranch', 'புதிய தொழுவம் உருவாக்கு'),
-              icon: Icons.add_home_work_rounded,
+              icon: CupertinoIcons.house_alt,
               onPressed: () => Navigator.pop(sheet, 0),
             ),
             const SizedBox(height: Gold.s13),
@@ -569,9 +561,9 @@ class RanchSetupPrompt extends StatelessWidget {
                     Text(
                       bi('Set up your ranch', 'உங்கள் தொழுவத்தை அமைக்கவும்'),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Ink.navy,
-                        fontSize: Gold.t21,
+                        fontSize: 22,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -582,12 +574,12 @@ class RanchSetupPrompt extends StatelessWidget {
                         'புதிய தொழுவத்தை உருவாக்குங்கள், அல்லது இருக்கும் Ranch ID-ஐ உள்ளிட்டுச் சேருங்கள்.',
                       ),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Ink.muted, height: 1.45),
+                      style: TextStyle(color: Ink.muted, height: 1.45),
                     ),
                     const SizedBox(height: Gold.s21),
                     LiquidButton(
                       label: bi('Create a ranch', 'புதிய தொழுவம் உருவாக்கு'),
-                      icon: Icons.add_home_work_rounded,
+                      icon: CupertinoIcons.house_alt,
                       onPressed: () => push(
                         context,
                         const RanchOnboardingScreen(pageMode: true),
@@ -814,11 +806,11 @@ class _SignupScreenState extends State<SignupScreen> {
                                 shape: BoxShape.circle,
                                 color: Ink.lavender,
                                 border: Border.all(
-                                  color: Colors.white,
+                                  color: Ink.surface,
                                   width: 3,
                                 ),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 CupertinoIcons.person_fill,
                                 color: Ink.violet,
                                 size: Gold.s55,
@@ -835,13 +827,12 @@ class _SignupScreenState extends State<SignupScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Ink.violetDeep,
-                          border: Border.all(color: Colors.white, width: 3),
+                          border: Border.all(color: Ink.surface, width: 3),
                         ),
                         child: _picking
                             ? const Padding(
                                 padding: EdgeInsets.all(Gold.s8),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                                child: CupertinoActivityIndicator(
                                   color: Colors.white,
                                 ),
                               )
@@ -862,7 +853,7 @@ class _SignupScreenState extends State<SignupScreen> {
         Text(
           bi('Profile photo (optional)', 'ப்ரொஃபைல் படம் (விருப்பம்)'),
           textAlign: TextAlign.center,
-          style: const TextStyle(color: Ink.muted, fontSize: Gold.t13),
+          style: TextStyle(color: Ink.muted, fontSize: Gold.t13),
         ),
         const SizedBox(height: Gold.s21),
         TextField(
@@ -872,7 +863,7 @@ class _SignupScreenState extends State<SignupScreen> {
           autofillHints: const [AutofillHints.name],
           decoration: fieldStyle(
             bi('Full name', 'முழுப் பெயர்'),
-            icon: Icons.person_outline_rounded,
+            icon: CupertinoIcons.person,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -885,7 +876,7 @@ class _SignupScreenState extends State<SignupScreen> {
           autofillHints: const [AutofillHints.telephoneNumber],
           decoration: fieldStyle(
             bi('Mobile number', 'மொபைல் எண்'),
-            icon: Icons.phone_iphone_rounded,
+            icon: CupertinoIcons.device_phone_portrait,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -895,7 +886,7 @@ class _SignupScreenState extends State<SignupScreen> {
           textInputAction: TextInputAction.next,
           decoration: fieldStyle(
             bi('Town / District', 'ஊர் / மாவட்டம்'),
-            icon: Icons.place_outlined,
+            icon: CupertinoIcons.location,
           ),
         ),
         const SizedBox(height: Gold.s13),
@@ -904,7 +895,7 @@ class _SignupScreenState extends State<SignupScreen> {
           keyboardType: TextInputType.emailAddress,
           autofillHints: const [AutofillHints.newUsername],
           textInputAction: TextInputAction.next,
-          decoration: fieldStyle('Email', icon: Icons.mail_outline_rounded),
+          decoration: fieldStyle('Email', icon: CupertinoIcons.mail),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
@@ -914,13 +905,11 @@ class _SignupScreenState extends State<SignupScreen> {
           textInputAction: TextInputAction.next,
           decoration: fieldStyle(
             'Create Password',
-            icon: Icons.lock_outline_rounded,
+            icon: CupertinoIcons.lock,
             suffix: IconButton(
               onPressed: () => setState(() => _obscure = !_obscure),
               icon: Icon(
-                _obscure
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
+                _obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
               ),
             ),
           ),
@@ -934,13 +923,13 @@ class _SignupScreenState extends State<SignupScreen> {
           onSubmitted: (_) => _createAccount(),
           decoration: fieldStyle(
             'Confirm Password',
-            icon: Icons.verified_user_outlined,
+            icon: CupertinoIcons.checkmark_shield,
           ),
         ),
         const SizedBox(height: Gold.s21),
         LiquidButton(
           label: 'Create Account',
-          icon: Icons.person_add_alt_1_rounded,
+          icon: CupertinoIcons.person_badge_plus_fill,
           busy: _busy,
           onPressed: _createAccount,
         ),

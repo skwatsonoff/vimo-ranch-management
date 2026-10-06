@@ -303,12 +303,12 @@ class _MapCredit extends StatelessWidget {
       margin: const EdgeInsets.all(4),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .72),
+        color: Ink.surface.withValues(alpha: .72),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Text(
+      child: Text(
         '© OpenStreetMap',
-        style: TextStyle(fontSize: 9.5, color: Ink.muted),
+        style: TextStyle(fontSize: 11, color: Ink.muted),
       ),
     ),
   );
@@ -388,9 +388,9 @@ class _HomePin extends StatelessWidget {
   Widget build(BuildContext context) {
     final current = state == StopState.current;
     final colors = switch (state) {
-      StopState.done => const [Color(0xFF52C483), Ink.green],
-      StopState.skipped => const [Color(0xFFFF8793), Ink.red],
-      StopState.current => const [Ink.violet, Ink.violetDeep],
+      StopState.done => [Color(0xFF52C483), Ink.green],
+      StopState.skipped => [Color(0xFFFF8793), Ink.red],
+      StopState.current => [Ink.violet, Ink.violetDeep],
       StopState.pending => const [Color(0xFF9D86F0), Color(0xFF7A62D8)],
     };
     final size = current ? 44.0 : 34.0;
@@ -425,7 +425,11 @@ class _HomePin extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: state == StopState.done
-                ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
+                ? const Icon(
+                    CupertinoIcons.checkmark_alt,
+                    color: Colors.white,
+                    size: 18,
+                  )
                 : state == StopState.skipped
                 ? const Icon(
                     CupertinoIcons.forward_fill,
@@ -507,21 +511,21 @@ class _MapButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback? onTap;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? Ink.violetDeep;
   const _MapButton({
     required this.icon,
     required this.tooltip,
     required this.onTap,
-    this.color = Ink.violetDeep,
+    this._color,
   });
   @override
   Widget build(BuildContext context) => Tooltip(
     message: tooltip,
     child: SizedBox.square(
       dimension: 48,
-      child: Glass(
+      child: LiquidGlass(
         radius: 24,
-        opacity: .82,
         padding: EdgeInsets.zero,
         onTap: onTap,
         child: Center(
@@ -612,7 +616,7 @@ class VendorLocationField extends StatelessWidget {
                             width: 44,
                             height: 44,
                             alignment: Alignment.topCenter,
-                            child: const Icon(
+                            child: Icon(
                               CupertinoIcons.house_fill,
                               color: Ink.violetDeep,
                               size: 34,
@@ -629,7 +633,7 @@ class VendorLocationField extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   CupertinoIcons.map_pin_ellipse,
                   color: Ink.violetDeep,
                   size: 21,
@@ -646,7 +650,7 @@ class VendorLocationField extends StatelessWidget {
                             'Home location saved',
                             'வீட்டு இடம் சேமிக்கப்பட்டது',
                           ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: Ink.navy,
                     ),
@@ -756,7 +760,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               duration: Gold.fast,
               curve: Gold.ease,
               offset: Offset(0, _moving ? -.72 : -.5),
-              child: const Icon(
+              child: Icon(
                 CupertinoIcons.house_alt_fill,
                 size: 44,
                 color: Ink.violetDeep,
@@ -784,9 +788,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           bottom: 16,
           child: SafeArea(
             top: false,
-            child: Glass(
+            child: LiquidGlass(
               radius: 28,
-              opacity: .86,
               padding: const EdgeInsets.all(13),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -797,7 +800,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       'வீட்டின் மேல் குறி வரும்படி வரைபடத்தை நகர்த்தவும்.',
                     ),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Ink.muted),
+                    style: TextStyle(color: Ink.muted),
                   ),
                   const SizedBox(height: 10),
                   LiquidButton(
@@ -849,7 +852,7 @@ class _RouteMapsScreenState extends State<RouteMapsScreen> {
   Future<void> _delete(Map<String, dynamic> route) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         title: Text(bi('Delete route?', 'பாதையை நீக்கவா?')),
         content: Text(
           bi(
@@ -885,7 +888,7 @@ class _RouteMapsScreenState extends State<RouteMapsScreen> {
       );
       return;
     }
-    await showModalBottomSheet<void>(
+    await showAppleSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -926,7 +929,7 @@ class _RouteMapsScreenState extends State<RouteMapsScreen> {
                           'உங்கள் பால் சுற்றை ஒருமுறை பதிவு செய்யுங்கள். ஒவ்வொரு வீடும் குறிப்பும் வரைபடத்தில் இருக்கும்.',
                         ),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Ink.muted),
+                        style: TextStyle(color: Ink.muted),
                       ),
                     ),
                   for (final (i, route) in own.indexed)
@@ -972,8 +975,8 @@ class _SectionTitle extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
-              fontSize: 21,
+            style: TextStyle(
+              fontSize: 22,
               fontWeight: FontWeight.w700,
               color: Ink.navy,
               letterSpacing: -.2,
@@ -996,9 +999,9 @@ class _RecordHero extends StatelessWidget {
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        Colors.white.withValues(alpha: .86),
+        Ink.surface.withValues(alpha: .86),
         Ink.lavender.withValues(alpha: .62),
-        Colors.white.withValues(alpha: .7),
+        Ink.surface.withValues(alpha: .7),
       ],
     ),
     child: Column(
@@ -1011,7 +1014,7 @@ class _RecordHero extends StatelessWidget {
               height: 55,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [Ink.violet, Ink.violetDeep],
@@ -1037,8 +1040,8 @@ class _RecordHero extends StatelessWidget {
                 children: [
                   Text(
                     bi('Record a route', 'பாதையைப் பதிவு செய்'),
-                    style: const TextStyle(
-                      fontSize: 21,
+                    style: TextStyle(
+                      fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: Ink.navy,
                     ),
@@ -1049,7 +1052,7 @@ class _RecordHero extends StatelessWidget {
                       'Walk your round. Mark each home and pin notes on the way.',
                       'சுற்றில் நடந்து செல்லுங்கள். ஒவ்வொரு வீட்டையும் குறித்து, வழியில் குறிப்புகள் சேர்க்கவும்.',
                     ),
-                    style: const TextStyle(color: Ink.muted, fontSize: 13.5),
+                    style: TextStyle(color: Ink.muted, fontSize: 13),
                   ),
                 ],
               ),
@@ -1080,7 +1083,7 @@ class _RouteMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) => PopupMenuButton<int>(
     tooltip: bi('More', 'மேலும்'),
-    icon: const Icon(CupertinoIcons.ellipsis_vertical, color: Ink.navy),
+    icon: Icon(CupertinoIcons.ellipsis_vertical, color: Ink.navy),
     shape: const SquircleBorder(radius: 21),
     color: Colors.white.withValues(alpha: .96),
     onSelected: (v) => switch (v) {
@@ -1193,8 +1196,8 @@ class _RouteCard extends StatelessWidget {
                         txt(route, 'name', bi('Route', 'பாதை')),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 18,
+                        style: TextStyle(
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                           color: Ink.navy,
                         ),
@@ -1215,7 +1218,7 @@ class _RouteCard extends StatelessWidget {
                         ].join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Ink.muted, fontSize: 13),
+                        style: TextStyle(color: Ink.muted, fontSize: 13),
                       ),
                     ],
                   ),
@@ -1339,7 +1342,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
 
   Future<void> _markHome([ll.LatLng? at]) async {
     final used = {for (final s in _stops) txt(s, 'id')};
-    final person = await showModalBottomSheet<Map<String, dynamic>>(
+    final person = await showAppleSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1377,7 +1380,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
   }
 
   Future<void> _addNote({String stopId = '', ll.LatLng? at}) async {
-    final note = await showModalBottomSheet<Map<String, dynamic>>(
+    final note = await showAppleSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1409,7 +1412,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
 
   Future<void> _stopActions(Map<String, dynamic> stop) async {
     final id = txt(stop, 'id');
-    final action = await showModalBottomSheet<String>(
+    final action = await showAppleSheet<String>(
       context: context,
       showDragHandle: true,
       backgroundColor: Ink.canvasTop,
@@ -1422,7 +1425,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                 txt(stop, 'name'),
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
-                  fontSize: 19,
+                  fontSize: 20,
                 ),
               ),
               subtitle: Text(txt(stop, 'place')),
@@ -1438,7 +1441,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                 onTap: () => Navigator.pop(ctx, 'note:${txt(n, 'id')}'),
               ),
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 CupertinoIcons.text_badge_plus,
                 color: Ink.violetDeep,
               ),
@@ -1449,10 +1452,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
             ),
             if (_me != null)
               ListTile(
-                leading: const Icon(
-                  CupertinoIcons.location_fill,
-                  color: Ink.blue,
-                ),
+                leading: Icon(CupertinoIcons.location_fill, color: Ink.blue),
                 title: Text(
                   bi(
                     'Move to where I am',
@@ -1462,10 +1462,10 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                 onTap: () => Navigator.pop(ctx, 'move'),
               ),
             ListTile(
-              leading: const Icon(CupertinoIcons.trash, color: Ink.redText),
+              leading: Icon(CupertinoIcons.trash, color: Ink.redText),
               title: Text(
                 bi('Remove from route', 'பாதையிலிருந்து நீக்கு'),
-                style: const TextStyle(color: Ink.redText),
+                style: TextStyle(color: Ink.redText),
               ),
               onTap: () => Navigator.pop(ctx, 'remove'),
             ),
@@ -1511,7 +1511,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
       );
       return;
     }
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showAppleSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1545,7 +1545,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
     if (!_dirty) return true;
     final leave = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         title: Text(bi('Discard this recording?', 'இந்தப் பதிவை விடவா?')),
         content: Text(
           bi(
@@ -1623,9 +1623,8 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Glass(
+                    child: LiquidGlass(
                       radius: 24,
-                      opacity: .84,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
@@ -1643,7 +1642,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                                   : bi('Paused', 'நிறுத்தப்பட்டது'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                               ),
@@ -1651,7 +1650,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                           ),
                           AppText(
                             '${voiceDurationLabel(_elapsed.inSeconds)} · ${routeDistanceLabel(distance)} · ${_stops.length}🏠',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color: Ink.muted,
                               fontSize: 13,
@@ -1689,9 +1688,8 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
               bottom: 16,
               child: SafeArea(
                 top: false,
-                child: Glass(
+                child: LiquidGlass(
                   radius: 34,
-                  opacity: .86,
                   padding: const EdgeInsets.fromLTRB(13, 13, 13, 13),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1748,7 +1746,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                           'குறிப்பு: வரைபடத்தை அழுத்திப் பிடித்தால் அங்கு வீட்டைக் குறிக்கலாம்.',
                         ),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Ink.muted, fontSize: 12),
+                        style: TextStyle(color: Ink.muted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -1858,7 +1856,7 @@ class _BigAction extends StatelessWidget {
                 style: TextStyle(
                   color: color,
                   fontWeight: FontWeight.w700,
-                  fontSize: 12.5,
+                  fontSize: 13,
                 ),
               ),
             ],
@@ -1932,8 +1930,8 @@ class _PickCustomerSheetState extends State<_PickCustomerSheet> {
                 padding: const EdgeInsets.fromLTRB(21, 0, 21, 10),
                 child: Text(
                   bi('Whose home is this?', 'இது யாருடைய வீடு?'),
-                  style: const TextStyle(
-                    fontSize: 21,
+                  style: TextStyle(
+                    fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                   ),
@@ -2003,7 +2001,7 @@ class _PickCustomerSheetState extends State<_PickCustomerSheet> {
                               'Every customer is on this route.',
                               'அனைத்து வாடிக்கையாளர்களும் இந்தப் பாதையில் உள்ளனர்.',
                             ),
-                            style: const TextStyle(color: Ink.muted),
+                            style: TextStyle(color: Ink.muted),
                           ),
                         )
                       : ListView(
@@ -2014,7 +2012,7 @@ class _PickCustomerSheetState extends State<_PickCustomerSheet> {
                                 padding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
                                 child: Text(
                                   g.label,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: Ink.muted,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13,
@@ -2093,7 +2091,7 @@ class _RouteFinishSheetState extends State<_RouteFinishSheet> {
                   Expanded(
                     child: Text(
                       bi('Delivery order', 'விநியோக வரிசை'),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 17,
                         color: Ink.navy,
@@ -2102,7 +2100,7 @@ class _RouteFinishSheetState extends State<_RouteFinishSheet> {
                   ),
                   Text(
                     bi('Hold and drag', 'பிடித்து இழுக்கவும்'),
-                    style: const TextStyle(color: Ink.muted, fontSize: 12.5),
+                    style: TextStyle(color: Ink.muted, fontSize: 13),
                   ),
                 ],
               ),
@@ -2148,15 +2146,15 @@ class _RouteFinishSheetState extends State<_RouteFinishSheet> {
                                     ),
                                     Text(
                                       txt(_stops[i], 'place'),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: Ink.muted,
-                                        fontSize: 12.5,
+                                        fontSize: 13,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              const Icon(
+                              Icon(
                                 CupertinoIcons.line_horizontal_3,
                                 color: Ink.muted,
                               ),
@@ -2347,8 +2345,8 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
                         'Note for ${widget.stopName}',
                         '${widget.stopName} வீட்டுக்குக் குறிப்பு',
                       ),
-                style: const TextStyle(
-                  fontSize: 21,
+                style: TextStyle(
+                  fontSize: 22,
                   fontWeight: FontWeight.w700,
                   color: Ink.navy,
                 ),
@@ -2359,7 +2357,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
                   'Help the next person find the way: a gate, a dog, a landmark.',
                   'அடுத்தவருக்கு வழி சொல்லுங்கள்: கேட், நாய், அடையாளம்.',
                 ),
-                style: const TextStyle(color: Ink.muted, fontSize: 13),
+                style: TextStyle(color: Ink.muted, fontSize: 13),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -2479,7 +2477,7 @@ Future<bool?> showRouteNote(
   BuildContext context,
   Map<String, dynamic> note, {
   bool removable = false,
-}) => showModalBottomSheet<bool>(
+}) => showAppleSheet<bool>(
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
@@ -2510,8 +2508,8 @@ class _RouteNoteBody extends StatelessWidget {
             Expanded(
               child: Text(
                 bi('Note', 'குறிப்பு'),
-                style: const TextStyle(
-                  fontSize: 21,
+                style: TextStyle(
+                  fontSize: 22,
                   fontWeight: FontWeight.w700,
                   color: Ink.navy,
                 ),
@@ -2530,7 +2528,7 @@ class _RouteNoteBody extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             txt(note, 'text'),
-            style: const TextStyle(fontSize: 17, height: 1.4, color: Ink.body),
+            style: TextStyle(fontSize: 17, height: 1.4, color: Ink.body),
           ),
         ],
         if (voice.isNotEmpty) ...[
@@ -2600,7 +2598,7 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
     final notes = routeNotes(
       widget.route,
     ).where((n) => n['stopId'] == stop['id']).toList();
-    await showModalBottomSheet<void>(
+    await showAppleSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -2613,16 +2611,13 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
             children: [
               Text(
                 txt(stop, 'name'),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
                   color: Ink.navy,
                 ),
               ),
-              Text(
-                txt(stop, 'place'),
-                style: const TextStyle(color: Ink.muted),
-              ),
+              Text(txt(stop, 'place'), style: TextStyle(color: Ink.muted)),
               if (notes.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
@@ -2631,7 +2626,7 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
                       'No notes for this home.',
                       'இந்த வீட்டுக்குக் குறிப்புகள் இல்லை.',
                     ),
-                    style: const TextStyle(color: Ink.muted),
+                    style: TextStyle(color: Ink.muted),
                   ),
                 ),
               for (final n in notes)
@@ -2705,9 +2700,8 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
                     ).where((n) => n['stopId'] == s['id']).length;
                     return SizedBox(
                       width: 196,
-                      child: Glass(
+                      child: LiquidGlass(
                         radius: 24,
-                        opacity: .86,
                         padding: const EdgeInsets.all(13),
                         onTap: () {
                           _focus(s);
@@ -2732,7 +2726,7 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
                                     txt(s, 'name'),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       color: Ink.navy,
                                     ),
@@ -2741,15 +2735,15 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
                                     txt(s, 'place'),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: Ink.muted,
-                                      fontSize: 12.5,
+                                      fontSize: 13,
                                     ),
                                   ),
                                   if (notes > 0)
                                     Text(
                                       bi('$notes notes', '$notes குறிப்புகள்'),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: Ink.amberText,
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
@@ -2902,18 +2896,14 @@ class _VendorRouteGuideState extends State<VendorRouteGuide> {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
             child: Row(
               children: [
-                const Icon(
-                  CupertinoIcons.map_fill,
-                  size: 15,
-                  color: Ink.violetDeep,
-                ),
+                Icon(CupertinoIcons.map_fill, size: 15, color: Ink.violetDeep),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     txt(widget.route, 'name'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Ink.violetDeep,
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
@@ -2929,7 +2919,7 @@ class _VendorRouteGuideState extends State<VendorRouteGuide> {
                       '${routeNotes(widget.route).where((n) => txt(n, 'stopId').isEmpty).length} path notes',
                       '${routeNotes(widget.route).where((n) => txt(n, 'stopId').isEmpty).length} பாதைக் குறிப்புகள்',
                     ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Ink.amberText,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -3210,7 +3200,7 @@ class _RouteShareSheetState extends State<_RouteShareSheet> {
               children: [
                 Text(
                   bi('Lend this route', 'இந்தப் பாதையைக் கொடு'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
@@ -3222,12 +3212,12 @@ class _RouteShareSheetState extends State<_RouteShareSheet> {
                     'They see only name, place, litres${_collectLater ? '' : ' and balance'}. No history, contact number or photo.',
                     'அவர்கள் பெயர், இடம், லிட்டர்${_collectLater ? '' : ', நிலுவை'} மட்டும் பார்ப்பார்கள். வரலாறு, தொலைபேசி எண், புகைப்படம் இல்லை.',
                   ),
-                  style: const TextStyle(color: Ink.muted, fontSize: 13.5),
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
                 ),
                 const SizedBox(height: 21),
                 Text(
                   bi('How long?', 'எத்தனை நாள்?'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                   ),
@@ -3277,7 +3267,7 @@ class _RouteShareSheetState extends State<_RouteShareSheet> {
                 const SizedBox(height: 21),
                 Text(
                   bi('Send to', 'யாருக்கு'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Ink.navy,
                   ),
@@ -3302,7 +3292,7 @@ class _RouteShareSheetState extends State<_RouteShareSheet> {
                             'முதலில் Chat-ல் அந்த நபரைச் சேர்க்கவும்.',
                           ),
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Ink.muted),
+                          style: TextStyle(color: Ink.muted),
                         ),
                       );
                     }
@@ -3353,74 +3343,76 @@ class _ProfileChoice extends StatelessWidget {
     required this.onTap,
   });
   @override
-  Widget build(
-    BuildContext context,
-  ) => FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-    future: FirebaseFirestore.instance.collection('profiles').doc(uid).get(),
-    builder: (context, snap) {
-      final d = snap.data?.data() ?? const <String, dynamic>{};
-      final name = txt(
-        d,
-        'displayName',
-        txt(d, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')),
-      );
-      return InkWell(
-        borderRadius: BorderRadius.circular(21),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Row(
-            children: [
-              profileAvatar(txt(d, 'photo'), radius: 23, label: name),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: Ink.navy,
+  Widget build(BuildContext context) =>
+      FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        future: FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(uid)
+            .get(),
+        builder: (context, snap) {
+          final d = snap.data?.data() ?? const <String, dynamic>{};
+          final name = txt(
+            d,
+            'displayName',
+            txt(d, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')),
+          );
+          return InkWell(
+            borderRadius: BorderRadius.circular(21),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Row(
+                children: [
+                  profileAvatar(txt(d, 'photo'), radius: 23, label: name),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: Ink.navy,
+                          ),
+                        ),
+                        if (txt(d, 'username').isNotEmpty)
+                          Text(
+                            '@${txt(d, 'username')}',
+                            style: TextStyle(color: Ink.muted, fontSize: 13),
+                          ),
+                      ],
+                    ),
+                  ),
+                  AnimatedContainer(
+                    duration: Gold.fast,
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selected ? Ink.tint : Colors.transparent,
+                      border: Border.all(
+                        color: selected ? Ink.tint : Ink.faint,
+                        width: 1.6,
                       ),
                     ),
-                    if (txt(d, 'username').isNotEmpty)
-                      Text(
-                        '@${txt(d, 'username')}',
-                        style: const TextStyle(color: Ink.muted, fontSize: 13),
-                      ),
-                  ],
-                ),
-              ),
-              AnimatedContainer(
-                duration: Gold.fast,
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? Ink.violetDeep : Colors.transparent,
-                  border: Border.all(
-                    color: selected ? Ink.violetDeep : Ink.faint,
-                    width: 1.6,
+                    child: selected
+                        ? const Icon(
+                            CupertinoIcons.checkmark_alt,
+                            size: 17,
+                            color: Colors.white,
+                          )
+                        : null,
                   ),
-                ),
-                child: selected
-                    ? const Icon(
-                        Icons.check_rounded,
-                        size: 17,
-                        color: Colors.white,
-                      )
-                    : null,
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       );
-    },
-  );
 }
 
 String _profileName(Map<String, dynamic> d) => txt(
@@ -3484,7 +3476,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
   }
 
   Future<void> _extend() async {
-    final pick = await showModalBottomSheet<Duration>(
+    final pick = await showAppleSheet<Duration>(
       context: context,
       showDragHandle: true,
       backgroundColor: Ink.canvasTop,
@@ -3497,7 +3489,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
               child: Text(
                 bi('Extend by', 'நீட்டிப்பு'),
                 style: const TextStyle(
-                  fontSize: 19,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -3509,10 +3501,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
               (const Duration(days: 7), bi('1 week', '1 வாரம்')),
             ])
               ListTile(
-                leading: const Icon(
-                  CupertinoIcons.clock_fill,
-                  color: Ink.violetDeep,
-                ),
+                leading: Icon(CupertinoIcons.clock_fill, color: Ink.violetDeep),
                 title: Text(label),
                 onTap: () => Navigator.pop(ctx, d),
               ),
@@ -3535,7 +3524,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
   Future<void> _stop() async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppleAlert(
         title: Text(bi('Stop sharing now?', 'இப்போதே பகிர்வை நிறுத்தவா?')),
         content: Text(
           bi(
@@ -3617,7 +3606,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
                                 _profileName(d),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 16,
                                   color: Ink.navy,
@@ -3627,7 +3616,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
                                 txt(data, 'routeName'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Ink.muted,
                                   fontSize: 13,
                                 ),
@@ -3654,7 +3643,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
                   style: TextStyle(
                     color: color,
                     fontWeight: FontWeight.w700,
-                    fontSize: 12.5,
+                    fontSize: 13,
                   ),
                 ),
               ),
@@ -3664,7 +3653,7 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
           _Tick(
             builder: (_) => Row(
               children: [
-                const Icon(CupertinoIcons.clock, size: 16, color: Ink.muted),
+                Icon(CupertinoIcons.clock, size: 16, color: Ink.muted),
                 const SizedBox(width: 6),
                 Expanded(
                   child: AppText(
@@ -3677,10 +3666,10 @@ class _RouteShareOwnerCardState extends State<RouteShareOwnerCard> {
                       if (data['collectLater'] == true)
                         bi('Amounts hidden', 'தொகை மறைப்பு'),
                     ].join(' · '),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Ink.body,
                       fontWeight: FontWeight.w600,
-                      fontSize: 13.5,
+                      fontSize: 13,
                     ),
                   ),
                 ),
@@ -3784,7 +3773,7 @@ class _ReceivedRoutes extends StatelessWidget {
                 onTap: () => push(context, RouteInviteScreen(shareId: e.key)),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       CupertinoIcons.envelope_badge_fill,
                       color: Ink.violetDeep,
                       size: 28,
@@ -3806,15 +3795,12 @@ class _ReceivedRoutes extends StatelessWidget {
                               'From ${txt(e.value, 'ownerName')} · tap to save or reject',
                               '${txt(e.value, 'ownerName')} அனுப்பியது · சேமிக்க அல்லது மறுக்கத் தொடவும்',
                             ),
-                            style: const TextStyle(
-                              color: Ink.muted,
-                              fontSize: 13,
-                            ),
+                            style: TextStyle(color: Ink.muted, fontSize: 13),
                           ),
                         ],
                       ),
                     ),
-                    const Icon(
+                    Icon(
                       CupertinoIcons.chevron_right,
                       size: 16,
                       color: Ink.faint,
@@ -4014,7 +4000,7 @@ class _RouteInviteScreenState extends State<RouteInviteScreen> {
                           '${txt(data, 'ownerName')} lent you this route',
                           '${txt(data, 'ownerName')} இந்தப் பாதையை உங்களுக்குக் கொடுத்துள்ளார்',
                         ),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 17,
                           color: Ink.navy,
@@ -4098,7 +4084,7 @@ class _RouteInviteScreenState extends State<RouteInviteScreen> {
                     'நீங்கள் இந்தப் பாதையை மறுத்தீர்கள்.',
                   ),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Ink.muted),
+                  style: TextStyle(color: Ink.muted),
                 ),
             ],
           );
@@ -4124,7 +4110,7 @@ class _Centered extends StatelessWidget {
           Text(
             text,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Ink.muted, fontSize: 16),
+            style: TextStyle(color: Ink.muted, fontSize: 16),
           ),
         ],
       ),
@@ -4343,9 +4329,8 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                           ),
                           const Spacer(),
                           if (until != null)
-                            Glass(
+                            LiquidGlass(
                               radius: 20,
-                              opacity: .86,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 13,
                                 vertical: 9,
@@ -4353,7 +4338,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                               child: _Tick(
                                 builder: (_) => AppText(
                                   '${routeTimeLeft(until)} · $done/${stops.length}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     color: Ink.navy,
                                     fontSize: 13,
@@ -4378,7 +4363,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                 child: Transform.translate(
                   offset: const Offset(0, -24),
                   child: DecoratedBox(
-                    decoration: const ShapeDecoration(
+                    decoration: ShapeDecoration(
                       color: Ink.canvasTop,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.vertical(
@@ -4435,7 +4420,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                                   radius: 30,
                                   child: Column(
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         CupertinoIcons.check_mark_circled_solid,
                                         color: Ink.green,
                                         size: 55,
@@ -4447,7 +4432,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                                           'அனைத்து வீடுகளும் முடிந்தது',
                                         ),
                                         style: const TextStyle(
-                                          fontSize: 21,
+                                          fontSize: 22,
                                           fontWeight: FontWeight.w700,
                                         ),
                                       ),
@@ -4458,9 +4443,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                                           '${stops.length}-ல் $done கொடுக்கப்பட்டது. உரிமையாளருக்கும் தெரியும்.',
                                         ),
                                         textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Ink.muted,
-                                        ),
+                                        style: TextStyle(color: Ink.muted),
                                       ),
                                     ],
                                   ),
@@ -4519,7 +4502,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  const Icon(
+                                  Icon(
                                     CupertinoIcons.chevron_right,
                                     size: 14,
                                     color: Ink.faint,
@@ -4538,7 +4521,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
           if (_ended)
             Positioned.fill(
               child: ColoredBox(
-                color: Ink.navy.withValues(alpha: .38),
+                color: Colors.black.withValues(alpha: .45),
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.all(34),
@@ -4567,8 +4550,8 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                                     'பகிர்வு நேரம் முடிந்தது',
                                   ),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 21,
+                            style: TextStyle(
+                              fontSize: 22,
                               fontWeight: FontWeight.w700,
                               color: Ink.navy,
                             ),
@@ -4580,7 +4563,7 @@ class _RouteRideScreenState extends State<RouteRideScreen> {
                               'நீங்கள் குறித்த விநியோகங்கள் உரிமையாளருக்கு அனுப்பப்பட்டன.',
                             ),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: Ink.muted),
+                            style: TextStyle(color: Ink.muted),
                           ),
                           const SizedBox(height: 21),
                           LiquidButton(
@@ -4630,24 +4613,24 @@ class _StopChip extends StatelessWidget {
         alignment: Alignment.center,
         decoration: ShapeDecoration(
           shape: StadiumBorder(
-            side: BorderSide(color: Colors.white.withValues(alpha: .9)),
+            side: BorderSide(color: Ink.surface.withValues(alpha: .9)),
           ),
           gradient: current
-              ? const LinearGradient(colors: [Ink.violet, Ink.violetDeep])
+              ? LinearGradient(colors: [Ink.violet, Ink.violetDeep])
               : null,
           color: current
               ? null
               : switch (state) {
                   StopState.done => Ink.green.withValues(alpha: .12),
                   StopState.skipped => Ink.red.withValues(alpha: .1),
-                  _ => Colors.white.withValues(alpha: .7),
+                  _ => Ink.surface.withValues(alpha: .7),
                 },
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (state == StopState.done)
-              Icon(Icons.check_rounded, size: 16, color: color)
+              Icon(CupertinoIcons.checkmark_alt, size: 16, color: color)
             else if (state == StopState.skipped)
               Icon(CupertinoIcons.forward_fill, size: 13, color: color)
             else
@@ -4714,8 +4697,8 @@ class _HomeCard extends StatelessWidget {
                       txt(stop, 'name'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 24,
+                      style: TextStyle(
+                        fontSize: 22,
                         fontWeight: FontWeight.w800,
                         color: Ink.navy,
                         letterSpacing: -.4,
@@ -4725,7 +4708,7 @@ class _HomeCard extends StatelessWidget {
                       txt(stop, 'place'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Ink.muted, fontSize: 15),
+                      style: TextStyle(color: Ink.muted, fontSize: 15),
                     ),
                   ],
                 ),
@@ -4749,7 +4732,7 @@ class _HomeCard extends StatelessWidget {
                       child: AppText(
                         '${vendorFieldNumber(litres)} L',
                         key: ValueKey(litres),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 43,
                           fontWeight: FontWeight.w800,
                           color: Ink.violetDeep,
@@ -4759,7 +4742,7 @@ class _HomeCard extends StatelessWidget {
                     ),
                     Text(
                       bi('Milk to give', 'கொடுக்க வேண்டிய பால்'),
-                      style: const TextStyle(color: Ink.muted),
+                      style: TextStyle(color: Ink.muted),
                     ),
                   ],
                 ),
@@ -4839,7 +4822,7 @@ class _HomeCard extends StatelessWidget {
                 child: LiquidButton(
                   label: bi('Delivered', 'கொடுத்தாச்சு'),
                   icon: CupertinoIcons.checkmark_alt,
-                  start: const Color(0xFF52C483),
+                  start: Ink.green,
                   end: Ink.green,
                   height: 56,
                   radius: 28,

@@ -300,7 +300,7 @@ Future<void> showShareSheet(
     snack(context, ui('Please sign in again'));
     return;
   }
-  await showModalBottomSheet<void>(
+  await showAppleSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -375,7 +375,7 @@ class _ShareSheetState extends State<_ShareSheet> {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                       color: Ink.navy,
@@ -386,7 +386,7 @@ class _ShareSheetState extends State<_ShareSheet> {
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Ink.muted, fontSize: 13),
+                      style: TextStyle(color: Ink.muted, fontSize: 13),
                     ),
                 ],
               ),
@@ -397,15 +397,15 @@ class _ShareSheetState extends State<_ShareSheet> {
               height: 26,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: selected ? Ink.violetDeep : Colors.transparent,
+                color: selected ? Ink.tint : Colors.transparent,
                 border: Border.all(
-                  color: selected ? Ink.violetDeep : Ink.faint,
+                  color: selected ? Ink.tint : Ink.faint,
                   width: 1.6,
                 ),
               ),
               child: selected
                   ? const Icon(
-                      Icons.check_rounded,
+                      CupertinoIcons.checkmark_alt,
                       size: 17,
                       color: Colors.white,
                     )
@@ -429,7 +429,7 @@ class _ShareSheetState extends State<_ShareSheet> {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: Text(
                 bi('Share to', 'பகிர'),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: Ink.navy,
@@ -449,7 +449,7 @@ class _ShareSheetState extends State<_ShareSheet> {
                           avatar: Container(
                             width: 46,
                             height: 46,
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: LinearGradient(
                                 colors: [Ink.violet, Ink.violetDeep],
@@ -510,7 +510,7 @@ class _ShareSheetState extends State<_ShareSheet> {
                               'பகிர, தேடல் மூலம் நபர்களைச் சேர்க்கவும்.',
                             ),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: Ink.muted),
+                            style: TextStyle(color: Ink.muted),
                           ),
                         ),
                     ],
@@ -667,7 +667,7 @@ class ShareCardBubble extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: fg,
-                          fontSize: 16.5,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -678,7 +678,7 @@ class ShareCardBubble extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: sub,
-                            fontSize: 13.5,
+                            fontSize: 13,
                             height: 1.3,
                           ),
                         ),
@@ -694,7 +694,7 @@ class ShareCardBubble extends StatelessWidget {
                   tag,
                   style: TextStyle(
                     color: sub,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -768,7 +768,7 @@ class SharedAnimalScreen extends StatelessWidget {
                     return AspectRatio(
                       aspectRatio: 1,
                       child: Container(
-                        decoration: const ShapeDecoration(
+                        decoration: ShapeDecoration(
                           shape: SquircleBorder(radius: Gold.r34),
                           color: Ink.lavender,
                         ),
@@ -800,15 +800,15 @@ class SharedAnimalScreen extends StatelessWidget {
                     children: [
                       Text(
                         card.displayName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Ink.navy,
-                          fontSize: Gold.t27,
+                          fontSize: 28,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: Gold.s13),
                       _SharedFact(
-                        icon: Icons.category_outlined,
+                        icon: CupertinoIcons.square_grid_2x2,
                         label: bi('Breed', 'இனம்'),
                         value: ui(txt(card.data, 'b', 'Unknown breed')),
                       ),
@@ -845,14 +845,14 @@ class _SharedFact extends StatelessWidget {
       const SizedBox(width: 10),
       Text(
         label,
-        style: const TextStyle(color: Ink.muted, fontWeight: FontWeight.w600),
+        style: TextStyle(color: Ink.muted, fontWeight: FontWeight.w600),
       ),
       const Spacer(),
       Flexible(
         child: Text(
           value,
           textAlign: TextAlign.end,
-          style: const TextStyle(
+          style: TextStyle(
             color: Ink.navy,
             fontWeight: FontWeight.w700,
             fontSize: 16,
@@ -891,7 +891,7 @@ class SharedPostScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(Gold.s21),
                 child: EmptyNote(
-                  icon: Icons.search_off_rounded,
+                  icon: CupertinoIcons.search,
                   title: bi('Post not available', 'பதிவு கிடைக்கவில்லை'),
                   message: bi(
                     'It may have been deleted.',
