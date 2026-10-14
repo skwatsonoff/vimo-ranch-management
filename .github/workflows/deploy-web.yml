@@ -1,0 +1,35 @@
+name: Deploy VIMO web
+# Builds the Flutter web app in the cloud and publishes it to
+# https://my-ranch-sync.web.app (hosting + Firestore rules, same as VIMO_DEPLOY.bat).
+# Runs on every push to main, or manually from the GitHub app (Actions > Run workflow).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install packages
+        run: flutter pub get
+      - name: Build web
+        run: flutter build web --release --no-pub
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Deploy to Firebase
+        run: npx --yes firebase-tools@latest deploy --only hosting,firestore:rules --project my-ranch-sync --non-interactive
+      - name: Done
+        run: echo "::notice::VIMO is live at https://my-ranch-sync.web.app"
