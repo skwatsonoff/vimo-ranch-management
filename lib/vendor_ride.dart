@@ -1232,10 +1232,16 @@ class _VendorRideScreenState extends State<VendorRideScreen>
         final chosen = groups.where((g) => g.key == _place).firstOrNull;
         final route = _routeId.isEmpty ? null : VendorRoutes.byId(_routeId);
         return Shell(
+          edgeToEdge: true,
           child: SizedBox.expand(
             child: SingleChildScrollView(
               controller: _scroll,
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 40),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                6,
+                20,
+                40 + MediaQuery.paddingOf(context).bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

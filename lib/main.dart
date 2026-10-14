@@ -26,6 +26,7 @@ import 'package:audioplayers/audioplayers.dart' hide Source;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -1024,6 +1025,15 @@ class Ink {
   /// Bars (navigation and tab bars) before the blur is applied.
   static Color get bar => _c(0xD9F9F9F9, 0xD91C1C1E);
 
+  /// The regular Liquid Glass fill, laid over the blurred, saturated
+  /// backdrop. Light enough for content colour to show through, dense enough
+  /// to keep labels at 4.5:1.
+  static Color get glass => _c(0x85FCFCFE, 0x8C2A2A2D);
+
+  /// Set by [VimoApp] from the browser's Reduce Transparency preference.
+  /// Liquid Glass becomes opaque while it is on.
+  static bool reduceTransparency = false;
+
   /// The brand tint on a light wash, used behind selected or featured items.
   static Color get lavender => _c(0xFFEDE6FF, 0xFF2A2446);
 
@@ -1353,16 +1363,78 @@ class Glass extends StatelessWidget {
   }
 }
 
-/// Liquid Glass, for the functional layer only: the tab bar, floating
-/// buttons and panels over maps. Content behind it blurs and shows through;
-/// with Increase Contrast it becomes opaque.
-class LiquidGlass extends StatelessWidget {
+/// Motion for Liquid Glass: a quick, slightly underdamped spring (damping
+/// ratio about 0.78), like system controls. Springs start from the current
+/// position and velocity, so a new touch always interrupts cleanly.
+const SpringDescription glassSpring = SpringDescription(
+  mass: 1,
+  stiffness: 420,
+  damping: 32,
+);
+
+/// Backdrop of the regular glass variant: blurs what is behind it and lifts
+/// its saturation, so colour from the content shows through as on iOS rather
+/// than turning into grey fog.
+final dart_ui.ImageFilter _glassBackdrop = dart_ui.ImageFilter.compose(
+  outer: const ColorFilter.matrix(<double>[
+    1.3937, -.3576, -.0361, 0, 0, //
+    -.1063, 1.1424, -.0361, 0, 0, //
+    -.1063, -.3576, 1.4639, 0, 0, //
+    0, 0, 0, 1, 0,
+  ]),
+  inner: dart_ui.ImageFilter.blur(
+    sigmaX: 14,
+    sigmaY: 14,
+    tileMode: TileMode.mirror,
+  ),
+);
+
+/// The outline of a piece of Liquid Glass: a continuous-corner squircle, or
+/// a true capsule (circle when square) once the radius reaches half the
+/// shorter side, as system glass buttons and the tab bar are.
+Path _glassPath(Rect rect, double radius) {
+  final half = rect.shortestSide / 2;
+  if (radius < half - .5) return squirclePath(rect, radius);
+  return Path()..addRRect(RRect.fromRectAndRadius(rect, Radius.circular(half)));
+}
+
+class _GlassClipper extends CustomClipper<Path> {
+  final double radius;
+  const _GlassClipper(this.radius);
+
+  @override
+  Path getClip(Size size) => _glassPath(Offset.zero & size, radius);
+
+  @override
+  bool shouldReclip(covariant _GlassClipper old) => old.radius != radius;
+}
+
+/// Liquid Glass, for the functional layer only: the tab bar, the floating Add
+/// button and controls over maps. Content scrolling behind it blurs and its
+/// colour shows through; a specular rim gives the edge its thickness. When
+/// [interactive], the glass lights up under the finger and flexes slightly,
+/// as system glass does. Increase Contrast and Reduce Transparency make it
+/// opaque; Reduce Motion keeps the light but removes the flex.
+///
+/// Flutter draws this itself (on the web and on iOS alike): it follows Apple's
+/// material guidance but is not the system's native Liquid Glass.
+class LiquidGlass extends StatefulWidget {
   final Widget child;
   final double radius;
   final EdgeInsetsGeometry padding;
+
+  /// Glass tint. Reserve it for the primary action ([Ink.tint]), as Apple
+  /// recommends; leave null for the neutral material.
   final Color? tint;
   final VoidCallback? onTap;
   final bool shadow;
+
+  /// Light and flex on touch. Defaults to on for tappable glass.
+  final bool? interactive;
+
+  /// How far the glass grows while held, as a fraction of its size. Keep it
+  /// small for wide surfaces such as the tab bar.
+  final double flex;
 
   const LiquidGlass({
     super.key,
@@ -1372,59 +1444,260 @@ class LiquidGlass extends StatelessWidget {
     this.tint,
     this.onTap,
     this.shadow = true,
+    this.interactive,
+    this.flex = .05,
   });
+
+  @override
+  State<LiquidGlass> createState() => _LiquidGlassState();
+}
+
+class _LiquidGlassState extends State<LiquidGlass>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _touch = AnimationController.unbounded(
+    vsync: this,
+  );
+  final ValueNotifier<Offset?> _point = ValueNotifier<Offset?>(null);
+
+  bool get _interactive => widget.interactive ?? widget.onTap != null;
+
+  void _press(bool down, [Offset? at]) {
+    if (at != null) _point.value = at;
+    final target = down ? 1.0 : 0.0;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _touch.animateTo(
+        target,
+        duration: Duration(milliseconds: down ? 90 : 220),
+        curve: Curves.easeOut,
+      );
+      return;
+    }
+    _touch.animateWith(
+      SpringSimulation(glassSpring, _touch.value, target, _touch.velocity),
+    );
+  }
+
+  @override
+  void dispose() {
+    _touch.dispose();
+    _point.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final contrast = MediaQuery.highContrastOf(context);
-    final tintColor = tint;
-    final fill = contrast
-        ? (Ink.dark ? const Color(0xFF2C2C2E) : Colors.white)
-        : tintColor ?? Ink.bar;
+    final solid = contrast || Ink.reduceTransparency;
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final tint = widget.tint;
+    final fill = solid
+        ? (tint == null
+              ? (Ink.dark ? const Color(0xFF2C2C2E) : Colors.white)
+              : tint.withValues(alpha: 1))
+        : tint ?? Ink.glass;
+    final radius = widget.radius;
+
     Widget glass = ClipPath(
-      clipper: SquircleClipper(radius),
+      clipper: _GlassClipper(radius),
       child: BackdropFilter(
-        enabled: !contrast,
-        filter: dart_ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        enabled: !solid,
+        filter: _glassBackdrop,
         child: DecoratedBox(
-          decoration: ShapeDecoration(
-            shape: SquircleBorder(
+          decoration: BoxDecoration(color: fill),
+          child: CustomPaint(
+            // The touch glow lights the material beneath the symbols and
+            // labels; the rim is drawn over everything at the edge.
+            painter: _GlassGlowPainter(touch: _touch, point: _point),
+            foregroundPainter: _GlassLightPainter(
               radius: radius,
-              side: BorderSide(
-                color: contrast
-                    ? Ink.separator
-                    : (Ink.dark
-                          ? Colors.white.withValues(alpha: .10)
-                          : Colors.white.withValues(alpha: .65)),
-                width: contrast ? 1 : .6,
-              ),
+              rim: solid ? 0 : (Ink.dark || tint != null ? .42 : .9),
+              border: contrast ? Ink.separator : null,
             ),
-            color: fill,
+            child: Padding(padding: widget.padding, child: widget.child),
           ),
-          child: Padding(padding: padding, child: child),
         ),
       ),
     );
-    if (shadow) {
+    if (widget.shadow && !contrast) {
+      // An ambient shadow for lift and a tight contact shadow for the edge.
       glass = DecoratedBox(
         decoration: ShapeDecoration(
-          shape: SquircleBorder(radius: radius),
+          shape: _GlassShadowShape(radius),
           shadows: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: Ink.dark ? .32 : .10),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
+              color: Colors.black.withValues(alpha: Ink.dark ? .36 : .09),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: Ink.dark ? .24 : .05),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
             ),
           ],
         ),
         child: glass,
       );
     }
+    if (_interactive && !reduce && widget.flex > 0) {
+      glass = AnimatedBuilder(
+        animation: _touch,
+        builder: (_, child) => Transform.scale(
+          scale: 1 + widget.flex * _touch.value.clamp(-.2, 1.2),
+          child: child,
+        ),
+        child: glass,
+      );
+    }
+    if (_interactive) {
+      glass = Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) => _press(true, e.localPosition),
+        onPointerUp: (_) => _press(false),
+        onPointerCancel: (_) => _press(false),
+        child: glass,
+      );
+    }
+    final onTap = widget.onTap;
     if (onTap != null) {
-      glass = Pressable(radius: radius, onTap: onTap, child: glass);
+      glass = MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: glass,
+        ),
+      );
     }
     return glass;
   }
+}
+
+/// While a finger rests on Liquid Glass, a soft light spreads from the touch
+/// point through the material ("illuminates from within").
+class _GlassGlowPainter extends CustomPainter {
+  final Animation<double> touch;
+  final ValueListenable<Offset?> point;
+
+  _GlassGlowPainter({required this.touch, required this.point})
+    : super(repaint: Listenable.merge([touch, point]));
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final glow = touch.value.clamp(0.0, 1.0);
+    if (size.isEmpty || glow <= .01) return;
+    final rect = Offset.zero & size;
+    final at = point.value ?? rect.center;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader =
+            RadialGradient(
+              colors: [
+                Colors.white.withValues(alpha: (Ink.dark ? .16 : .5) * glow),
+                Colors.white.withValues(alpha: 0),
+              ],
+            ).createShader(
+              Rect.fromCircle(center: at, radius: size.longestSide * .6),
+            ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _GlassGlowPainter old) =>
+      old.touch != touch || old.point != point;
+}
+
+/// The edge of a piece of Liquid Glass: a specular rim that is brightest
+/// where light grazes the top, a faint bounce along the bottom, and an inner
+/// line that gives the lens its thickness.
+class _GlassLightPainter extends CustomPainter {
+  final double radius;
+  final double rim;
+  final Color? border;
+
+  const _GlassLightPainter({
+    required this.radius,
+    required this.rim,
+    required this.border,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final rect = Offset.zero & size;
+    final outline = border;
+    if (outline != null) {
+      canvas.drawPath(
+        _glassPath(rect.deflate(.5), math.max(0, radius - .5)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = outline,
+      );
+    }
+    if (rim <= 0) return;
+    canvas.drawPath(
+      _glassPath(rect.deflate(.5), math.max(0, radius - .5)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: .95 * rim),
+            Colors.white.withValues(alpha: .18 * rim),
+            Colors.white.withValues(alpha: .08 * rim),
+            Colors.white.withValues(alpha: .40 * rim),
+          ],
+          stops: const [0, .38, .7, 1],
+        ).createShader(rect),
+    );
+    canvas.drawPath(
+      _glassPath(rect.deflate(1.6), math.max(0, radius - 1.6)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = .8
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: .45 * rim),
+            Colors.white.withValues(alpha: 0),
+            Colors.black.withValues(alpha: Ink.dark ? .12 : .045),
+          ],
+          stops: const [0, .45, 1],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _GlassLightPainter old) =>
+      old.radius != radius || old.rim != rim || old.border != border;
+}
+
+/// Lets [ShapeDecoration] cast the glass shadow in the glass outline.
+class _GlassShadowShape extends ShapeBorder {
+  final double radius;
+  const _GlassShadowShape(this.radius);
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      _glassPath(rect, radius);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      _glassPath(rect, radius);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
+
+  @override
+  ShapeBorder scale(double t) => _GlassShadowShape(radius * t);
 }
 
 /// Press state for custom controls: a quick, slight dip and dim that tracks
@@ -1499,14 +1772,22 @@ class LiquidCanvas extends StatelessWidget {
 }
 
 /// Constrains content to the golden content column and applies safe area.
+///
+/// With [edgeToEdge], content runs on beneath the bottom chrome (the floating
+/// tab bar, or the home indicator) so it can scroll behind Liquid Glass, as
+/// on iOS. The bottom inset then stays in [MediaQuery] for the scroll view to
+/// add to its own padding: a list without explicit padding does this
+/// automatically; otherwise add `MediaQuery.paddingOf(context).bottom`.
 class Shell extends StatelessWidget {
   final Widget child;
   final double maxWidth;
+  final bool edgeToEdge;
 
   const Shell({
     super.key,
     required this.child,
     this.maxWidth = Gold.contentWidth + Gold.s55,
+    this.edgeToEdge = false,
   });
 
   @override
@@ -1515,12 +1796,18 @@ class Shell extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
-          child: SafeArea(child: child),
+          child: SafeArea(bottom: !edgeToEdge, child: child),
         ),
       ),
     );
   }
 }
+
+/// Bottom padding for a list that scrolls beneath the floating tab bar: the
+/// bar itself (reported through [MediaQuery] by [MainShell]) plus room for
+/// the floating Add button when the tab shows one.
+double floatingBarClearance(BuildContext context, {bool addButton = false}) =>
+    MediaQuery.paddingOf(context).bottom + (addButton ? Gold.s89 : Gold.s21);
 
 // -----------------------------------------------------------------------------
 //  Motion
@@ -2079,22 +2366,117 @@ void snack(BuildContext context, String message) {
   );
 }
 
-/// A sheet in the iOS style: rounded top corners, a grabber, swipe down to
-/// dismiss, and elevated cells (distinct in Dark Mode). [backgroundColor] is
-/// accepted for call-site compatibility; sheets use the elevated colour.
+/// A sheet in the iOS 26 style: inset from the screen edges with rounder
+/// corners, on a thick frosted glass panel that lets the page show faintly
+/// around and through it, with a grabber and swipe down to dismiss. Cells
+/// inside use the elevated colour (distinct in Dark Mode). It rises on a
+/// quick ease-out that settles like the system sheet and can be dragged away
+/// at any point. [backgroundColor] is accepted for call-site compatibility.
 Future<T?> showAppleSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isScrollControlled = false,
   bool? showDragHandle,
   Color? backgroundColor,
-}) => showModalBottomSheet<T>(
-  context: context,
-  isScrollControlled: isScrollControlled,
-  showDragHandle: showDragHandle ?? true,
-  backgroundColor: Ink.sheet,
-  builder: (sheetContext) => ElevatedSurface(child: builder(sheetContext)),
-);
+}) {
+  final reduce = MediaQuery.disableAnimationsOf(context);
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: isScrollControlled,
+    showDragHandle: false,
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    shape: const RoundedRectangleBorder(),
+    sheetAnimationStyle: reduce
+        ? const AnimationStyle(
+            duration: Duration(milliseconds: 200),
+            reverseDuration: Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+          )
+        : const AnimationStyle(
+            duration: Duration(milliseconds: 440),
+            reverseDuration: Duration(milliseconds: 260),
+            curve: Cubic(.16, 1, .3, 1),
+          ),
+    builder: (sheetContext) => _SheetPanel(
+      grabber: showDragHandle ?? true,
+      child: ElevatedSurface(child: builder(sheetContext)),
+    ),
+  );
+}
+
+/// The glass panel behind every [showAppleSheet] sheet. Sheets hold forms and
+/// lists, so the material is the thick, frosted variant: the page only tints
+/// it, and text keeps full contrast. Increase Contrast and Reduce
+/// Transparency make it solid.
+class _SheetPanel extends StatelessWidget {
+  final bool grabber;
+  final Widget child;
+  const _SheetPanel({required this.grabber, required this.child});
+
+  static const double _inset = Gold.s8;
+  static const double _radius = Gold.r34;
+
+  @override
+  Widget build(BuildContext context) {
+    final solid = MediaQuery.highContrastOf(context) || Ink.reduceTransparency;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(_inset, 0, _inset, _inset),
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          shape: const _GlassShadowShape(_radius),
+          shadows: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: Ink.dark ? .4 : .14),
+              blurRadius: 34,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipPath(
+          clipper: const _GlassClipper(_radius),
+          child: BackdropFilter(
+            enabled: !solid,
+            filter: dart_ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: CustomPaint(
+              foregroundPainter: _GlassLightPainter(
+                radius: _radius,
+                rim: solid ? 0 : (Ink.dark ? .3 : .7),
+                border: MediaQuery.highContrastOf(context)
+                    ? Ink.separator
+                    : null,
+              ),
+              child: ColoredBox(
+                color: Ink.sheet.withValues(alpha: solid ? 1 : .9),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (grabber)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6, bottom: 27),
+                        child: Center(
+                          child: Container(
+                            width: 36,
+                            height: 5,
+                            decoration: ShapeDecoration(
+                              shape: const StadiumBorder(),
+                              color: Ink.faint.withValues(alpha: .55),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Flexible(child: child),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// The iOS alert: a centred title and message on an elevated rounded panel,
 /// with full-width buttons separated by hairlines (side by side for two,
@@ -6990,6 +7372,12 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     Ink.dark = _systemDark;
+    Ink.reduceTransparency = _browserRuntime.reducedTransparency;
+    _browserRuntime.watchReducedTransparency((reduced) {
+      if (reduced == Ink.reduceTransparency) return;
+      Ink.reduceTransparency = reduced;
+      _rebuildAll();
+    });
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -7006,6 +7394,10 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
     final dark = _systemDark;
     if (dark == Ink.dark) return;
     Ink.dark = dark;
+    _rebuildAll();
+  }
+
+  void _rebuildAll() {
     if (!mounted) return;
     setState(() {});
     void mark(Element element) {
@@ -9241,6 +9633,11 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
 class _MainShellState extends State<MainShell> {
   int _tab = 0;
   final List<int> _tabHistory = [];
+
+  /// Tabs whose list is scrolled away from the top, and whether the visible
+  /// one is, which shows the scroll edge effect under the title bar.
+  final Set<int> _scrolledTabs = {};
+  final ValueNotifier<bool> _topEdge = ValueNotifier<bool>(false);
   StreamSubscription<BoxEvent>? _languageChanges;
   @override
   void initState() {
@@ -9288,6 +9685,7 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     vendorRouteRequest.removeListener(_showVendorForRoute);
     _languageChanges?.cancel();
+    _topEdge.dispose();
     super.dispose();
   }
 
@@ -9373,11 +9771,19 @@ class _MainShellState extends State<MainShell> {
         }
       },
       child: Scaffold(
-        extendBody: false,
+        // Content runs on beneath the floating tab bar so the bar's Liquid
+        // Glass has something to refract; tab pages pad their lists by the
+        // bar height that the Scaffold reports through MediaQuery.
+        extendBody: true,
         backgroundColor: Ink.canvasTop,
+        floatingActionButtonAnimator: const _GlassFabAnimator(),
         appBar: AppBar(
           toolbarHeight: 60,
           leadingWidth: 64,
+          // iOS 26 bars draw no background or hairline of their own; the
+          // scroll edge effect below separates the title from content.
+          backgroundColor: Ink.canvasTop,
+          scrolledUnderElevation: 0,
           leading: Semantics(
             button: true,
             label: bi('Profile', 'ப்ரொஃபைல்'),
@@ -9426,12 +9832,32 @@ class _MainShellState extends State<MainShell> {
         ),
         // Hidden tabs keep their state but stop their animations, so looping
         // cards on one tab never tick (or warm the phone) behind another.
-        body: IndexedStack(
-          index: tab,
-          children: [
-            for (var i = 0; i < pages.length; i++)
-              TickerMode(enabled: i == tab, child: pages[i]),
-          ],
+        body: NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (n.depth == 0 && n.metrics.axis == Axis.vertical) {
+              final scrolled =
+                  n.metrics.pixels > n.metrics.minScrollExtent + .5;
+              if (scrolled) {
+                _scrolledTabs.add(tab);
+              } else {
+                _scrolledTabs.remove(tab);
+              }
+              _topEdge.value = scrolled;
+            }
+            return false;
+          },
+          child: Stack(
+            children: [
+              IndexedStack(
+                index: tab,
+                children: [
+                  for (var i = 0; i < pages.length; i++)
+                    TickerMode(enabled: i == tab, child: pages[i]),
+                ],
+              ),
+              _ScrollEdgeEffect(visible: _topEdge),
+            ],
+          ),
         ),
         floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
             ? null
@@ -9441,25 +9867,8 @@ class _MainShellState extends State<MainShell> {
                   order[tab] == 'Profile' ||
                   (order[tab] != 'Social' && !canRecordEntries)
             ? null
-            : FloatingActionButton(
-                heroTag: 'workspace-add',
-                tooltip: ui('Add'),
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                focusElevation: 0,
-                hoverElevation: 0,
-                highlightElevation: 0,
-                foregroundColor: Ink.violetDeep,
+            : _GlassAddButton(
                 onPressed: () => showWorkspaceAdd(context, order[tab]),
-                child: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Ink.violetDeep,
-                  ),
-                  child: const Icon(CupertinoIcons.plus, color: Colors.white),
-                ),
               ),
         bottomNavigationBar: SafeArea(
           top: false,
@@ -9479,6 +9888,7 @@ class _MainShellState extends State<MainShell> {
                     if (i != _tab) {
                       _tabHistory.add(_tab);
                       _tab = i;
+                      _topEdge.value = _scrolledTabs.contains(i);
                       vendorWorkspaceRevision.value++;
                     }
                   }),
@@ -9492,10 +9902,111 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+/// The scroll edge effect under the title bar: once content scrolls, it
+/// dissolves into the background over a short band instead of being cut off
+/// by a hard line, which keeps the title legible without a divider.
+class _ScrollEdgeEffect extends StatelessWidget {
+  final ValueListenable<bool> visible;
+  const _ScrollEdgeEffect({required this.visible});
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    top: 0,
+    left: 0,
+    right: 0,
+    height: Gold.s21,
+    child: IgnorePointer(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: visible,
+        builder: (context, shown, child) => AnimatedOpacity(
+          opacity: shown ? 1 : 0,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
+          child: child,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Ink.canvasTop,
+                Ink.canvasTop.withValues(alpha: .72),
+                Ink.canvasTop.withValues(alpha: 0),
+              ],
+              stops: const [0, .4, 1],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// The floating Add button. It is the main action on the tab, so it is the
+/// one piece of glass that carries the app tint (Apple's prominent glass);
+/// everything else in the functional layer stays neutral.
+class _GlassAddButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _GlassAddButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: ui('Add'),
+    onTap: onPressed,
+    excludeSemantics: true,
+    child: SizedBox.square(
+      dimension: 56,
+      child: LiquidGlass(
+        radius: 28,
+        tint: Ink.tint.withValues(alpha: .88),
+        flex: .08,
+        onTap: onPressed,
+        child: const Center(
+          child: Icon(CupertinoIcons.plus, color: Colors.white, size: 26),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Shows and hides the Add button between tabs with a scale and fade only;
+/// Material's default animator also spins it, which iOS never does.
+class _GlassFabAnimator extends FloatingActionButtonAnimator {
+  const _GlassFabAnimator();
+
+  @override
+  Offset getOffset({
+    required Offset begin,
+    required Offset end,
+    required double progress,
+  }) => FloatingActionButtonAnimator.scaling.getOffset(
+    begin: begin,
+    end: end,
+    progress: progress,
+  );
+
+  @override
+  Animation<double> getScaleAnimation({required Animation<double> parent}) =>
+      FloatingActionButtonAnimator.scaling.getScaleAnimation(parent: parent);
+
+  @override
+  Animation<double> getRotationAnimation({required Animation<double> parent}) =>
+      const AlwaysStoppedAnimation<double>(1);
+
+  @override
+  double getAnimationRestart(double previousValue) =>
+      FloatingActionButtonAnimator.scaling.getAnimationRestart(previousValue);
+}
+
 /// The iOS tab bar: a floating Liquid Glass capsule. Symbols and single-word
-/// labels are monochrome; the selected tab takes the app tint over a soft
-/// capsule that glides between tabs.
-class _NavBar extends StatelessWidget {
+/// labels are monochrome; the selected tab takes the app tint over a lens
+/// that glides between tabs on a spring, stretching slightly while it moves.
+/// As on iOS 26, a finger can also slide along the bar to scrub the lens to
+/// another tab. Reduce Motion moves the lens without the spring or stretch.
+class _NavBar extends StatefulWidget {
   final int index;
   final List<_NavItem> items;
   final ValueChanged<int> onChanged;
@@ -9507,61 +10018,194 @@ class _NavBar extends StatelessWidget {
   });
 
   @override
+  State<_NavBar> createState() => _NavBarState();
+}
+
+class _NavBarState extends State<_NavBar> with SingleTickerProviderStateMixin {
+  late final AnimationController _lens = AnimationController.unbounded(
+    vsync: this,
+    value: _selected.toDouble(),
+  );
+  double _cell = 0;
+  int? _scrub;
+  bool _held = false;
+
+  int get _selected => widget.index.clamp(0, widget.items.length - 1);
+
+  @override
+  void didUpdateWidget(covariant _NavBar old) {
+    super.didUpdateWidget(old);
+    if (_scrub == null) _glide(_selected);
+  }
+
+  void _glide(int target) {
+    if (_lens.value == target && !_lens.isAnimating) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _lens.value = target.toDouble();
+      return;
+    }
+    _lens.animateWith(
+      SpringSimulation(
+        glassSpring,
+        _lens.value,
+        target.toDouble(),
+        _lens.velocity,
+      ),
+    );
+  }
+
+  void _select(int i) {
+    if (i != _selected) HapticFeedback.selectionClick();
+    widget.onChanged(i);
+    _glide(i);
+  }
+
+  double _positionAt(double dx) => _cell <= 0
+      ? _lens.value
+      : (dx / _cell - .5).clamp(0.0, widget.items.length - 1.0);
+
+  void _scrubTo(double dx) {
+    _lens.stop();
+    _lens.value = _positionAt(dx);
+    final over = _lens.value.round();
+    if (over != _scrub) {
+      if (_scrub != null) HapticFeedback.selectionClick();
+      setState(() => _scrub = over);
+    }
+  }
+
+  void _endScrub() {
+    final target = _scrub;
+    setState(() {
+      _scrub = null;
+      _held = false;
+    });
+    if (target == null) return;
+    if (target != widget.index) widget.onChanged(target);
+    _glide(target);
+  }
+
+  @override
+  void dispose() {
+    _lens.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final reduce = MediaQuery.disableAnimationsOf(context);
-    final selected = index.clamp(0, items.length - 1);
+    final shown = _scrub ?? _selected;
     return LiquidGlass(
       radius: 34,
       padding: const EdgeInsets.all(5),
+      interactive: true,
+      flex: .012,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final cellWidth = constraints.maxWidth / items.length;
-          return SizedBox(
-            height: 58,
-            child: Stack(
-              children: [
-                AnimatedPositioned(
-                  duration: reduce
-                      ? Duration.zero
-                      : const Duration(milliseconds: 320),
-                  curve: Curves.easeOutCubic,
-                  left: selected * cellWidth,
-                  width: cellWidth,
-                  top: 0,
-                  bottom: 0,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        shape: const StadiumBorder(),
-                        color: Ink.dark
-                            ? Colors.white.withValues(alpha: .12)
-                            : Colors.black.withValues(alpha: .06),
-                      ),
-                    ),
-                  ),
-                ),
-                Row(
+          _cell = constraints.maxWidth / widget.items.length;
+          return Listener(
+            onPointerDown: (_) => setState(() => _held = true),
+            onPointerUp: (_) {
+              if (_scrub == null) setState(() => _held = false);
+            },
+            onPointerCancel: (_) {
+              if (_scrub == null) setState(() => _held = false);
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: (d) => _scrubTo(d.localPosition.dx),
+              onHorizontalDragUpdate: (d) => _scrubTo(d.localPosition.dx),
+              onHorizontalDragEnd: (_) => _endScrub(),
+              onHorizontalDragCancel: _endScrub,
+              child: SizedBox(
+                height: 58,
+                child: Stack(
                   children: [
-                    for (int i = 0; i < items.length; i++)
-                      Expanded(
-                        child: _NavCell(
-                          item: items[i],
-                          active: selected == i,
-                          onTap: () {
-                            if (selected != i) HapticFeedback.selectionClick();
-                            onChanged(i);
-                          },
-                        ),
-                      ),
+                    AnimatedBuilder(
+                      animation: _lens,
+                      builder: (context, _) {
+                        // The lens stretches along its travel with speed, like
+                        // a drop of liquid, and settles back to the cell size.
+                        final stretch = reduce
+                            ? 0.0
+                            : (_lens.velocity.abs() * .03).clamp(0.0, .2);
+                        final width = _cell * (1 + stretch);
+                        return Positioned(
+                          left: _lens.value * _cell - (width - _cell) / 2,
+                          width: width,
+                          top: 0,
+                          bottom: 0,
+                          child: IgnorePointer(
+                            child: AnimatedScale(
+                              scale: _held && !reduce ? 1.04 : 1,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutBack,
+                              child: _NavLens(lifted: _held),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    Row(
+                      children: [
+                        for (int i = 0; i < widget.items.length; i++)
+                          Expanded(
+                            child: _NavCell(
+                              item: widget.items[i],
+                              active: shown == i,
+                              onTap: () => _select(i),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
+              ),
             ),
           );
         },
       ),
     );
   }
+}
+
+/// The selection lens: a soft capsule at rest that brightens into clear glass
+/// with a specular edge while a finger holds or drags it.
+class _NavLens extends StatelessWidget {
+  final bool lifted;
+  const _NavLens({required this.lifted});
+
+  @override
+  Widget build(BuildContext context) => AnimatedContainer(
+    duration: const Duration(milliseconds: 200),
+    curve: Curves.easeOut,
+    decoration: ShapeDecoration(
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: lifted
+              ? Colors.white.withValues(alpha: Ink.dark ? .28 : .9)
+              : Colors.transparent,
+          width: .8,
+        ),
+      ),
+      color: lifted
+          ? (Ink.dark
+                ? Colors.white.withValues(alpha: .18)
+                : Colors.white.withValues(alpha: .62))
+          : (Ink.dark
+                ? Colors.white.withValues(alpha: .12)
+                : Colors.black.withValues(alpha: .06)),
+      shadows: lifted
+          ? [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: Ink.dark ? .3 : .10),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
+              ),
+            ]
+          : const [],
+    ),
+  );
 }
 
 class _NavItem {
@@ -9590,6 +10234,7 @@ class _NavCell extends StatelessWidget {
       button: true,
       selected: active,
       label: item.label,
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -9747,12 +10392,13 @@ class DashboardScreen extends StatelessWidget {
     final activity = recentActivities(limit: 4);
 
     return Shell(
+      edgeToEdge: true,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(
+        padding: EdgeInsets.fromLTRB(
           Gold.s21,
           Gold.s21,
           Gold.s21,
-          _MainShellState.bottomInset,
+          floatingBarClearance(context, addButton: true),
         ),
         children: [
           if (canManageRanch) ...[

@@ -21,19 +21,43 @@ Apple's proprietary rendering engine; system fonts are not embedded.
   No text is smaller than 11 pt. Apple platforms use San Francisco; web and Android
   use Inter (SIL OFL, bundled and subset) with SF-like tracking. Dynamic Type scaling
   is respected.
-- **Materials.** Content uses solid inset-grouped cells (`Glass`). Liquid Glass
-  (`LiquidGlass`: blur, translucency, hairline rim) is reserved for the functional layer:
-  the floating tab bar and controls floating over maps. Increase Contrast makes it opaque.
-- **Motion.** Pages push with the iPhone slide and support the interactive edge swipe
-  back. Lists do not animate in. Reduce Motion replaces slides with fades and removes
-  scaling. Press states dim and dip slightly.
+- **Materials.** Content uses solid inset-grouped cells (`Glass`), never glass.
+  Liquid Glass (`LiquidGlass`) is reserved for the functional layer: the floating
+  tab bar, the floating Add button (the only tinted glass, as the primary action)
+  and controls over maps. Its layers: a blurred, saturation-boosted backdrop, a
+  translucent fill (`Ink.glass`), a specular rim with an inner lens edge, a soft
+  two-part shadow, and, on touch, light that spreads from the finger beneath the
+  symbols. Tab pages run edge to edge (`Shell(edgeToEdge: true)`) so content
+  scrolls beneath the tab bar and shows through it; their lists pad by the bar
+  height the shell reports through `MediaQuery` (`floatingBarClearance`).
+  Under the title bar a scroll edge effect dissolves content instead of a
+  divider. Sheets (`showAppleSheet`) sit on a thick frosted panel inset from the
+  screen edges. Increase Contrast and Reduce Transparency (browsers that report
+  it) make every glass surface opaque.
+- **What this is not.** Flutter draws all of this itself, on the web and on iOS
+  alike. It follows Apple's material guidance but is not the system's native
+  Liquid Glass: there is no real lensing (refraction) of the content behind, and
+  it does not adapt its tint to the brightness behind it. Native glass would
+  need SwiftUI/UIKit views (`glassEffect`, iOS 26 SDK, Xcode 26) embedded as
+  platform views on the iOS build only; the production app is the Firebase
+  Hosting PWA, where browsers can only approximate the material.
+- **Motion.** Pages push with the iPhone slide and support the interactive edge
+  swipe back. Tabs switch instantly, as on iOS. The tab bar's selection lens
+  moves on an interruptible spring (`glassSpring`), stretches slightly with its
+  speed, lifts while held, and can be scrubbed by sliding a finger along the bar
+  (with selection haptics). Glass flexes slightly under a finger. Sheets rise on
+  a quick settling ease-out and can be dragged away at any point. The Add button
+  scales and fades between tabs without Material's spin. Lists do not animate
+  in. Reduce Motion removes the spring, stretch, lift and flex (the touch light
+  stays), replaces slides with fades and shortens sheets. Press states on
+  solid controls dim and dip slightly.
 - **Accessibility.** 44 pt minimum targets, semantic labels on custom controls,
   selection haptics on tab and segment changes.
 
 ## Components
 
-- **Tab bar:** floating capsule, monochrome symbols and one-word labels, tint on the
-  selected tab.
+- **Tab bar:** floating Liquid Glass capsule, monochrome symbols and one-word
+  labels, tint on the selected tab, spring lens that can be scrubbed.
 - **Navigation bar:** centred 17 pt semibold title, chevron back button without text,
   bar tint when content scrolls under.
 - **Buttons:** prominent (tint-filled capsule) for the main action, gray (system fill)
@@ -43,7 +67,8 @@ Apple's proprietary rendering engine; system fonts are not embedded.
 - **Text fields:** filled rounded fields with the field name inside, tint outline on focus.
 - **Alerts:** `AppleAlert` — centred title and message, full-width buttons separated
   by hairlines; bold default action, red destructive action.
-- **Sheets:** `showAppleSheet` — rounded top, grabber, swipe to dismiss.
+- **Sheets:** `showAppleSheet` — inset frosted glass panel with continuous
+  corners, grabber, swipe to dismiss.
 - **Switches** use the iOS style. **Spinners** are the iOS activity indicator.
 - **Symbols:** Cupertino (SF Symbols style) icons; domain artwork (cows, milk cycle)
   stays custom.
