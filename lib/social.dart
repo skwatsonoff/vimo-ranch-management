@@ -287,7 +287,12 @@ class _SocialScreenState extends State<SocialScreen> {
     return ListView.separated(
       controller: _scroll,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(21, 8, 21, 120),
+      padding: EdgeInsets.fromLTRB(
+        21,
+        8,
+        21,
+        floatingBarClearance(context, addButton: true),
+      ),
       itemCount: posts.length,
       separatorBuilder: (_, _) => const SizedBox(height: 16),
       itemBuilder: (_, i) =>
@@ -318,6 +323,7 @@ class _SocialScreenState extends State<SocialScreen> {
                 ))
         : _toast;
     return Shell(
+      edgeToEdge: true,
       child: Column(
         children: [
           const _SocialUploadBar(),

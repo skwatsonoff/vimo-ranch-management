@@ -19,6 +19,11 @@ class BrowserRuntime {
 
   void dismissBootSplash() {}
 
+  /// Reduce Transparency is reported only by browsers.
+  bool get reducedTransparency => false;
+
+  void watchReducedTransparency(void Function(bool reduced) onChange) {}
+
   void start({
     required void Function() onOnline,
     required void Function() onFocus,

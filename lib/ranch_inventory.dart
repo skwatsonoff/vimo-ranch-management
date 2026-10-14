@@ -201,8 +201,14 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
         if (!dates.contains(txt(r, 'date'))) dates.add(txt(r, 'date'));
       }
       return Shell(
+        edgeToEdge: true,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(21, 8, 21, 120),
+          padding: EdgeInsets.fromLTRB(
+            21,
+            8,
+            21,
+            floatingBarClearance(context),
+          ),
           children: [
             LiquidSegmentBar(
               labels: const ['Today', 'Week', 'Month', 'Year'],

@@ -834,7 +834,9 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
     final me = signedInUid;
     if (me.isEmpty) return Center(child: Text(ui('Please sign in again')));
     final db = FirebaseFirestore.instance;
+    // Edge to edge: the chat lists pad themselves by the bottom inset.
     return Shell(
+      edgeToEdge: true,
       child: Column(
         children: [
           Padding(

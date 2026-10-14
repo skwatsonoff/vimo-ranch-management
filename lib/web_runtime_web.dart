@@ -8,6 +8,30 @@ class BrowserRuntime {
   JSFunction? _onlineListener;
   JSFunction? _focusListener;
   JSFunction? _visibilityListener;
+  JSFunction? _transparencyListener;
+
+  static const _reducedTransparencyQuery =
+      '(prefers-reduced-transparency: reduce)';
+
+  /// The browser's Reduce Transparency preference (Chromium; Safari does not
+  /// report it yet, so it reads as off there).
+  bool get reducedTransparency {
+    try {
+      return web.window.matchMedia(_reducedTransparencyQuery).matches;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void watchReducedTransparency(void Function(bool reduced) onChange) {
+    try {
+      final query = web.window.matchMedia(_reducedTransparencyQuery);
+      final previous = _transparencyListener;
+      if (previous != null) query.removeEventListener('change', previous);
+      _transparencyListener = ((web.Event _) => onChange(query.matches)).toJS;
+      query.addEventListener('change', _transparencyListener);
+    } catch (_) {}
+  }
 
   bool get online => web.window.navigator.onLine;
   bool get notificationsGranted {

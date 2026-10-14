@@ -188,6 +188,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
       ],
     ),
     body: Shell(
+      edgeToEdge: true,
       child: uid.isEmpty
           ? Center(child: Text(ui('Please sign in again')))
           : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -199,7 +200,12 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                 final data = snap.data?.data() ?? <String, dynamic>{};
                 final name = txt(data, 'username', own ? accountUsername : '');
                 return ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    0,
+                    20,
+                    32 + MediaQuery.paddingOf(context).bottom,
+                  ),
                   children: [
                     SizedBox(
                       height: 150,
