@@ -137,6 +137,12 @@ Future<void> main() async {
             )
           : DefaultFirebaseOptions.currentPlatform,
     );
+    // Test builds connect Auth to the emulator before anything else touches
+    // it; otherwise restoring a saved sign-in calls the real service with
+    // the demo key and the session is dropped.
+    if (vimoUseEmulators) {
+      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
+    }
     // Native Firebase Auth persists sessions automatically; setPersistence is
     // a web API and can make otherwise valid native initialization fail.
     if (kIsWeb) {
@@ -156,7 +162,6 @@ Future<void> main() async {
       );
     }
     if (vimoUseEmulators) {
-      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
       FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8088);
     }
     // In the browser the saved sign-in is restored from the phone's storage
