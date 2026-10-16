@@ -48,9 +48,9 @@ List<Map<String, dynamic>> routeStops(Map<String, dynamic> route) =>
 List<Map<String, dynamic>> routeNotes(Map<String, dynamic> route) =>
     ((route['notes'] as List?) ?? const []).map(asMap).toList();
 
-/// Every point worth showing: the path, homes and notes.
+/// Every point worth showing: the line, homes and notes.
 List<ll.LatLng> routeExtent(Map<String, dynamic> route) => [
-  ...routePath(route),
+  ...routeLine(route),
   for (final s in routeStops(route)) ?personPoint(s),
   for (final n in routeNotes(route)) ?personPoint(n),
 ];
@@ -82,6 +82,175 @@ String routeTimeLeft(DateTime until, {DateTime? now}) {
   // Under a minute still reads as one minute, never "0m".
   final last = math.max(1, minutes);
   return bi('${last}m left', '$last நி மீதம்');
+}
+
+// -----------------------------------------------------------------------------
+//  Roads between homes
+//
+//  An own route is drawn home 1 → home 2 → home 3 along roads and paths, not
+//  as straight lines. Each "leg" between two neighbouring homes stores the way
+//  chosen for it: the shortest by default, or another one the vendor picked.
+//  Legs live with the route on this phone. When there is no signal a leg is
+//  drawn as a dashed straight line and filled in the next time it can be.
+//  A lent route carries the finished road line as its path.
+// -----------------------------------------------------------------------------
+
+/// One way between two homes.
+class RoadOption {
+  final List<ll.LatLng> points;
+  final double meters;
+  const RoadOption(this.points, this.meters);
+}
+
+/// Road and footpath routing from OpenStreetMap (OSRM, bicycle profile, so
+/// lanes and paths a cycle or bike can take are included). Results are
+/// cached for the session; failures return no options and the caller falls
+/// back to a straight line.
+class RoadRouter {
+  const RoadRouter._();
+  static const _base =
+      'https://routing.openstreetmap.de/routed-bike/route/v1/driving';
+  static final Map<String, List<RoadOption>> _cache = {};
+
+  static Future<List<RoadOption>> options(ll.LatLng a, ll.LatLng b) async {
+    String fixed(double v) => v.toStringAsFixed(6);
+    final key =
+        '${fixed(a.latitude)},${fixed(a.longitude)};${fixed(b.latitude)},${fixed(b.longitude)}';
+    final cached = _cache[key];
+    if (cached != null) return cached;
+    try {
+      final uri = Uri.parse(
+        '$_base/${fixed(a.longitude)},${fixed(a.latitude)};'
+        '${fixed(b.longitude)},${fixed(b.latitude)}'
+        '?alternatives=2&overview=full&geometries=geojson&steps=false',
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return const [];
+      final body = jsonDecode(response.body);
+      if (body is! Map || body['code'] != 'Ok') return const [];
+      final found =
+          <RoadOption>[
+              for (final r in (body['routes'] as List? ?? const []))
+                if (r is Map && r['geometry'] is Map)
+                  RoadOption([
+                    for (final c
+                        in ((r['geometry'] as Map)['coordinates'] as List? ??
+                            const []))
+                      if (c is List && c.length >= 2) ?routePoint(c[1], c[0]),
+                  ], (r['distance'] as num?)?.toDouble() ?? double.infinity),
+            ].where((o) => o.points.length >= 2).toList()
+            ..sort((x, y) => x.meters.compareTo(y.meters));
+      return _cache[key] = found;
+    } catch (_) {
+      return const [];
+    }
+  }
+}
+
+List<Map<String, dynamic>> routeLegs(Map<String, dynamic> route) =>
+    ((route['legs'] as List?) ?? const []).map(asMap).toList();
+
+bool _samePlace(ll.LatLng? a, ll.LatLng? b) =>
+    a != null &&
+    b != null &&
+    (a.latitude - b.latitude).abs() < 1e-6 &&
+    (a.longitude - b.longitude).abs() < 1e-6;
+
+/// The saved road for going from [from] to [to], if it still matches where
+/// both homes are pinned.
+Map<String, dynamic>? routeLeg(
+  Map<String, dynamic> route,
+  Map<String, dynamic> from,
+  Map<String, dynamic> to,
+) {
+  for (final leg in routeLegs(route)) {
+    if (leg['from'] == from['id'] &&
+        leg['to'] == to['id'] &&
+        _samePlace(routePoint(leg['a']), personPoint(from)) &&
+        _samePlace(routePoint(leg['b']), personPoint(to))) {
+      return leg;
+    }
+  }
+  return null;
+}
+
+Map<String, dynamic> roadLeg(
+  Map<String, dynamic> from,
+  Map<String, dynamic> to,
+  RoadOption option,
+) => {
+  'from': txt(from, 'id'),
+  'to': txt(to, 'id'),
+  'a': _pair(personPoint(from)!),
+  'b': _pair(personPoint(to)!),
+  'path': [for (final p in option.points) _pair(p)],
+  'meters': option.meters.isFinite ? option.meters.round() : 0,
+};
+
+/// A stretch of a route's line: along a road, or straight (not loaded yet).
+typedef RouteSegment = ({List<ll.LatLng> points, bool road});
+
+/// What to draw for a route. An own route runs home to home in order, along
+/// the saved road for each leg. A lent route already carries its road line.
+List<RouteSegment> routeSegments(Map<String, dynamic> route) {
+  if (route['kind'] == 'received') {
+    final path = routePath(route);
+    return path.length < 2 ? const [] : [(points: path, road: true)];
+  }
+  final homes = [
+    for (final s in routeStops(route))
+      if (personPoint(s) != null) s,
+  ];
+  return [
+    for (var i = 1; i < homes.length; i++)
+      if (routeLeg(route, homes[i - 1], homes[i]) case final leg?)
+        (points: routePath({'path': leg['path']}), road: true)
+      else
+        (
+          points: [personPoint(homes[i - 1])!, personPoint(homes[i])!],
+          road: false,
+        ),
+  ];
+}
+
+/// The whole line of a route as one list of points.
+List<ll.LatLng> routeLine(Map<String, dynamic> route) {
+  final line = <ll.LatLng>[];
+  for (final segment in routeSegments(route)) {
+    for (final p in segment.points) {
+      if (line.isEmpty || !_samePlace(line.last, p)) line.add(p);
+    }
+  }
+  return line;
+}
+
+/// Loads the shortest road for every leg of an own route that has none yet.
+/// Returns the updated route, or null when nothing changed (offline, or all
+/// legs already known).
+Future<Map<String, dynamic>?> fillRouteRoads(Map<String, dynamic> route) async {
+  if (route['kind'] == 'received') return null;
+  final homes = [
+    for (final s in routeStops(route))
+      if (personPoint(s) != null) s,
+  ];
+  final legs = <Map<String, dynamic>>[];
+  var changed = false;
+  for (var i = 1; i < homes.length; i++) {
+    final known = routeLeg(route, homes[i - 1], homes[i]);
+    if (known != null) {
+      legs.add(known);
+      continue;
+    }
+    final options = await RoadRouter.options(
+      personPoint(homes[i - 1])!,
+      personPoint(homes[i])!,
+    );
+    if (options.isEmpty) continue;
+    legs.add(roadLeg(homes[i - 1], homes[i], options.first));
+    changed = true;
+  }
+  if (!changed && legs.length == routeLegs(route).length) return null;
+  return {...route, 'legs': legs};
 }
 
 DateTime? _stamp(dynamic value) => value is Timestamp
@@ -316,7 +485,8 @@ class _MapCredit extends StatelessWidget {
 
 enum StopState { pending, current, done, skipped }
 
-/// Path, notes, homes and "me" as map layers.
+/// The route line, notes, homes and the vendor as map layers. Roads are a
+/// solid line; a leg whose road has not loaded yet is a dashed straight line.
 List<Widget> routeLayers(
   Map<String, dynamic> route, {
   Map<String, StopState> states = const {},
@@ -324,20 +494,28 @@ List<Widget> routeLayers(
   void Function(Map<String, dynamic> stop)? onStop,
   void Function(Map<String, dynamic> note)? onNote,
 }) {
-  final path = routePath(route);
+  final segments = routeSegments(route);
   final stops = routeStops(route);
   final notes = routeNotes(route);
   return [
-    if (path.length >= 2)
+    if (segments.isNotEmpty)
       fm.PolylineLayer(
         polylines: [
-          fm.Polyline(
-            points: path,
-            strokeWidth: 5.5,
-            color: Ink.violet,
-            borderStrokeWidth: 2.5,
-            borderColor: Colors.white.withValues(alpha: .92),
-          ),
+          for (final segment in segments)
+            fm.Polyline(
+              points: segment.points,
+              strokeWidth: segment.road ? 5.5 : 4,
+              color: segment.road
+                  ? Ink.violet
+                  : Ink.violet.withValues(alpha: .7),
+              borderStrokeWidth: segment.road ? 2.5 : 0,
+              borderColor: Colors.white.withValues(alpha: .92),
+              strokeCap: StrokeCap.round,
+              strokeJoin: StrokeJoin.round,
+              pattern: segment.road
+                  ? const fm.StrokePattern.solid()
+                  : fm.StrokePattern.dashed(segments: const [10, 8]),
+            ),
         ],
       ),
     fm.MarkerLayer(
@@ -366,11 +544,111 @@ List<Widget> routeLayers(
                 onTap: onStop == null ? null : () => onStop(s),
               ),
             ),
-        if (me != null)
-          fm.Marker(point: me, width: 30, height: 30, child: const _MePin()),
       ],
     ),
+    if (me != null) _RiderLayer(point: me),
   ];
+}
+
+/// The vendor on the map: the milk cycle with its rider, in a white glass
+/// badge, instead of a plain dot. It glides between location fixes, like the
+/// delivery partner in food apps, and faces the way it is travelling.
+/// Reduce Motion moves it without the glide.
+class _RiderLayer extends StatefulWidget {
+  final ll.LatLng point;
+  const _RiderLayer({required this.point});
+
+  @override
+  State<_RiderLayer> createState() => _RiderLayerState();
+}
+
+class _RiderLayerState extends State<_RiderLayer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _move = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  late ll.LatLng _from = widget.point;
+  late ll.LatLng _to = widget.point;
+  bool _left = false;
+
+  ll.LatLng get _now {
+    final t = Curves.easeInOut.transform(_move.value);
+    return ll.LatLng(
+      _from.latitude + (_to.latitude - _from.latitude) * t,
+      _from.longitude + (_to.longitude - _from.longitude) * t,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _RiderLayer old) {
+    super.didUpdateWidget(old);
+    if (_samePlace(widget.point, _to)) return;
+    final dx = widget.point.longitude - _now.longitude;
+    // Only turn round for real travel, not for GPS jitter.
+    if (dx.abs() > 2e-5) _left = dx < 0;
+    _from = _now;
+    _to = widget.point;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _move.value = 1;
+    } else {
+      _move.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _move.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _move,
+    builder: (context, _) => fm.MarkerLayer(
+      markers: [
+        fm.Marker(
+          point: _now,
+          width: 54,
+          height: 54,
+          child: _RiderPin(facingLeft: _left),
+        ),
+      ],
+    ),
+  );
+}
+
+class _RiderPin extends StatelessWidget {
+  final bool facingLeft;
+  const _RiderPin({required this.facingLeft});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: bi('You are here', 'நீங்கள் இங்கே'),
+    child: Center(
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Ink.dark ? const Color(0xFF2C2C2E) : Colors.white,
+          border: Border.all(color: Ink.violet, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Ink.violetDeep.withValues(alpha: .35),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Transform.flip(
+          flipX: facingLeft,
+          child: const MilkVendorIcon(size: 34, rider: true),
+        ),
+      ),
+    ),
+  );
 }
 
 class _HomePin extends StatelessWidget {
@@ -482,29 +760,6 @@ IconData routeNoteIcon(Map<String, dynamic> note) =>
     : txt(note, 'photo').isNotEmpty
     ? CupertinoIcons.photo_fill
     : CupertinoIcons.text_bubble_fill;
-
-class _MePin extends StatelessWidget {
-  const _MePin();
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Ink.blue,
-        border: Border.all(color: Colors.white, width: 3.5),
-        boxShadow: [
-          BoxShadow(
-            color: Ink.blue.withValues(alpha: .35),
-            blurRadius: 14,
-            spreadRadius: 4,
-          ),
-        ],
-      ),
-    ),
-  );
-}
 
 /// A glass circle for floating map controls.
 class _MapButton extends StatelessWidget {
@@ -1147,7 +1402,7 @@ class _RouteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final stops = routeStops(route), notes = routeNotes(route);
     final extent = routeExtent(route);
-    final distance = routeDistanceMeters(routePath(route));
+    final distance = routeDistanceMeters(routeLine(route));
     return Glass(
       radius: 30,
       padding: const EdgeInsets.all(8),
@@ -1258,6 +1513,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
     'path': [...((widget.route?['path'] as List?) ?? const [])],
     'stops': routeStops(widget.route ?? {}),
     'notes': routeNotes(widget.route ?? {}),
+    'legs': routeLegs(widget.route ?? {}),
   };
   StreamSubscription<geo.Position>? _gps;
   Timer? _clock;
@@ -1265,6 +1521,18 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
   bool _recording = false, _follow = true, _saving = false, _ready = false;
   Duration _elapsed = Duration.zero;
   bool _dirty = false;
+
+  /// Other ways for a leg ("fromId>toId"), drawn grey; tapping one uses it.
+  final Map<String, List<RoadOption>> _alternatives = {};
+  final fm.LayerHitNotifier<String> _alternativeHit = ValueNotifier(null);
+  bool _routing = false, _routeAgain = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Routes saved before roads were drawn, or offline, get their roads now.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncLegs());
+  }
 
   List<dynamic> get _path => _route['path'] as List;
   List<Map<String, dynamic>> get _stops =>
@@ -1277,7 +1545,118 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
     _gps?.cancel();
     _clock?.cancel();
     _map.dispose();
+    _alternativeHit.dispose();
     super.dispose();
+  }
+
+  /// Keeps one road per leg, home 1 → 2 → 3 in order. New legs get the
+  /// shortest road, and any other ways are kept to choose from. Runs one at a
+  /// time; a change made while it runs starts another pass.
+  Future<void> _syncLegs() async {
+    if (_routing) {
+      _routeAgain = true;
+      return;
+    }
+    _routing = true;
+    try {
+      do {
+        _routeAgain = false;
+        final homes = [
+          for (final s in _stops)
+            if (personPoint(s) != null) s,
+        ];
+        final legs = <Map<String, dynamic>>[];
+        final keys = <String>{};
+        for (var i = 1; i < homes.length; i++) {
+          final from = homes[i - 1], to = homes[i];
+          final key = '${txt(from, 'id')}>${txt(to, 'id')}';
+          keys.add(key);
+          final known = routeLeg(_route, from, to);
+          if (known != null) {
+            legs.add(known);
+            continue;
+          }
+          final options = await RoadRouter.options(
+            personPoint(from)!,
+            personPoint(to)!,
+          );
+          if (!mounted) return;
+          if (options.isEmpty) continue;
+          legs.add(roadLeg(from, to, options.first));
+          if (options.length > 1) _alternatives[key] = options;
+        }
+        if (!mounted) return;
+        setState(() {
+          _alternatives.removeWhere((key, _) => !keys.contains(key));
+          _route['legs'] = legs;
+        });
+      } while (_routeAgain && mounted);
+    } finally {
+      _routing = false;
+    }
+  }
+
+  void _useAlternative(String hit) {
+    final cut = hit.lastIndexOf('#');
+    final key = hit.substring(0, cut);
+    final options = _alternatives[key];
+    final index = int.tryParse(hit.substring(cut + 1));
+    if (options == null || index == null || index >= options.length) return;
+    final ids = key.split('>');
+    final from = _stops.where((s) => s['id'] == ids.first).firstOrNull;
+    final to = _stops.where((s) => s['id'] == ids.last).firstOrNull;
+    if (from == null || to == null) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _route['legs'] = [
+        for (final leg in routeLegs(_route))
+          if (!(leg['from'] == ids.first && leg['to'] == ids.last)) leg,
+        roadLeg(from, to, options[index]),
+      ];
+      _dirty = true;
+    });
+  }
+
+  /// The other ways for each leg, under the chosen road.
+  List<Widget> _alternativeLayers() {
+    if (_alternatives.isEmpty) return const [];
+    final chosen = {
+      for (final leg in routeLegs(_route))
+        '${leg['from']}>${leg['to']}': numv(leg, 'meters'),
+    };
+    return [
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () {
+            final hit = _alternativeHit.value?.hitValues.firstOrNull;
+            if (hit != null) _useAlternative(hit);
+          },
+          child: fm.PolylineLayer<String>(
+            hitNotifier: _alternativeHit,
+            minimumHitbox: 18,
+            polylines: [
+              for (final entry in _alternatives.entries)
+                for (final (i, option) in entry.value.indexed)
+                  if ((option.meters.round() - (chosen[entry.key] ?? -1))
+                          .abs() >
+                      1)
+                    fm.Polyline<String>(
+                      points: option.points,
+                      strokeWidth: 5,
+                      color: const Color(0xFF8E8E93).withValues(alpha: .75),
+                      borderStrokeWidth: 2,
+                      borderColor: Colors.white.withValues(alpha: .85),
+                      strokeCap: StrokeCap.round,
+                      strokeJoin: StrokeJoin.round,
+                      hitValue: '${entry.key}#$i',
+                    ),
+            ],
+          ),
+        ),
+      ),
+    ];
   }
 
   Future<void> _toggle() async {
@@ -1359,10 +1738,10 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
         'lat': point.latitude,
         'lng': point.longitude,
       });
-      _addPoint(point);
       _dirty = true;
     });
     HapticFeedback.selectionClick();
+    unawaited(_syncLegs());
     // A home marked on the route also becomes the person's saved location.
     if (personPoint(person) == null && canRecordEntries) {
       final key = person['_key'] ?? person['id'];
@@ -1491,6 +1870,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
       }
       _dirty = true;
     });
+    unawaited(_syncLegs());
   }
 
   Future<void> _openNote(Map<String, dynamic> note) async {
@@ -1573,7 +1953,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
   Widget build(BuildContext context) {
     final path = routePath(_route);
     final extent = routeExtent(_route);
-    final distance = routeDistanceMeters(path);
+    final distance = routeDistanceMeters(routeLine(_route));
     final top = MediaQuery.paddingOf(context).top;
     return PopScope(
       canPop: !_dirty || _saving,
@@ -1598,12 +1978,15 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                   if (gesture && _follow) setState(() => _follow = false);
                 },
                 onLongPress: (p) => _markHome(p),
-                layers: routeLayers(
-                  _route,
-                  me: _me,
-                  onStop: _stopActions,
-                  onNote: _openNote,
-                ),
+                layers: [
+                  ..._alternativeLayers(),
+                  ...routeLayers(
+                    _route,
+                    me: _me,
+                    onStop: _stopActions,
+                    onNote: _openNote,
+                  ),
+                ],
               ),
             ),
             // Status capsule
@@ -1663,6 +2046,52 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                 ],
               ),
             ),
+            if (_alternatives.isNotEmpty)
+              Positioned(
+                left: 16,
+                right: 80,
+                bottom: 200,
+                child: SafeArea(
+                  top: false,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: LiquidGlass(
+                      radius: 20,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 4,
+                            decoration: ShapeDecoration(
+                              shape: const StadiumBorder(),
+                              color: const Color(0xFF8E8E93),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: AppText(
+                              bi(
+                                'Grey: another way. Tap it to use it.',
+                                'சாம்பல்: வேறு வழி. அதைத் தொட்டுத் தேர்வு செய்யவும்.',
+                              ),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Ink.navy,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               right: 16,
               bottom: 196,
@@ -2575,6 +3004,22 @@ class RouteViewScreen extends StatefulWidget {
 class _RouteViewScreenState extends State<RouteViewScreen> {
   final _map = fm.MapController();
   ll.LatLng? _me;
+  late Map<String, dynamic> _route = widget.route;
+
+  @override
+  void initState() {
+    super.initState();
+    _fillRoads();
+  }
+
+  /// An own route saved without roads (offline, or before roads were drawn)
+  /// gets them now, and keeps them.
+  Future<void> _fillRoads() async {
+    final filled = await fillRouteRoads(_route);
+    if (filled == null || !mounted) return;
+    setState(() => _route = filled);
+    await VendorRoutes.save(filled);
+  }
 
   @override
   void dispose() {
@@ -2596,7 +3041,7 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
 
   Future<void> _stop(Map<String, dynamic> stop) async {
     final notes = routeNotes(
-      widget.route,
+      _route,
     ).where((n) => n['stopId'] == stop['id']).toList();
     await showAppleSheet<void>(
       context: context,
@@ -2643,7 +3088,7 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final route = widget.route;
+    final route = _route;
     final stops = routeStops(route);
     final extent = routeExtent(route);
     return Scaffold(
@@ -2996,8 +3441,9 @@ class RouteShareService {
           'voiceSeconds': toInt(n['voiceSeconds']),
         },
     ];
+    // The lent copy carries the road line itself (home 1 → 2 → 3).
     final path = [
-      for (final p in routePath(route))
+      for (final p in routeLine(route))
         {'lat': _pair(p).first, 'lng': _pair(p).last},
     ];
     int size() =>

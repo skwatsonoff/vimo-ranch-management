@@ -1086,7 +1086,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
                   'வேறு தொழுவ மாட்டுக்கு "வெளி மாடு" தேர்வு செய்யவும்.',
                 ),
               )
-            : DropdownButtonFormField<String>(
+            : PickerField<String>(
                 initialValue: cows.contains(_cow) ? _cow : cows.first,
                 isExpanded: true,
                 borderRadius: BorderRadius.circular(Gold.r21),

@@ -4702,6 +4702,7 @@ class CloudSyncService {
   const CloudSyncService._();
 
   static const Set<String> localOnlySettings = {
+    'appearance',
     'ranchId',
     'pendingRanchId',
     'firebaseUid',
@@ -7356,6 +7357,12 @@ ThemeData appleTheme() {
   );
 }
 
+/// 'system' (follow the phone), 'light' or 'dark'. Kept on this device only.
+String appearanceMode() {
+  final mode = settingText('appearance', 'system');
+  return const {'system', 'light', 'dark'}.contains(mode) ? mode : 'system';
+}
+
 class VimoApp extends StatefulWidget {
   const VimoApp({super.key});
 
@@ -7368,10 +7375,30 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
       WidgetsBinding.instance.platformDispatcher.platformBrightness ==
       Brightness.dark;
 
+  /// Light or Dark as chosen in Settings, or the phone's setting when it is
+  /// left on Automatic.
+  static bool get _wantsDark => switch (appearanceMode()) {
+    'light' => false,
+    'dark' => true,
+    _ => _systemDark,
+  };
+
+  late final ValueListenable<Box<dynamic>> _appearance = Hive.box(
+    'settings',
+  ).listenable(keys: const ['appearance']);
+
+  void _applyAppearance() {
+    final dark = _wantsDark;
+    if (dark == Ink.dark) return;
+    Ink.dark = dark;
+    _rebuildAll();
+  }
+
   @override
   void initState() {
     super.initState();
-    Ink.dark = _systemDark;
+    Ink.dark = _wantsDark;
+    _appearance.addListener(_applyAppearance);
     Ink.reduceTransparency = _browserRuntime.reducedTransparency;
     _browserRuntime.watchReducedTransparency((reduced) {
       if (reduced == Ink.reduceTransparency) return;
@@ -7383,19 +7410,16 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _appearance.removeListener(_applyAppearance);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  /// Follows the system Light / Dark setting while the app is open. Colours
-  /// are read when widgets build, so every element rebuilds once.
+  /// Follows the system Light / Dark setting while the app is open (when
+  /// Appearance is Automatic). Colours are read when widgets build, so every
+  /// element rebuilds once.
   @override
-  void didChangePlatformBrightness() {
-    final dark = _systemDark;
-    if (dark == Ink.dark) return;
-    Ink.dark = dark;
-    _rebuildAll();
-  }
+  void didChangePlatformBrightness() => _applyAppearance();
 
   void _rebuildAll() {
     if (!mounted) return;
@@ -13237,7 +13261,7 @@ class AgeSelector extends StatelessWidget {
       opacity: enabled ? 1 : 0.55,
       child: IgnorePointer(
         ignoring: !enabled,
-        child: DropdownButtonFormField<String>(
+        child: PickerField<String>(
           initialValue: values.contains(_current) ? _current : 'Not set',
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
@@ -13752,7 +13776,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         final pairs = _pairOptions(self);
         return [
           if (pairs.isNotEmpty) ...[
-            DropdownButtonFormField<String>(
+            PickerField<String>(
               initialValue: pairs.contains(_pair) ? _pair : '',
               isExpanded: true,
               borderRadius: BorderRadius.circular(Gold.r21),
@@ -13870,7 +13894,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               : const SizedBox(width: double.infinity),
         ),
         const SizedBox(height: Gold.s21),
-        DropdownButtonFormField<String>(
+        PickerField<String>(
           initialValue: _breed,
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
@@ -13933,7 +13957,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         ],
         if (!isCow) ...[
           const SizedBox(height: Gold.s16),
-          DropdownButtonFormField<String>(
+          PickerField<String>(
             initialValue: motherNames().contains(_mother)
                 ? _mother
                 : 'Unknown Mother',
@@ -14164,7 +14188,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             message: 'Add a cow before recording milk.',
           )
         else
-          DropdownButtonFormField<String>(
+          PickerField<String>(
             initialValue: _cow,
             isExpanded: true,
             borderRadius: BorderRadius.circular(Gold.r21),
@@ -14590,7 +14614,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
             ),
           ),
         ] else
-          DropdownButtonFormField<String>(
+          PickerField<String>(
             initialValue: _semen,
             isExpanded: true,
             borderRadius: BorderRadius.circular(Gold.r21),
@@ -14844,7 +14868,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           ),
         ),
         const SizedBox(height: Gold.s13),
-        DropdownButtonFormField<String>(
+        PickerField<String>(
           initialValue: _breed,
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
@@ -14856,7 +14880,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           onChanged: (v) => setState(() => _breed = v ?? _breed),
         ),
         const SizedBox(height: Gold.s13),
-        DropdownButtonFormField<String>(
+        PickerField<String>(
           initialValue: _gender,
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
@@ -15352,7 +15376,7 @@ Widget customerPicker({
       Row(
         children: [
           Expanded(
-            child: DropdownButtonFormField<String>(
+            child: PickerField<String>(
               key: ValueKey('customer-${customer.text}-${customers.length}'),
               initialValue: selected,
               isExpanded: true,
@@ -15823,7 +15847,7 @@ class _DeathScreenState extends State<DeathScreen> {
           ),
         ),
         const SizedBox(height: Gold.s13),
-        DropdownButtonFormField<String>(
+        PickerField<String>(
           initialValue: _reason,
           isExpanded: true,
           borderRadius: BorderRadius.circular(Gold.r21),
@@ -16532,7 +16556,7 @@ class _SellScreenState extends State<SellScreen> {
                                 ? 'There are no active cows on the ranch.'
                                 : 'There are no active calves on the ranch.',
                           )
-                        : DropdownButtonFormField<String>(
+                        : PickerField<String>(
                             initialValue: _animal.isEmpty ? null : _animal,
                             isExpanded: true,
                             borderRadius: BorderRadius.circular(Gold.r21),
@@ -18175,9 +18199,8 @@ class SettingsScreen extends StatelessWidget {
                   ListTile(
                     leading: Icon(CupertinoIcons.globe, color: _blue),
                     title: const AppText('Language'),
-                    trailing: DropdownButton<String>(
+                    trailing: PickerButton<String>(
                       value: tamilUi ? 'Tamil' : 'English',
-                      underline: const SizedBox.shrink(),
                       items: const [
                         DropdownMenuItem(
                           value: 'English',
@@ -18188,9 +18211,40 @@ class SettingsScreen extends StatelessWidget {
                           child: AppText('Tamil'),
                         ),
                       ],
-                      onChanged: (v) {
-                        if (v != null) setSetting('languageMode', v);
-                      },
+                      onChanged: (v) => setSetting('languageMode', v),
+                    ),
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      CupertinoIcons.circle_lefthalf_fill,
+                      color: _blue,
+                    ),
+                    title: AppText(bi('Appearance', 'தோற்றம்')),
+                    subtitle: AppText(
+                      bi(
+                        'Automatic follows your phone\'s Light / Dark setting.',
+                        'தானியங்கி: உங்கள் போனின் Light / Dark அமைப்பைப் பின்பற்றும்.',
+                      ),
+                      style: TextStyle(fontSize: 13, color: Ink.muted),
+                    ),
+                    trailing: PickerButton<String>(
+                      value: appearanceMode(),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'system',
+                          child: AppText(bi('Automatic', 'தானியங்கி')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'light',
+                          child: AppText(bi('Light', 'வெளிர்')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'dark',
+                          child: AppText(bi('Dark', 'இருள்')),
+                        ),
+                      ],
+                      onChanged: (v) =>
+                          Hive.box('settings').put('appearance', v),
                     ),
                   ),
                   _ActionRow(
@@ -18582,7 +18636,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 style: TextStyle(color: Ink.muted),
               ),
               const SizedBox(height: Gold.s13),
-              DropdownButtonFormField<String>(
+              PickerField<String>(
                 initialValue: role,
                 isExpanded: true,
                 decoration: fieldStyle(
@@ -18666,7 +18720,7 @@ class FamilyUsersScreen extends StatelessWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
+              PickerField<String>(
                 initialValue: role == 'Admin' ? 'Editor' : role,
                 isExpanded: true,
                 decoration: fieldStyle(
@@ -19078,7 +19132,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                 decoration: fieldStyle('Name', icon: CupertinoIcons.person),
               ),
               const SizedBox(height: Gold.s13),
-              DropdownButtonFormField<String>(
+              PickerField<String>(
                 initialValue: role,
                 isExpanded: true,
                 borderRadius: BorderRadius.circular(Gold.r21),

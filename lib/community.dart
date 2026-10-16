@@ -791,6 +791,103 @@ class CommunityChatsScreen extends StatefulWidget {
 
 class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
   int _tab = 0;
+
+  /// Newest message time per person, so the latest conversations sit at the
+  /// top, as in Messages. One small listener per chat (its last message).
+  final Map<String, DateTime> _lastAt = {};
+  final Map<String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _recency = {};
+
+  @override
+  void dispose() {
+    for (final watch in _recency.values) {
+      watch.cancel();
+    }
+    super.dispose();
+  }
+
+  void _watchRecency(Iterable<String> peers) {
+    final me = signedInUid;
+    if (me.isEmpty) return;
+    for (final peer in peers) {
+      if (_recency.containsKey(peer)) continue;
+      _recency[peer] = FirebaseFirestore.instance
+          .collection('direct_chats')
+          .doc(DirectChatService.idFor(me, peer))
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .snapshots()
+          .listen(
+            (snap) {
+              final at = snap.docs.firstOrNull?.data()['createdAt'];
+              if (at is! Timestamp || !mounted) return;
+              final time = at.toDate();
+              if (_lastAt[peer] == time) return;
+              setState(() => _lastAt[peer] = time);
+            },
+            // No conversation yet with this person.
+            onError: (Object _) {},
+          );
+    }
+  }
+
+  /// Unsent messages waiting in the outbox count as the newest activity.
+  DateTime? _latest(String peer) {
+    final chat = DirectChatService.idFor(signedInUid, peer);
+    var latest = _lastAt[peer];
+    if (Hive.isBoxOpen('community_outbox')) {
+      for (final value in Hive.box('community_outbox').values) {
+        final row = asMap(value);
+        if (row['chatId'] != chat) continue;
+        final saved = DateTime.tryParse(txt(row, 'savedAt'));
+        if (saved != null && (latest == null || saved.isAfter(latest))) {
+          latest = saved;
+        }
+      }
+    }
+    return latest;
+  }
+
+  static DateTime? _ranchLatest() {
+    if (!Hive.isBoxOpen('ranch_messages')) return null;
+    DateTime? latest;
+    for (final value in Hive.box('ranch_messages').values) {
+      final at = DateTime.tryParse(txt(asMap(value), 'createdAt'));
+      if (at != null && (latest == null || at.isAfter(latest))) latest = at;
+    }
+    return latest;
+  }
+
+  /// Newest first; people without messages keep their order at the end.
+  static List<T> _byRecent<T>(List<T> items, DateTime? Function(T) at) {
+    final indexed = [
+      for (final (i, item) in items.indexed) (i, item, at(item)),
+    ];
+    indexed.sort((a, b) {
+      final x = a.$3, y = b.$3;
+      if (x != null && y != null && x != y) return y.compareTo(x);
+      if (x != null && y == null) return -1;
+      if (x == null && y != null) return 1;
+      return a.$1.compareTo(b.$1);
+    });
+    return [for (final e in indexed) e.$2];
+  }
+
+  static String _when(DateTime? at) {
+    if (at == null) return '';
+    final local = at.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    final gap = today.difference(day).inDays;
+    if (gap == 0) {
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+    if (gap == 1) return bi('Yesterday', 'நேற்று');
+    return '${local.day}/${local.month}';
+  }
+
   Future<void> _open(String peer) async {
     try {
       final id = await DirectChatService.open(peer);
@@ -802,7 +899,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
     }
   }
 
-  Widget _person(String uid, {bool ranchMember = false}) =>
+  Widget _person(String uid, {bool ranchMember = false, String when = ''}) =>
       StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('profiles')
@@ -825,6 +922,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
             subtitle: ranchMember
                 ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
                 : txt(data, 'username'),
+            when: when,
             onTap: () => _open(uid),
           );
         },
@@ -908,62 +1006,72 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                         );
                       }
                       if (_tab == 0) {
+                        _watchRecency(personal);
+                        final ranchAt = _ranchLatest();
+                        const ranchKey = '\u0000ranch';
+                        final ordered = _byRecent<String>([
+                          if (CloudSyncService.ready) ranchKey,
+                          ...personal,
+                        ], (id) => id == ranchKey ? ranchAt : _latest(id));
                         return ListView(
                           children: [
-                            if (CloudSyncService.ready)
-                              _ChatRow(
-                                avatar: Container(
-                                  width: 52,
-                                  height: 52,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [Ink.violet, Ink.violetDeep],
-                                    ),
-                                  ),
-                                  child: const Icon(
-                                    CupertinoIcons.person_3_fill,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                title: farmName(),
-                                subtitle: bi('Ranch group', 'பண்ணைக் குழு'),
-                                onTap: () => push(
-                                  context,
-                                  Scaffold(
-                                    appBar: AppBar(
-                                      title: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            bi('Chat', 'சாட்'),
-                                            style: const TextStyle(
-                                              fontSize: 17,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          Text(
-                                            farmName(),
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Ink.violetDeep,
-                                            ),
-                                          ),
-                                        ],
+                            for (final id in ordered)
+                              if (id == ranchKey)
+                                _ChatRow(
+                                  avatar: Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [Ink.violet, Ink.violetDeep],
                                       ),
                                     ),
-                                    body: const RanchChatScreen(),
+                                    child: const Icon(
+                                      CupertinoIcons.person_3_fill,
+                                      color: Colors.white,
+                                    ),
                                   ),
+                                  title: farmName(),
+                                  subtitle: bi('Ranch group', 'பண்ணைக் குழு'),
+                                  when: _when(ranchAt),
+                                  onTap: () => push(
+                                    context,
+                                    Scaffold(
+                                      appBar: AppBar(
+                                        title: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              bi('Chat', 'சாட்'),
+                                              style: const TextStyle(
+                                                fontSize: 17,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            Text(
+                                              farmName(),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Ink.violetDeep,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      body: const RanchChatScreen(),
+                                    ),
+                                  ),
+                                )
+                              else
+                                _person(
+                                  id,
+                                  ranchMember: memberIds.contains(id),
+                                  when: _when(_latest(id)),
                                 ),
-                              ),
-                            for (final uid in personal)
-                              _person(
-                                uid,
-                                ranchMember: memberIds.contains(uid),
-                              ),
                             if (personal.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.all(24),
@@ -1012,8 +1120,15 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                               ),
                             );
                           }
+                          _watchRecency(peers);
                           return ListView(
-                            children: [for (final peer in peers) _person(peer)],
+                            children: [
+                              for (final peer in _byRecent<String>(
+                                peers.toList(),
+                                _latest,
+                              ))
+                                _person(peer, when: _when(_latest(peer))),
+                            ],
                           );
                         },
                       );
@@ -1031,11 +1146,15 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
 class _ChatRow extends StatelessWidget {
   final Widget avatar;
   final String title, subtitle;
+
+  /// Time of the latest message ("14:05", "Yesterday", "12/10").
+  final String when;
   final VoidCallback onTap;
   const _ChatRow({
     required this.avatar,
     required this.title,
     required this.subtitle,
+    this.when = '',
     required this.onTap,
   });
   @override
@@ -1084,6 +1203,14 @@ class _ChatRow extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (when.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    AppText(
+                      when,
+                      style: TextStyle(fontSize: 15, color: Ink.muted),
+                    ),
+                  ],
+                  const SizedBox(width: 6),
                   Icon(
                     CupertinoIcons.chevron_right,
                     size: 15,
@@ -1365,6 +1492,28 @@ Future<DateTime?> choosePostTime(BuildContext context) async {
 class MilkOriginScreen extends StatelessWidget {
   final Map<String, dynamic>? entry;
   const MilkOriginScreen({super.key, this.entry});
+
+  void _explain(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (dialog) => AppleAlert(
+      title: Text(bi('About milk stock', 'பால் இருப்பு பற்றி')),
+      content: Text(
+        bi(
+          'All milk goes into one shared stock. This page lists every '
+              'recorded movement into and out of it.',
+          'எல்லா பாலும் ஒரே இருப்பில் சேரும். அதில் வந்த மற்றும் போன ஒவ்வொரு '
+              'பதிவும் இங்கே உள்ளது.',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialog),
+          child: Text(bi('OK', 'சரி')),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final rows = entry == null
@@ -1376,94 +1525,135 @@ class MilkOriginScreen extends StatelessWidget {
             ))
         : [entry!];
     return Scaffold(
-      appBar: AppBar(title: Text(bi('Milk sources', 'பால் வந்த விவரம்'))),
+      appBar: AppBar(
+        title: Text(bi('Milk sources', 'பால் வந்த விவரம்')),
+        actions: [
+          IconButton(
+            tooltip: bi('About milk stock', 'பால் இருப்பு பற்றி'),
+            icon: const Icon(CupertinoIcons.info_circle),
+            onPressed: () => _explain(context),
+          ),
+        ],
+      ),
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.all(21),
           children: [
-            Text(
-              bi(
-                'Stock is pooled. These are the recorded inflows and outflows.',
-                'பால் கலந்த இருப்பாக உள்ளது. இவை பதிவுசெய்யப்பட்ட வரவு–செலவு விவரங்கள்.',
-              ),
-              style: TextStyle(color: Ink.muted),
-            ),
-            const SizedBox(height: 16),
             for (final row in rows)
-              Builder(
-                builder: (context) {
-                  final sourceBox = txt(row, 'sourceBox');
-                  final matches = Hive.isBoxOpen(sourceBox)
-                      ? Hive.box(sourceBox).values.whereType<Map>().where(
-                          (v) => v['cloudId'] == row['sourceId'],
-                        )
-                      : const <Map>[];
-                  final source = matches.isEmpty
-                      ? <String, dynamic>{}
-                      : asMap(matches.first);
-                  final purchase =
-                      row['kind'] == 'purchase' || row['kind'] == 'collection';
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Glass(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            purchase
-                                ? (row['kind'] == 'collection'
-                                      ? bi(
-                                          'Collected from household',
-                                          'வீட்டிலிருந்து சேகரித்த பால்',
-                                        )
-                                      : bi('Purchased milk', 'வாங்கிய பால்'))
-                                : row['kind'] == 'ranch' &&
-                                      sourceBox == 'milk_records'
-                                ? bi('From ranch cows', 'பண்ணை மாடுகளிலிருந்து')
-                                : bi(
-                                    'Milk used / sold / adjusted',
-                                    'பயன்படுத்திய / விற்ற / திருத்திய பால்',
-                                  ),
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          AppText(
-                            '${numv(row, 'quantity').toStringAsFixed(2)} L',
-                          ),
-                          AppText('${txt(row, 'date')} · ${txt(row, 'time')}'),
-                          if (purchase)
-                            AppText(
-                              '${bi('Supplier', 'வழங்குநர்')}: ${txt(row, 'personName')}',
-                            ),
-                          if (!purchase)
-                            AppText(
-                              '${bi('Cow / source', 'மாடு / மூலம்')}: ${txt(source, 'cow', txt(row, 'sourceCow', txt(row, 'personName')))}',
-                            ),
-                          if (!purchase)
-                            AppText(
-                              '${txt(source, 'date', txt(row, 'sourceDate'))} ${txt(source, 'session', txt(row, 'sourceSession'))}',
-                            ),
-                          if (purchase)
-                            AppText(
-                              '${bi('Price per litre', 'லிட்டர் விலை')}: ${money(numv(row, 'price'))}',
-                            ),
-                          if (purchase)
-                            AppText(
-                              '${bi('Total', 'மொத்தம்')}: ${money(numv(row, 'amount'))} · ${bi('Paid', 'செலுத்தியது')}: ${money(numv(row, 'paid'))}',
-                            ),
-                          if (txt(row, 'notes').isNotEmpty)
-                            Text(txt(row, 'notes')),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _MilkMovementCard(row: row),
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One movement of milk into or out of the shared stock. The title says what
+/// happened (bought, collected, sold, cleared, from ranch cows) and the detail
+/// line names the other side in words that fit it: supplier, household,
+/// customer, where the milk went, or the cow.
+class _MilkMovementCard extends StatelessWidget {
+  final Map<String, dynamic> row;
+  const _MilkMovementCard({required this.row});
+
+  @override
+  Widget build(BuildContext context) {
+    final kind = txt(row, 'kind');
+    final sourceBox = txt(row, 'sourceBox');
+    final matches = Hive.isBoxOpen(sourceBox)
+        ? Hive.box(sourceBox).values.whereType<Map>().where(
+            (v) => v['cloudId'] == row['sourceId'],
+          )
+        : const <Map>[];
+    final source = matches.isEmpty ? <String, dynamic>{} : asMap(matches.first);
+    final purchase = kind == 'purchase' || kind == 'collection';
+    final fromCows = kind == 'ranch' && sourceBox == 'milk_records';
+    final name = vendorEntryPersonName(row);
+    final cow = txt(source, 'cow', txt(row, 'sourceCow'));
+    final (String title, String party) = switch (kind) {
+      'collection' => (
+        bi('Collected milk', 'சேகரித்த பால்'),
+        '${bi('From', 'யாரிடமிருந்து')}: $name',
+      ),
+      'purchase' => (
+        bi('Bought milk', 'வாங்கிய பால்'),
+        '${bi('Supplier', 'வழங்குநர்')}: $name',
+      ),
+      'sale' => (
+        bi('Sold milk', 'விற்ற பால்'),
+        '${bi('Customer', 'வாடிக்கையாளர்')}: $name',
+      ),
+      'clearance' => (
+        bi('Milk cleared', 'கிளியர் செய்த பால்'),
+        '${bi('Moved to', 'எங்கே')}: $name',
+      ),
+      _ when fromCows => (
+        bi('Milk from ranch cows', 'பண்ணை மாடுகளின் பால்'),
+        '${bi('Cow', 'மாடு')}: ${cow.isEmpty ? name : cow}',
+      ),
+      'ranch' => (
+        bi('Ranch milk adjusted', 'பண்ணை பால் திருத்தம்'),
+        name.isEmpty ? '' : '${bi('Record', 'பதிவு')}: $name',
+      ),
+      _ => (bi('Stock adjusted', 'இருப்பு திருத்தம்'), name),
+    };
+    final sourceWhen =
+        '${txt(source, 'date', txt(row, 'sourceDate'))} ${txt(source, 'session', txt(row, 'sourceSession'))}'
+            .trim();
+    final muted = TextStyle(color: Ink.muted, fontSize: 15);
+    return Glass(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(
+                child: AppText(
+                  title,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: Ink.navy,
+                  ),
+                ),
+              ),
+              AppText(
+                '${numv(row, 'quantity').toStringAsFixed(2)} L',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Ink.navy,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (party.isNotEmpty)
+            AppText(party, style: TextStyle(fontSize: 15, color: Ink.body)),
+          AppText('${txt(row, 'date')} · ${txt(row, 'time')}', style: muted),
+          if (fromCows && sourceWhen.isNotEmpty)
+            AppText('${bi('Milked', 'கறந்தது')}: $sourceWhen', style: muted),
+          if (purchase)
+            AppText(
+              '${bi('Price per litre', 'லிட்டர் விலை')}: ${money(numv(row, 'price'))}',
+              style: muted,
+            ),
+          if (purchase)
+            AppText(
+              '${bi('Total', 'மொத்தம்')}: ${money(numv(row, 'amount'))} · ${bi('Paid', 'செலுத்தியது')}: ${money(numv(row, 'paid'))}',
+              style: muted,
+            ),
+          if (txt(row, 'notes').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(txt(row, 'notes'), style: muted),
+            ),
+        ],
       ),
     );
   }

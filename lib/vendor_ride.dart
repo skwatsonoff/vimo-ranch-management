@@ -627,7 +627,7 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
             ],
             if (_cycle == 'Monthly') ...[
               const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
+              PickerField<int>(
                 initialValue: _monthDay,
                 decoration: fieldStyle(bi('Day of month', 'மாதத்தின் நாள்')),
                 items: [
@@ -2623,7 +2623,6 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
   int _day = DateTime.now().weekday % 7;
   late bool _volume = widget.volume;
   late bool _groups = widget.groups;
-  bool _saving = false;
   List<Map<String, dynamic>> _people = [];
   final Map<int, List<Map<String, dynamic>>> _orders = {};
   @override
@@ -2650,29 +2649,34 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
     });
   }
 
-  Future<void> _save() async {
-    setState(() => _saving = true);
+  /// Changes save the moment they are made, as in iOS Settings; there is no
+  /// Save button. Only the reordered day is written.
+  Future<void> _saveOrder(int day) async {
     try {
-      for (final day in _orders.entries) {
-        for (var i = 0; i < day.value.length; i++) {
-          final p = day.value[i];
-          final current = asMap(Hive.box('vendor_people').get(p['_key']));
-          if (current.isEmpty) continue;
-          await Hive.box('vendor_people').put(p['_key'], {
-            ...current,
-            'routeOrder': {...asMap(current['routeOrder']), '${day.key}': i},
-            'updatedAtMillis': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
+      final people = _orders[day] ?? const <Map<String, dynamic>>[];
+      final box = Hive.box('vendor_people');
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var i = 0; i < people.length; i++) {
+        final current = asMap(box.get(people[i]['_key']));
+        if (current.isEmpty) continue;
+        if (asMap(current['routeOrder'])['$day'] == i) continue;
+        await box.put(people[i]['_key'], {
+          ...current,
+          'routeOrder': {...asMap(current['routeOrder']), '$day': i},
+          'updatedAtMillis': now,
+        });
       }
-      await Hive.box('settings').put('${widget.storageKey}_volume', _volume);
-      await Hive.box('settings').put('${widget.storageKey}_groups', _groups);
       AutoSyncService.markDirty(reason: 'vendor route order');
-      if (mounted) Navigator.pop(context);
     } catch (_) {
       if (mounted) snack(context, ui('Unable to save. Try again.'));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveSetting(String name, bool value) async {
+    try {
+      await Hive.box('settings').put('${widget.storageKey}_$name', value);
+    } catch (_) {
+      if (mounted) snack(context, ui('Unable to save. Try again.'));
     }
   }
 
@@ -2744,56 +2748,6 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
           const SizedBox(height: 13),
           Glass(
             radius: 27,
-            padding: const EdgeInsets.all(16),
-            onTap: () => push(context, const CustomerReportsScreen()),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Ink.violetDeep.withValues(alpha: .1),
-                  ),
-                  child: Icon(
-                    CupertinoIcons.person_crop_rectangle_fill,
-                    color: Ink.violetDeep,
-                    size: 23,
-                  ),
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        bi(
-                          'Customer profile reports',
-                          'வாடிக்கையாளர் அறிக்கைகள்',
-                        ),
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: Ink.navy,
-                        ),
-                      ),
-                      Text(
-                        bi(
-                          'Each customer, month by month',
-                          'ஒவ்வொரு வாடிக்கையாளருக்கும் மாத வாரியாக',
-                        ),
-                        style: TextStyle(color: Ink.muted, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(CupertinoIcons.chevron_right, size: 16, color: Ink.faint),
-              ],
-            ),
-          ),
-          const SizedBox(height: 13),
-          Glass(
-            radius: 27,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
@@ -2813,7 +2767,10 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                   'பட்டியலுக்கு மேல் ஊர் குமிழ்கள். தொடங்கு ஒவ்வொரு ஊராக விநியோகிக்கும்.',
                 ),
               ),
-              onChanged: (v) => setState(() => _groups = v),
+              onChanged: (v) {
+                setState(() => _groups = v);
+                _saveSetting('groups', v);
+              },
             ),
           ),
           const SizedBox(height: 27),
@@ -2856,10 +2813,13 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             itemCount: _people.length,
-            onReorderItem: (old, next) => setState(() {
-              final p = _people.removeAt(old);
-              _people.insert(next, p);
-            }),
+            onReorderItem: (old, next) {
+              setState(() {
+                final p = _people.removeAt(old);
+                _people.insert(next, p);
+              });
+              _saveOrder(_day);
+            },
             itemBuilder: (context, i) => ReorderableDelayedDragStartListener(
               key: ValueKey(_people[i]['id']),
               index: i,
@@ -2929,7 +2889,8 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
                   return;
                 }
                 setState(() => _volume = v);
-                if (v) {
+                await _saveSetting('volume', v);
+                if (v && context.mounted) {
                   await showDialog<void>(
                     context: context,
                     builder: (ctx) => AppleAlert(
@@ -2952,14 +2913,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
               },
             ),
           ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: AppText('Save'),
-            ),
-          ),
+          const SizedBox(height: 34),
         ],
       ),
     ),
