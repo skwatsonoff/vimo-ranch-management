@@ -253,6 +253,56 @@ Future<Map<String, dynamic>?> fillRouteRoads(Map<String, dynamic> route) async {
   return {...route, 'legs': legs};
 }
 
+/// Turn-by-turn directions to a home in Google Maps (the app when it is
+/// installed, otherwise the website), for people who prefer its voice
+/// guidance. VIMO keeps showing the round on its own map.
+Future<void> openGoogleDirections(BuildContext context, ll.LatLng to) async {
+  final uri = Uri.https('www.google.com', '/maps/dir/', {
+    'api': '1',
+    'destination': '${to.latitude},${to.longitude}',
+    'travelmode': 'two-wheeler',
+  });
+  try {
+    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+  } catch (_) {}
+  if (context.mounted) {
+    snack(
+      context,
+      bi('Could not open Google Maps.', 'Google Maps-ஐத் திறக்க முடியவில்லை.'),
+    );
+  }
+}
+
+/// The "Directions" button beside a home.
+class _DirectionsButton extends StatelessWidget {
+  final ll.LatLng to;
+  const _DirectionsButton({required this.to});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: bi('Directions in Google Maps', 'Google Maps-இல் வழி'),
+    excludeSemantics: true,
+    child: Tooltip(
+      message: bi('Directions in Google Maps', 'Google Maps-இல் வழி'),
+      child: SizedBox.square(
+        dimension: 48,
+        child: Glass(
+          radius: 24,
+          padding: EdgeInsets.zero,
+          tint: Ink.blue.withValues(alpha: .10),
+          onTap: () => openGoogleDirections(context, to),
+          child: Icon(
+            CupertinoIcons.arrow_turn_up_right,
+            color: Ink.blue,
+            size: 22,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 DateTime? _stamp(dynamic value) => value is Timestamp
     ? value.toDate()
     : value is String
@@ -3054,15 +3104,31 @@ class _RouteViewScreenState extends State<RouteViewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                txt(stop, 'name'),
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: Ink.navy,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          txt(stop, 'name'),
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: Ink.navy,
+                          ),
+                        ),
+                        Text(
+                          txt(stop, 'place'),
+                          style: TextStyle(color: Ink.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (personPoint(stop) case final point?)
+                    _DirectionsButton(to: point),
+                ],
               ),
-              Text(txt(stop, 'place'), style: TextStyle(color: Ink.muted)),
               if (notes.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
@@ -5159,6 +5225,10 @@ class _HomeCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (personPoint(stop) case final point?) ...[
+                const SizedBox(width: 10),
+                _DirectionsButton(to: point),
+              ],
             ],
           ),
           const SizedBox(height: 21),
