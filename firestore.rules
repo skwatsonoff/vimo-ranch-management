@@ -75,7 +75,10 @@ service cloud.firestore {
       // single name can be looked up signed out. Listing all names is denied.
       allow get: if true;
       allow list: if false;
+      // One namespace for VIMO IDs: a name already used as a Ranch ID
+      // cannot become a username.
       allow create: if signedIn() && name.matches('^[a-z][a-z0-9_]{2,19}$')
+        && !exists(/databases/$(database)/documents/ranch_ids/$(name))
         && request.resource.data.keys().hasOnly(['uid', 'claimedAt'])
         && request.resource.data.uid == request.auth.uid && request.resource.data.claimedAt == request.time
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == name
@@ -160,8 +163,10 @@ service cloud.firestore {
     // availability and locate an existing ranch. It contains no ranch records.
     match /ranch_ids/{ranchId} {
       allow read: if signedIn();
+      // A Ranch ID cannot reuse a person's username (one namespace).
       allow create: if signedIn()
-        && request.resource.data.ownerUid == request.auth.uid;
+        && request.resource.data.ownerUid == request.auth.uid
+        && !exists(/databases/$(database)/documents/usernames/$(ranchId));
       allow update: if signedIn()
         && resource.data.ownerUid == request.auth.uid;
       allow delete: if false;
@@ -238,6 +243,46 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
         allow read, update, delete: if false;
       }
+    }
+
+    // A vendor links a customer or supplier to their VIMO ID (a username or
+    // a Ranch ID). The person who was added answers once: accept or reject.
+    // The request carries names only, never records or money.
+    match /link_requests/{linkId} {
+      function validLink(d) {
+        return d.keys().hasOnly(['fromUid', 'fromName', 'toUid', 'toId', 'toKind', 'personName', 'role', 'status', 'createdAt', 'respondedAt'])
+          && d.fromUid == request.auth.uid
+          && linkId == request.auth.uid + '__' + linkId.split('__')[1]
+          && d.toUid is string && d.toUid.size() > 0 && d.toUid != request.auth.uid
+          && d.fromName is string && d.fromName.size() > 0 && d.fromName.size() <= 80
+          && d.personName is string && d.personName.size() > 0 && d.personName.size() <= 80
+          && d.role in ['customer', 'supplier']
+          && d.toId is string && d.toId.size() > 0 && d.toId.size() <= 40
+          && (
+            (d.toKind == 'person'
+              && get(/databases/$(database)/documents/usernames/$(d.toId)).data.uid == d.toUid)
+            || (d.toKind == 'ranch'
+              && get(/databases/$(database)/documents/ranch_ids/$(d.toId)).data.ownerUid == d.toUid)
+          )
+          && d.status == 'pending'
+          && d.createdAt == request.time
+          && !('respondedAt' in d);
+      }
+      function party() {
+        return signedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      }
+      allow get, list: if party();
+      allow create: if signedIn() && validLink(request.resource.data);
+      allow update: if signedIn() && (
+        // The vendor sends it again (another ID, or after a rejection).
+        (resource.data.fromUid == request.auth.uid && validLink(request.resource.data))
+        // The person who was added answers once.
+        || (resource.data.toUid == request.auth.uid && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt'])
+          && request.resource.data.status in ['accepted', 'rejected']
+          && request.resource.data.respondedAt == request.time)
+      );
+      allow delete: if party();
     }
 
     // Public part of an animal shared into a chat: only a photo. Name, breed
@@ -414,6 +459,10 @@ service cloud.firestore {
           && request.resource.data.get('paymentDays', []) is list && request.resource.data.get('paymentDays', []).hasOnly([0, 1, 2, 3, 4, 5, 6])
           && request.resource.data.get('paymentMonthDay', 1) is int && request.resource.data.get('paymentMonthDay', 1) >= 1 && request.resource.data.get('paymentMonthDay', 1) <= 31
           && request.resource.data.get('routeOrder', {}) is map
+          // Optional VIMO ID link (the request itself lives in link_requests).
+          && request.resource.data.get('vimoId', '') is string && request.resource.data.get('vimoId', '').size() <= 40
+          && request.resource.data.get('vimoUid', '') is string && request.resource.data.get('vimoUid', '').size() <= 128
+          && request.resource.data.get('vimoKind', '') in ['', 'person', 'ranch']
           // Optional home location; null clears a saved one.
           && (request.resource.data.get('lat', null) == null
             || (request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90))

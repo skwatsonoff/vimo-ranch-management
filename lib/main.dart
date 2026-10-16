@@ -67,6 +67,7 @@ part 'share.dart';
 part 'tamil_strings.dart';
 part 'vendor_extras.dart';
 part 'vendor_routes.dart';
+part 'vimo_links.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -4568,7 +4569,9 @@ class RanchAccessService {
 
     await db.runTransaction((transaction) async {
       final existing = await transaction.get(registry);
-      if (existing.exists) {
+      // One VIMO ID is a ranch or a person, never both.
+      final person = await transaction.get(db.collection('usernames').doc(id));
+      if (existing.exists || person.exists) {
         throw StateError(
           bi(
             'Ranch ID "$id" is already taken',
@@ -7953,14 +7956,17 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
       _availabilityText = 'Checking availability...';
     });
     _availabilityTimer = Timer(const Duration(milliseconds: 500), () async {
-      final snap = await FirebaseFirestore.instance
-          .collection('ranch_ids')
-          .doc(id)
-          .get();
+      final db = FirebaseFirestore.instance;
+      // A person's username uses the same namespace as Ranch IDs.
+      final found = await Future.wait([
+        db.collection('ranch_ids').doc(id).get(),
+        db.collection('usernames').doc(id).get(),
+      ]);
       if (!mounted || id != _createId.text) return;
+      final taken = found.any((snap) => snap.exists);
       setState(() {
-        _available = !snap.exists;
-        _availabilityText = snap.exists
+        _available = !taken;
+        _availabilityText = taken
             ? 'This Ranch ID is already taken'
             : 'Ranch ID is available';
       });
@@ -9996,6 +10002,13 @@ class _MainShellState extends State<MainShell> {
                 ],
               ),
               _ScrollEdgeEffect(visible: _topEdge),
+              // "Someone added you as their milk customer" — answer here.
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: LinkRequestBanner(),
+              ),
             ],
           ),
         ),
