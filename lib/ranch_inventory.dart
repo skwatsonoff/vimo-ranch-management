@@ -139,8 +139,9 @@ class _RanchWorkspaceState extends State<RanchWorkspace> {
       DashboardScreen(onOpenCard: widget.onOpenCard);
 }
 
-/// The Reports tab. With both Ranch and Vendor switched on, a Ranch / Vendor
-/// switch sits above the period, and each keeps its own period and scroll.
+/// The Reports tab follows the workspaces that are switched on: Ranch
+/// reports for Ranch, Vendor reports for Vendor, and with both a Ranch /
+/// Vendor switch above the period (each keeps its own period and scroll).
 class VendorOnlyReports extends StatefulWidget {
   const VendorOnlyReports({super.key});
   @override
@@ -150,11 +151,20 @@ class VendorOnlyReports extends StatefulWidget {
 class _VendorOnlyReportsState extends State<VendorOnlyReports> {
   int _kind = 1;
 
+  // Rebuild when workspaces are switched on or off in Preferences.
   @override
-  Widget build(BuildContext context) {
-    if (!workspaceEnabled('Ranch') || !workspaceEnabled('Vendor')) {
-      return const _VendorReports();
-    }
+  Widget build(BuildContext context) => ValueListenableBuilder<Box<dynamic>>(
+    valueListenable: Hive.box(
+      'settings',
+    ).listenable(keys: const ['purposeProfiles']),
+    builder: (context, _, _) => _reports(),
+  );
+
+  Widget _reports() {
+    final ranch = workspaceEnabled('Ranch');
+    final vendor = workspaceEnabled('Vendor');
+    if (ranch && !vendor) return const ReportsScreen();
+    if (!ranch || !vendor) return const _VendorReports();
     return Column(
       children: [
         Padding(

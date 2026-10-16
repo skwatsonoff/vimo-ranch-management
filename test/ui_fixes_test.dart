@@ -117,6 +117,13 @@ void main() {
     ) async {
       await tester.runAsync(() async {
         await Hive.box('settings').put('languageMode', language);
+        // The Reports tab shows vendor reports for a Vendor workspace.
+        await Hive.box('settings').put('purposeProfiles', {
+          'local': {
+            'purpose': 'Vendor',
+            'workspaces': ['Vendor'],
+          },
+        });
         const provider = {'id': 'p', 'name': 'Kalai', 'kind': 'supplier'};
         const buyer = {'id': 'b', 'name': 'Vijay', 'kind': 'customer'};
         await Hive.box('vendor_people').put('p', provider);
