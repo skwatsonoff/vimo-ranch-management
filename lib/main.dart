@@ -159,6 +159,16 @@ Future<void> main() async {
       await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
       FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8088);
     }
+    // In the browser the saved sign-in is restored from the phone's storage
+    // a moment after start. Wait for it (no network involved) so a
+    // signed-in person goes straight to Home instead of flashing sign-in.
+    if (kIsWeb) {
+      try {
+        await FirebaseAuth.instance.authStateChanges().first.timeout(
+          const Duration(seconds: 3),
+        );
+      } catch (_) {}
+    }
     firebaseReady = true;
     if (!kIsWeb) {
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -168,13 +178,16 @@ Future<void> main() async {
   }
 
   await Hive.initFlutter();
-  for (final name in backupBoxNames) {
-    await Hive.openBox(name);
-  }
-  // Private account messages must never enter a ranch backup or shared box.
-  await Hive.openBox('community_outbox');
-  // Route maps stay on this device and never enter ranch backups or sync.
-  await Hive.openBox(VendorRoutes.boxName);
+  // Open every box at once rather than one after another; each open is an
+  // independent read of the phone's storage, so launch waits only for the
+  // slowest one.
+  await Future.wait([
+    for (final name in backupBoxNames) Hive.openBox(name),
+    // Private account messages must never enter a ranch backup or shared box.
+    Hive.openBox('community_outbox'),
+    // Route maps stay on this device and never enter ranch backups or sync.
+    Hive.openBox(VendorRoutes.boxName),
+  ]);
 
   await applyPrelaunchResetOnce();
   await seedAnimals();
@@ -4406,6 +4419,67 @@ class RanchAccessService {
     }
   }
 
+  /// The destination this phone used last time, when it can be trusted
+  /// without asking the server: the same signed-in account, with a ranch and
+  /// role (or a personal Vendor / Market workspace) saved on the device.
+  /// Returns null when launch has to wait for [resolve].
+  static RanchGateState? savedSession() {
+    final current = user;
+    if (current == null || settingText('firebaseUid', '') != current.uid) {
+      return null;
+    }
+    final id = ranchId();
+    if (id.isNotEmpty) {
+      if (settingText('currentRole', '').trim().isEmpty) return null;
+      return RanchGateState(
+        RanchGateMode.active,
+        ranchId: id,
+        role: currentUserRole(),
+      );
+    }
+    if (pendingRanchId().isEmpty && purposeChosen && appPurpose != 'Ranch') {
+      return const RanchGateState(RanchGateMode.personal);
+    }
+    return null;
+  }
+
+  /// Reopens [saved] from the phone alone (no network), so Home shows at
+  /// once. [resolve] then runs in the background to confirm it.
+  static Future<RanchGateState> resumeSaved(RanchGateState saved) async {
+    await _prepareUserSession();
+    if (saved.mode == RanchGateMode.active) {
+      await activate(saved.ranchId, {
+        'role': saved.role,
+        'name': currentUserName(),
+      }, download: false);
+    } else {
+      await DeviceWorkspaces.restore();
+      await setSetting('currentRole', 'Admin');
+    }
+    return saved;
+  }
+
+  /// Signs out only when the account itself is no longer valid (disabled,
+  /// deleted or its session revoked). No signal, a timeout or any other
+  /// error keeps the person signed in: ranch areas often have weak signal.
+  static Future<void> verifySession() async {
+    final current = user;
+    if (current == null) return;
+    try {
+      await current.reload().timeout(const Duration(seconds: 20));
+    } on FirebaseAuthException catch (error) {
+      const fatal = {
+        'user-disabled',
+        'user-not-found',
+        'user-token-expired',
+        'invalid-user-token',
+      };
+      if (fatal.contains(error.code)) await FirebaseAuth.instance.signOut();
+    } catch (_) {
+      // Offline or slow: keep the session.
+    }
+  }
+
   static Future<RanchGateState> resolve() async {
     final current = user;
     if (current == null) {
@@ -7545,10 +7619,23 @@ class RanchAccessGate extends StatefulWidget {
 class _RanchAccessGateState extends State<RanchAccessGate> {
   late Future<RanchGateState> _state;
 
+  /// Bumped on every reload, so a slow background check never replaces a
+  /// newer destination.
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
-    _reload();
+    final saved = RanchAccessService.savedSession();
+    if (saved == null) {
+      _reload();
+    } else {
+      // Optimistic launch: open where this phone was last time straight from
+      // local data, then confirm with the server in the background.
+      final generation = _generation;
+      _state = RanchAccessService.resumeSaved(saved);
+      unawaited(_confirm(saved, generation));
+    }
     ranchGateRevision.addListener(_refresh);
   }
 
@@ -7558,7 +7645,28 @@ class _RanchAccessGateState extends State<RanchAccessGate> {
     super.dispose();
   }
 
+  Future<void> _confirm(RanchGateState shown, int generation) async {
+    unawaited(RanchAccessService.verifySession());
+    try {
+      final fresh = await _state.then(
+        (_) =>
+            RanchAccessService.resolve().timeout(const Duration(seconds: 30)),
+      );
+      if (!mounted || generation != _generation) return;
+      if (fresh.mode != shown.mode || fresh.ranchId != shown.ranchId) {
+        setState(() {
+          _generation++;
+          _state = Future.value(fresh);
+        });
+      }
+    } catch (_) {
+      // Offline or slow: keep the saved destination. The member listener in
+      // MemberAwareShell still reacts if access is removed.
+    }
+  }
+
   void _reload() {
+    _generation++;
     _state = RanchAccessService.resolve().timeout(
       const Duration(seconds: 15),
       onTimeout: () => throw TimeoutException(
@@ -7713,6 +7821,9 @@ class _MemberAwareShellState extends State<MemberAwareShell> {
           RanchAccessService.uid,
         ).snapshots().listen((snapshot) async {
           final member = snapshot.data();
+          // A missing document read from the offline cache proves nothing;
+          // only the server can say that access was removed.
+          if (!snapshot.exists && snapshot.metadata.isFromCache) return;
           if (!snapshot.exists || member == null || member['active'] == false) {
             await RanchAccessService.clearLocalRanchData();
             if (RanchAccessService.user != null) {
@@ -17001,21 +17112,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _MainShellState.bottomInset,
         ),
         children: [
-          Reveal(
-            index: 1,
-            child: Glass(
-              radius: Gold.r27,
-              blur: Gold.s13,
-              padding: const EdgeInsets.all(Gold.s5),
-              elevation: 0.62,
-              child: LiquidSegmentBar(
-                labels: const ['Today', 'Week', 'Month', 'Year'],
-                index: periods.indexOf(_period).clamp(0, periods.length - 1),
-                onChanged: (value) => setState(() => _period = periods[value]),
-              ),
-            ),
+          // The same plain segmented control as the vendor reports.
+          LiquidSegmentBar(
+            labels: const ['Today', 'Week', 'Month', 'Year'],
+            index: periods.indexOf(_period).clamp(0, periods.length - 1),
+            onChanged: (value) => setState(() => _period = periods[value]),
           ),
-          const SizedBox(height: Gold.s21),
+          const SizedBox(height: 18),
           Reveal(
             index: 2,
             child: LayoutBuilder(

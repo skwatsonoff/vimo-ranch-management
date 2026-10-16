@@ -262,15 +262,44 @@ Future<void> openGoogleDirections(BuildContext context, ll.LatLng to) async {
     'destination': '${to.latitude},${to.longitude}',
     'travelmode': 'two-wheeler',
   });
-  try {
-    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
-  } catch (_) {}
-  if (context.mounted) {
-    snack(
-      context,
-      bi('Could not open Google Maps.', 'Google Maps-ஐத் திறக்க முடியவில்லை.'),
-    );
-  }
+  // Leaving VIMO is the person's choice: say so before switching apps. The
+  // link opens straight from the Open tap, because Safari only lets a page
+  // open another app or tab during the tap itself.
+  final opened = await showDialog<Future<bool>>(
+    context: context,
+    builder: (dialog) => AppleAlert(
+      title: Text(bi('Open Google Maps?', 'Google Maps-ஐத் திறக்கவா?')),
+      content: Text(
+        bi(
+          'Directions open in Google Maps. To continue your round, come back '
+              'and open VIMO again.',
+          'வழி Google Maps-இல் திறக்கும். சுற்றைத் தொடர, திரும்ப VIMO-வைத் '
+              'திறக்கவும்.',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialog),
+          child: Text(bi('Cancel', 'வேண்டாம்')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            dialog,
+            launchUrl(
+              uri,
+              mode: LaunchMode.externalApplication,
+            ).catchError((Object _) => false),
+          ),
+          child: Text(bi('Open', 'திற')),
+        ),
+      ],
+    ),
+  );
+  if (opened == null || await opened || !context.mounted) return;
+  snack(
+    context,
+    bi('Could not open Google Maps.', 'Google Maps-ஐத் திறக்க முடியவில்லை.'),
+  );
 }
 
 /// The "Directions" button beside a home.
