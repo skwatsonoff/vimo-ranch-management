@@ -142,9 +142,7 @@ void main() {
     await tester.runAsync(() => saveRanchCustomer(name: 'Buyer'));
     await mountAnimalPage(tester, const SellAnimalScreen(animalKey: 'animal'));
     tester
-        .widget<PickerField<String>>(
-          find.byType(PickerField<String>),
-        )
+        .widget<PickerField<String>>(find.byType(PickerField<String>))
         .onChanged!('Buyer');
     for (final field in tester.widgetList<TextField>(find.byType(TextField))) {
       if (field.decoration?.labelText == 'Sale Price / Income') {
