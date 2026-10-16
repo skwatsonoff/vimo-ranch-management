@@ -71,6 +71,8 @@ service cloud.firestore {
           && getAfter(/databases/$(database)/documents/usernames/$(data.username)).data.uid == request.auth.uid);
     }
     match /usernames/{name} {
+      // Sign-up checks that a VIMO ID is free before the account exists, so a
+      // single name can be looked up signed out. Listing all names is denied.
       allow get: if true;
       allow list: if false;
       allow create: if signedIn() && name.matches('^[a-z][a-z0-9_]{2,19}$')
@@ -324,10 +326,24 @@ service cloud.firestore {
       allow read: if isMember(ranchId)
         || (signedIn() && resource.data.ownerUid == request.auth.uid)
         || (signedIn() && resource.data.authUid == request.auth.uid);
-      allow update: if isAdmin(ranchId)
-        || (signedIn() && resource.data.ownerUid == request.auth.uid)
-        || (signedIn() && resource.data.authUid == request.auth.uid);
+      // Admins may edit ranch details, but only the owner can change who
+      // owns the ranch.
+      allow update: if (isAdmin(ranchId) && ownerFieldsKept())
+        || isRanchOwner();
       allow delete: if false;
+
+      function isRanchOwner() {
+        return signedIn()
+          && (resource.data.get('ownerUid', '') == request.auth.uid
+            || resource.data.get('authUid', '') == request.auth.uid);
+      }
+      function ownerFieldsKept() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid', 'authUid']);
+      }
+      function ranchOwnerUid() {
+        let ranch = get(/databases/$(database)/documents/ranches/$(ranchId)).data;
+        return ranch.get('ownerUid', ranch.get('authUid', ''));
+      }
 
       match /members/{memberId} {
         allow read: if isMember(ranchId)
@@ -343,13 +359,20 @@ service cloud.firestore {
             && request.auth.uid == memberId
             && get(/databases/$(database)/documents/ranches/$(ranchId)).data.authUid == request.auth.uid
           );
-        allow update, delete: if isAdmin(ranchId);
+        // Another admin cannot demote or remove the ranch owner.
+        allow update, delete: if isAdmin(ranchId)
+          && (memberId != ranchOwnerUid() || request.auth.uid == memberId);
       }
 
       match /join_requests/{requesterId} {
+        // A new request is always pending; only an admin approves it.
         allow create: if signedIn()
           && request.auth.uid == requesterId
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'status', 'requestedAt'])
           && request.resource.data.uid == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.get('name', '') is string && request.resource.data.get('name', '').size() <= 120
+          && request.resource.data.get('email', '') is string && request.resource.data.get('email', '').size() <= 254
           && exists(/databases/$(database)/documents/ranch_ids/$(ranchId));
         allow read: if isAdmin(ranchId)
           || (signedIn() && request.auth.uid == requesterId);
