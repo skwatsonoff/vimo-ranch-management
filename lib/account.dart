@@ -49,8 +49,21 @@ class UsernameService {
         .doc(name)
         .get(const GetOptions(source: Source.server))
         .timeout(const Duration(seconds: 8));
-    return !snap.exists ||
+    final free =
+        !snap.exists ||
         snap.data()?['uid'] == FirebaseAuth.instance.currentUser?.uid;
+    if (!free || FirebaseAuth.instance.currentUser == null) return free;
+    // Signed in: a Ranch ID with this name also makes it unavailable.
+    try {
+      final ranch = await FirebaseFirestore.instance
+          .collection('ranch_ids')
+          .doc(name)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 8));
+      return !ranch.exists;
+    } catch (_) {
+      return free;
+    }
   }
 
   static Future<void> save(String input) async {
@@ -89,7 +102,10 @@ class UsernameService {
             }, SetOptions(merge: true));
             return;
           }
-          if (existing.exists && existing.data()?['uid'] != user.uid) {
+          // One VIMO ID is a person or a ranch, never both.
+          final ranch = await tx.get(db.collection('ranch_ids').doc(name));
+          if ((existing.exists && existing.data()?['uid'] != user.uid) ||
+              ranch.exists) {
             throw StateError(
               bi('Username unavailable', 'இந்தப் பயனர்பெயர் கிடைக்கவில்லை'),
             );

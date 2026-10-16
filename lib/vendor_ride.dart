@@ -317,6 +317,10 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
   late final _name = TextEditingController(text: widget.person?['name']);
   late final _place = TextEditingController(text: widget.person?['place']);
   late final _contact = TextEditingController(text: widget.person?['contact']);
+  late final _vimoId = TextEditingController(
+    text: txt(widget.person ?? {}, 'vimoId'),
+  );
+  VimoIdMatch? _vimoMatch;
   late final _quantity = TextEditingController(
     text: vendorFieldNumber(numv(widget.person ?? {}, 'quantity', 1)),
   );
@@ -341,7 +345,7 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
   bool _saving = false, _picking = false;
   @override
   void dispose() {
-    for (final c in [_name, _place, _contact, _quantity, _price]) {
+    for (final c in [_name, _place, _contact, _quantity, _price, _vimoId]) {
       c.dispose();
     }
     super.dispose();
@@ -357,6 +361,49 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
       return;
     }
     setState(() => _saving = true);
+    // The VIMO ID, if one was typed, must belong to a real person or ranch.
+    final vimoId = VimoLinks.normalize(_vimoId.text);
+    final oldVimoId = txt(widget.person ?? {}, 'vimoId');
+    final oldVimoUid = txt(widget.person ?? {}, 'vimoUid');
+    VimoIdMatch? link = _vimoMatch?.id == vimoId ? _vimoMatch : null;
+    if (vimoId.isNotEmpty && link == null && vimoId == oldVimoId) {
+      link = VimoIdMatch(
+        id: oldVimoId,
+        uid: oldVimoUid,
+        kind: txt(widget.person ?? {}, 'vimoKind', 'person'),
+      );
+    }
+    if (vimoId.isNotEmpty && (link == null || link.uid.isEmpty)) {
+      try {
+        link = await VimoLinks.resolve(vimoId);
+      } catch (_) {
+        link = null;
+        if (mounted) {
+          setState(() => _saving = false);
+          snack(
+            context,
+            bi(
+              'Connect to the internet to add a VIMO ID.',
+              'VIMO ID சேர்க்க இணைய இணைப்பு தேவை.',
+            ),
+          );
+        }
+        return;
+      }
+      if (link == null || link.uid == signedInUid) {
+        if (mounted) {
+          setState(() => _saving = false);
+          snack(
+            context,
+            bi(
+              'No VIMO ID "@$vimoId". Check the ID.',
+              '"@$vimoId" என்ற VIMO ID இல்லை. சரிபார்க்கவும்.',
+            ),
+          );
+        }
+        return;
+      }
+    }
     try {
       final now = DateTime.now();
       final id =
@@ -378,6 +425,9 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
         'paymentCycle': _cycle,
         'paymentDays': _paymentDays.toList()..sort(),
         'paymentMonthDay': _monthDay,
+        'vimoId': link?.id ?? '',
+        'vimoUid': link?.uid ?? '',
+        'vimoKind': link?.kind ?? '',
         'createdAt': widget.person?['createdAt'] ?? now.toIso8601String(),
         'updatedAtMillis': now.millisecondsSinceEpoch,
       };
@@ -395,11 +445,68 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
       }
       await Hive.box('vendor_people').put(widget.person?['_key'] ?? id, data);
       AutoSyncService.markDirty(reason: 'vendor person');
-      if (mounted) Navigator.pop(context);
+      final sent = await _syncVimoLink(data, link, oldVimoUid);
+      if (!mounted) return;
+      Navigator.pop(context);
+      if (sent == false) {
+        snack(
+          context,
+          bi(
+            'Saved. The VIMO ID request could not be sent; open this person '
+                'and save again when online.',
+            'சேமிக்கப்பட்டது. VIMO ID கோரிக்கை அனுப்ப முடியவில்லை; இணையம் '
+                'வந்ததும் மீண்டும் சேமிக்கவும்.',
+          ),
+        );
+      } else if (sent == true) {
+        snack(
+          context,
+          bi(
+            'Request sent to @${link!.id}. Waiting for approval.',
+            '@${link.id}-க்குக் கோரிக்கை அனுப்பப்பட்டது. ஒப்புதலுக்காகக் காத்திருக்கிறது.',
+          ),
+        );
+      }
     } catch (_) {
       if (mounted) snack(context, ui('Unable to save. Try again.'));
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Sends the link request when the VIMO ID is new or was rejected, and
+  /// withdraws it when the ID is cleared. Returns true when a request was
+  /// sent, false when it could not be, and null when nothing was needed.
+  Future<bool?> _syncVimoLink(
+    Map<String, dynamic> person,
+    VimoIdMatch? link,
+    String oldUid,
+  ) async {
+    if (!VimoLinks.available) return null;
+    final personId = txt(person, 'id');
+    try {
+      if (link == null) {
+        if (oldUid.isNotEmpty) {
+          unawaited(VimoLinks.remove(personId).catchError(_linkProblem));
+        }
+        return null;
+      }
+      Map<String, dynamic>? current;
+      try {
+        current = (await VimoLinks.ref(
+          personId,
+        ).get().timeout(const Duration(seconds: 6))).data();
+      } catch (_) {
+        current = null; // No signal: send it; Firestore delivers it later.
+      }
+      final same = txt(current ?? {}, 'toUid') == link.uid;
+      if (current != null && same && txt(current, 'status') != 'rejected') {
+        return null;
+      }
+      unawaited(VimoLinks.request(person, link).catchError(_linkProblem));
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -516,6 +623,14 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                 bi('Contact · optional', 'தொடர்பு · விருப்பம்'),
               ),
             ),
+            if (VimoLinks.available) ...[
+              const SizedBox(height: 12),
+              VimoIdField(
+                controller: _vimoId,
+                person: widget.person,
+                onMatch: (m) => _vimoMatch = m,
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               children: [
