@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ranch_management/main.dart';
@@ -127,5 +128,51 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
     expect(find.text('Sheet body'), findsNothing);
+  });
+
+  testWidgets('picker opens an anchored menu, marks the choice and reports '
+      'it', (tester) async {
+    String? chosen;
+    final form = GlobalKey<FormState>();
+    await tester.pumpWidget(
+      _host(
+        SizedBox(
+          width: 320,
+          child: Form(
+            key: form,
+            child: PickerField<String>(
+              initialValue: null,
+              decoration: const InputDecoration(labelText: 'Assign to'),
+              items: const [
+                DropdownMenuItem(value: 'Selva', child: Text('Selva')),
+                DropdownMenuItem(value: 'Peril', child: Text('Peril')),
+              ],
+              validator: (v) => v == null ? 'Choose someone' : null,
+              onChanged: (v) => chosen = v,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(form.currentState!.validate(), isFalse);
+    await tester.pump();
+    expect(find.text('Choose someone'), findsOneWidget);
+
+    await tester.tap(find.text('Assign to'));
+    await tester.pumpAndSettle();
+    expect(find.text('Peril'), findsOneWidget);
+    await tester.tap(find.text('Peril'));
+    await tester.pumpAndSettle();
+    expect(chosen, 'Peril');
+    expect(form.currentState!.validate(), isTrue);
+
+    // Reopen: the current choice carries the checkmark; outside tap closes.
+    await tester.tap(find.text('Peril'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(CupertinoIcons.checkmark_alt), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(CupertinoIcons.checkmark_alt), findsNothing);
+    expect(chosen, 'Peril');
   });
 }

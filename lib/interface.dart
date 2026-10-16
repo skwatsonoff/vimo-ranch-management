@@ -616,7 +616,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                             horizontal: 16,
                             vertical: 8,
                           ),
-                          child: DropdownButtonFormField<String>(
+                          child: PickerField<String>(
                             initialValue: names.contains(currentUserName())
                                 ? currentUserName()
                                 : names.firstOrNull,

@@ -139,6 +139,8 @@ class _RanchWorkspaceState extends State<RanchWorkspace> {
       DashboardScreen(onOpenCard: widget.onOpenCard);
 }
 
+/// The Reports tab. With both Ranch and Vendor switched on, a Ranch / Vendor
+/// switch sits above the period, and each keeps its own period and scroll.
 class VendorOnlyReports extends StatefulWidget {
   const VendorOnlyReports({super.key});
   @override
@@ -146,6 +148,49 @@ class VendorOnlyReports extends StatefulWidget {
 }
 
 class _VendorOnlyReportsState extends State<VendorOnlyReports> {
+  int _kind = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!workspaceEnabled('Ranch') || !workspaceEnabled('Vendor')) {
+      return const _VendorReports();
+    }
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(21, 8, 21, 4),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: Gold.contentWidth + Gold.s55 - 42,
+              ),
+              child: LiquidSegmentBar(
+                labels: [bi('Ranch', 'பண்ணை'), bi('Vendor', 'விற்பனையாளர்')],
+                icons: const [CupertinoIcons.house_fill, null],
+                index: _kind,
+                onChanged: (i) => setState(() => _kind = i),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _kind,
+            children: const [ReportsScreen(), _VendorReports()],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VendorReports extends StatefulWidget {
+  const _VendorReports();
+  @override
+  State<_VendorReports> createState() => _VendorReportsState();
+}
+
+class _VendorReportsState extends State<_VendorReports> {
   String _period = 'This Month';
 
   Future<void> _export(List<Map<String, dynamic>> rows) async {

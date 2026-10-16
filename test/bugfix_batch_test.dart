@@ -142,8 +142,8 @@ void main() {
     await tester.runAsync(() => saveRanchCustomer(name: 'Buyer'));
     await mountAnimalPage(tester, const SellAnimalScreen(animalKey: 'animal'));
     tester
-        .widget<DropdownButtonFormField<String>>(
-          find.byType(DropdownButtonFormField<String>),
+        .widget<PickerField<String>>(
+          find.byType(PickerField<String>),
         )
         .onChanged!('Buyer');
     for (final field in tester.widgetList<TextField>(find.byType(TextField))) {

@@ -207,9 +207,13 @@ void main() {
         'due',
       });
       expect(stop['due'], 60.0);
-      // Firestore has no nested arrays; the path travels as points.
-      expect((shown.route['path'] as List).first, {'lat': 11.0, 'lng': 78.0});
-      expect(routePath(shown.route).length, 3);
+      // Firestore has no nested arrays; the path travels as points. It is the
+      // drawn line, home 1 → home 2, not the raw GPS recording.
+      expect((shown.route['path'] as List).first, {
+        'lat': 11.001,
+        'lng': 78.001,
+      });
+      expect(routePath(shown.route).length, 2);
       expect(stop['litres'], 2.0);
       // Too large for one document: voice notes go, the text stays.
       expect(shown.trimmed, isTrue);
