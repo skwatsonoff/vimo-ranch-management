@@ -127,8 +127,10 @@ class SocialActivityService {
         '$name உங்களைப் பின்தொடர்கிறார்',
       );
       await addRanchNotification(
-        title: title,
-        message: bi('Tap to see their profile', 'அவர் சுயவிவரத்தைப் பார்க்க'),
+        title: '$name started following you',
+        titleTa: '$name உங்களைப் பின்தொடர்கிறார்',
+        message: 'Tap to see their profile',
+        messageTa: 'அவர் சுயவிவரத்தைப் பார்க்க',
         type: 'follow',
         sourceId: 'follow-$uid-$follower-$millis',
         localOnly: true,

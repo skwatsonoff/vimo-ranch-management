@@ -11,6 +11,7 @@ void main() {
     dir = await Directory.systemTemp.createTemp('vimo_lang_');
     Hive.init(dir.path);
     await Hive.openBox('settings');
+    await Hive.openBox('notifications');
   });
   tearDownAll(() async {
     await Hive.close();
@@ -62,5 +63,40 @@ void main() {
     // Text that is not an app message (a name, a number) stays as it is.
     expect(tr('Selvakumar'), 'Selvakumar');
     await Hive.box('settings').put('languageMode', 'English');
+  });
+
+  test('A notification shows in the language of the phone reading it', () async {
+    final settings = Hive.box('settings');
+    await settings.put('languageMode', 'Tamil');
+    await addRanchNotification(
+      title: 'New calf born',
+      titleTa: 'புதிய கன்று பிறந்தது',
+      message: 'Kutty • Mother Lakshmi • 2026-10-17',
+      messageTa: 'Kutty • தாய் Lakshmi • 2026-10-17',
+      sourceId: 'calf-test',
+    );
+    final row = Map<String, dynamic>.from(
+      Hive.box('notifications').values.last as Map,
+    );
+    // Saved in English with the Tamil wording beside it, whatever the
+    // language was when it was created.
+    expect(row['title'], 'New calf born');
+    expect(row['titleTa'], 'புதிய கன்று பிறந்தது');
+    expect(notificationText(row, 'title'), 'புதிய கன்று பிறந்தது');
+
+    await settings.put('languageMode', 'English');
+    expect(notificationText(row, 'title'), 'New calf born');
+    expect(
+      notificationText(row, 'message'),
+      'Kutty • Mother Lakshmi • 2026-10-17',
+    );
+
+    await loadAppLanguage('Hindi');
+    await settings.put('languageMode', 'Hindi');
+    final hindi = Map<String, String>.from(
+      jsonDecode(File('assets/l10n/hi.json').readAsStringSync()) as Map,
+    );
+    expect(notificationText(row, 'title'), hindi['New calf born']);
+    await settings.put('languageMode', 'English');
   });
 }
