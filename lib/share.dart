@@ -213,10 +213,8 @@ Future<void> _sendToRanchChat(String text) async {
   });
   AutoSyncService.scheduleSync(reason: 'shared to ranch chat');
   await addRanchNotification(
-    title: bi(
-      '${currentUserName()} shared in ranch chat',
-      '${currentUserName()} தொழுவ சாட்டில் பகிர்ந்தார்',
-    ),
+    title: '${currentUserName()} shared in ranch chat',
+    titleTa: '${currentUserName()} தொழுவ சாட்டில் பகிர்ந்தார்',
     message: text.split('\n').first,
     type: 'chat',
     sourceId: messageId,

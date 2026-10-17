@@ -528,6 +528,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
       unawaited(
         addRanchNotification(
           title: 'New task assigned',
+          titleTa: 'புதிய வேலை ஒதுக்கப்பட்டது',
           message: '${_title.text.trim()} • ${currentUserName()}',
           type: 'task',
           targetUser: assignee,

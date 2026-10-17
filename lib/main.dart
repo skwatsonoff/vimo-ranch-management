@@ -3674,6 +3674,12 @@ bool isOwnUseCustomer(String name) =>
     {ownUseCustomerName, 'Own use'}.contains(name.trim());
 String get ownUseDisplayName => bi('Own use', ownUseCustomerName);
 
+/// The buyer of a sale as shown on screen; own use follows the app language.
+String saleBuyerLabel(Map<String, dynamic> record) {
+  final buyer = txt(record, 'customerName', txt(record, 'animal'));
+  return isOwnUseCustomer(buyer) ? ownUseDisplayName : buyer;
+}
+
 bool isOwnUseMilk(Map<String, dynamic> record) =>
     txt(record, 'type') == 'Milk' &&
     isOwnUseCustomer(txt(record, 'customerName'));
@@ -4115,7 +4121,7 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
       // A milk or manure sale names its buyer; the title already says
       // what was sold.
       'sub':
-          '${const {'Milk', 'Manure'}.contains(txt(r, 'type')) ? txt(r, 'customerName', txt(r, 'animal')) : txt(r, 'animal')} \u2022 ${txt(r, 'date')}',
+          '${const {'Milk', 'Manure'}.contains(txt(r, 'type')) ? saleBuyerLabel(r) : txt(r, 'animal')} \u2022 ${txt(r, 'date')}',
       'value': money(numv(r, 'amount')),
       'icon': CupertinoIcons.tag_fill,
       'color': Ink.green,
@@ -5264,13 +5270,13 @@ class BrowserNotificationService {
                     txt(notification, 'addedBy').toLowerCase() == me)) {
               continue;
             }
+            final title = notificationText(notification, 'title');
+            final message = notificationText(notification, 'message');
             _browserRuntime.showNotification(
-              title: txt(notification, 'title', 'VIMO Ranch update'),
-              body: txt(
-                notification,
-                'message',
-                'Open VIMO to view the update',
-              ),
+              title: title.isEmpty ? 'VIMO' : title,
+              body: message.isEmpty
+                  ? bi('Open VIMO to view the update', 'VIMO-வில் பார்க்கவும்')
+                  : message,
               tag: change.doc.id,
             );
             rootMessengerKey.currentState
@@ -5285,7 +5291,7 @@ class BrowserNotificationService {
                       const SizedBox(width: Gold.s13),
                       Expanded(
                         child: AppText(
-                          '${txt(notification, 'title')}\n${txt(notification, 'message')}',
+                          '$title\n$message',
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -8906,9 +8912,14 @@ class _LoginScreenState extends State<LoginScreen> {
 //  RANCH COLLABORATION, TASKS & NOTIFICATIONS
 // =============================================================================
 
+/// Notifications are shared with family members who may use another
+/// language, so the text is saved in English with its Tamil wording beside
+/// it, and each phone shows it in its own language.
 Future<void> addRanchNotification({
   required String title,
   required String message,
+  String titleTa = '',
+  String messageTa = '',
   String type = 'info',
   String targetUser = '',
   String sourceId = '',
@@ -8925,6 +8936,8 @@ Future<void> addRanchNotification({
   await box.add({
     'title': title,
     'message': message,
+    if (titleTa.isNotEmpty) 'titleTa': titleTa,
+    if (messageTa.isNotEmpty) 'messageTa': messageTa,
     'type': type,
     'targetUser': targetUser,
     'sourceId': sourceId,
@@ -8941,6 +8954,12 @@ Future<void> addRanchNotification({
     if (localOnly) ...{'localOnly': true, 'pendingUpload': false},
     ...extra,
   });
+}
+
+/// A notification's title or message in the current app language.
+String notificationText(Map<String, dynamic> row, String field) {
+  final tamil = txt(row, '${field}Ta');
+  return ui(tamilUi && tamil.isNotEmpty ? tamil : txt(row, field));
 }
 
 class RanchNotificationService {
@@ -8962,10 +8981,12 @@ class RanchNotificationService {
       ).collection('join_requests').where('status', isEqualTo: 'pending').get();
       for (final request in pending.docs) {
         final data = request.data();
+        final name = txt(data, 'name', 'A member');
         await addRanchNotification(
           title: 'New ranch join request',
-          message:
-              '${txt(data, 'name', 'A member')} wants to join ${farmName()}.',
+          titleTa: 'புதிய தொழுவச் சேர்க்கைக் கோரிக்கை',
+          message: '$name wants to join ${farmName()}.',
+          messageTa: '$name ${farmName()}-இல் சேர விரும்புகிறார்.',
           type: 'join',
           targetUser: currentUserName(),
           sourceId: 'join-${request.id}',
@@ -9004,10 +9025,11 @@ class RanchNotificationService {
     if (nowMinutes < dueMinutes || nowMinutes > dueMinutes + 4) return;
     await addRanchNotification(
       title: 'Daily data entry reminder',
-      message: bi(
-        'Yesterday you entered ranch data at $reminderTime. Today’s entry is due now.',
-        'நேற்று $reminderTime-க்குப் பதிவு செய்தீர்கள். இன்றைய பதிவு இப்போது செய்ய வேண்டும்.',
-      ),
+      titleTa: 'தினசரி பதிவுக்கான நினைவூட்டல்',
+      message:
+          'Yesterday you entered ranch data at $reminderTime. Today’s entry is due now.',
+      messageTa:
+          'நேற்று $reminderTime-க்குப் பதிவு செய்தீர்கள். இன்றைய பதிவு இப்போது செய்ய வேண்டும்.',
       type: 'reminder',
       targetUser: currentUserName(),
       sourceId: 'daily-${todayDate()}-${currentUserName()}',
@@ -9112,6 +9134,7 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     AutoSyncService.scheduleSync(reason: 'chat message');
     await addRanchNotification(
       title: '${currentUserName()} sent a message',
+      titleTa: '${currentUserName()} செய்தி அனுப்பினார்',
       message: value,
       type: 'chat',
       sourceId: messageId,
@@ -9161,10 +9184,8 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     });
     AutoSyncService.scheduleSync(reason: 'voice message');
     await addRanchNotification(
-      title: bi(
-        '${currentUserName()} sent a voice message',
-        '${currentUserName()} குரல் செய்தி அனுப்பினார்',
-      ),
+      title: '${currentUserName()} sent a voice message',
+      titleTa: '${currentUserName()} குரல் செய்தி அனுப்பினார்',
       message: voiceDurationLabel(durationSeconds),
       type: 'chat',
       sourceId: messageId,
@@ -9193,7 +9214,8 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
       });
       await addRanchNotification(
         title: 'Task completed',
-        message: '${txt(task, 'title')} • by ${currentUserName()}',
+        titleTa: 'வேலை முடிந்தது',
+        message: '${txt(task, 'title')} • ${currentUserName()}',
         type: 'task',
         targetUser: txt(task, 'assignedBy'),
         sourceId: '${txt(task, 'taskId')}-done',
@@ -9305,14 +9327,14 @@ class NotificationHistoryScreen extends StatelessWidget {
                                         CrossAxisAlignment.start,
                                     children: [
                                       AppText(
-                                        txt(n, 'title'),
+                                        notificationText(n, 'title'),
                                         style: TextStyle(
                                           fontWeight: FontWeight.w700,
                                           color: Ink.navy,
                                         ),
                                       ),
                                       AppText(
-                                        txt(n, 'message'),
+                                        notificationText(n, 'message'),
                                         style: TextStyle(color: Ink.body),
                                       ),
                                       AppText(
@@ -9391,7 +9413,8 @@ Map<String, String> editableEntryFields(
           !{'Cow', 'Calf'}.contains(txt(record, 'type'))))
     'quantity': bi('Quantity', 'அளவு'),
   if (boxName == 'stock_records')
-    'quantityKg': 'அளவு (${stockUnit(txt(record, 'item'))})',
+    'quantityKg':
+        '${bi('Quantity', 'அளவு')} (${stockUnit(txt(record, 'item'))})',
   if (boxName == 'sale_records')
     'pricePerUnit': bi('Unit price', 'ஒரு அலகின் விலை'),
   if (boxName == 'expense_records' ||
@@ -9638,25 +9661,7 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
     final box = Hive.box(boxName);
     final record = asMap(box.get(key));
     if (!canCorrectEntry(record)) return;
-    final labels = <String, String>{
-      if (boxName == 'milk_records' ||
-          (boxName == 'sale_records' &&
-              !{'Cow', 'Calf'}.contains(txt(record, 'type'))))
-        'quantity': 'அளவு / Quantity',
-      if (boxName == 'stock_records')
-        'quantityKg': 'அளவு (${stockUnit(txt(record, 'item'))})',
-      if (boxName == 'sale_records') 'pricePerUnit': 'விலை / Unit price',
-      if (boxName == 'expense_records' ||
-          (boxName == 'stock_records' && txt(record, 'movement') == 'Purchase'))
-        'amount': 'தொகை / Amount',
-      if (boxName == 'expense_records') 'name': 'பெயர் / Name',
-      if (boxName == 'sale_records' && txt(record, 'type') == 'Milk')
-        'customerName': 'வாங்குபவர் / Customer',
-      if (boxName == 'doctor_records') 'cost': 'தொகை / Cost',
-      if (boxName == 'doctor_records' && txt(record, 'type') != 'Pregnancy')
-        'problem': 'பிரச்சனை / Problem',
-      'notes': 'குறிப்பு / Notes',
-    };
+    final labels = editableEntryFields(boxName, record);
     const numeric = {
       'quantity',
       'quantityKg',
@@ -9709,7 +9714,10 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                 final current = asMap(box.get(key));
                 if (!canCorrectEntry(current)) {
                   updateDialog(
-                    () => error = '5 நிமிடங்கள் முடிந்தது / Edit time expired',
+                    () => error = bi(
+                      'Edit time expired',
+                      '5 நிமிடங்கள் முடிந்தது',
+                    ),
                   );
                   return;
                 }
@@ -9735,8 +9743,10 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                           }.contains(field) &&
                           value == 0)) {
                     updateDialog(
-                      () => error =
-                          'சரியான அளவை உள்ளிடவும் / Enter a valid value',
+                      () => error = bi(
+                        'Enter a valid value',
+                        'சரியான அளவை உள்ளிடவும்',
+                      ),
                     );
                     return;
                   }
@@ -9750,7 +9760,10 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                       : balance - old + quantity;
                   if (newBalance < 0) {
                     updateDialog(
-                      () => error = 'இருப்பு போதவில்லை / Insufficient stock',
+                      () => error = bi(
+                        'Insufficient stock',
+                        'இருப்பு போதவில்லை',
+                      ),
                     );
                     return;
                   }
@@ -9760,7 +9773,10 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                     toDouble(controllers['quantity']!.text) >
                         availableMilk('Today') + numv(current, 'quantity')) {
                   updateDialog(
-                    () => error = 'பால் இருப்பு போதவில்லை / Insufficient milk',
+                    () => error = bi(
+                      'Insufficient milk',
+                      'பால் இருப்பு போதவில்லை',
+                    ),
                   );
                   return;
                 }
@@ -14731,6 +14747,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
         });
         await addRanchNotification(
           title: 'Pregnancy recorded',
+          titleTa: 'சினைப் பதிவு சேமிக்கப்பட்டது',
           message: '${txt(animal, 'name')} • ${todayDate()} • $_semen',
           type: 'important',
           sourceId: 'pregnancy-${txt(animal, 'name')}-${todayDate()}',
@@ -15024,7 +15041,9 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
 
       await addRanchNotification(
         title: 'New calf born',
+        titleTa: 'புதிய கன்று பிறந்தது',
         message: '$calfName • Mother ${txt(mother, 'name')} • $birthDate',
+        messageTa: '$calfName • தாய் ${txt(mother, 'name')} • $birthDate',
         type: 'important',
         sourceId: 'calf-$calfId-$birthDate',
       );
@@ -15650,7 +15669,7 @@ Widget customerPicker({
           alignment: Alignment.centerLeft,
           child: ChoiceChip(
             key: const ValueKey('own-use-customer'),
-            label: const AppText(ownUseCustomerName),
+            label: AppText(ownUseDisplayName),
             selected: isOwnUseCustomer(customer.text),
             showCheckmark: false,
             selectedColor: Ink.tint,
@@ -16322,8 +16341,8 @@ class _SellScreenState extends State<SellScreen> {
       snack(
         context,
         _ownUse
-            ? 'சொந்த பயன்பாட்டுப் பால் சேமிக்கப்பட்டது'
-            : '${_types[_type]} sale saved',
+            ? bi('Own use milk saved', 'சொந்த பயன்பாட்டுப் பால் சேமிக்கப்பட்டது')
+            : bi('Sale saved', 'விற்பனை சேமிக்கப்பட்டது'),
       );
       setState(() {
         _saving = false;
@@ -16400,7 +16419,7 @@ class _SellScreenState extends State<SellScreen> {
             color: Ink.amber,
           ),
           _BalanceRow(
-            label: ownUseCustomerName,
+            label: ownUseDisplayName,
             value: '${ownUse.toStringAsFixed(1)} L',
             color: Ink.blue,
           ),
@@ -19632,7 +19651,10 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
         snack(
           context,
           done == 'Sync complete' && pendingSyncCount() > 0
-              ? '${pendingSyncCount()} பதிவுகள் இன்னும் நிலுவையில் உள்ளன'
+              ? bi(
+                  '${pendingSyncCount()} records still pending',
+                  '${pendingSyncCount()} பதிவுகள் இன்னும் நிலுவையில் உள்ளன',
+                )
               : done,
         );
       }
