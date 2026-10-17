@@ -345,7 +345,7 @@ Future<void> showMilkClearance(BuildContext context) async {
     snack(context, ui('Permission denied'));
     return;
   }
-  final balance = vendorMilkBalance(vendorRows('vendor_entries'));
+  final balance = vendorMilkOnHand();
   if (balance <= .0001) {
     snack(
       context,
@@ -369,7 +369,7 @@ class _MilkClearanceSheet extends StatefulWidget {
 }
 
 class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
-  late final double _balance = vendorMilkBalance(vendorRows('vendor_entries'));
+  late final double _balance = vendorMilkOnHand();
   late final _qty = TextEditingController(text: vendorFieldNumber(_balance));
   final _search = TextEditingController();
   final _name = TextEditingController();

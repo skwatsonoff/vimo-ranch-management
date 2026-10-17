@@ -575,6 +575,35 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // Milk shop counter: sales and stock additions. Rows are never deleted;
+      // the person who made a sale may only mark it cancelled.
+      function validShopEntry(d) {
+        return d.kind in ['sale', 'stock']
+          && d.itemId is string && d.itemId.size() > 0 && d.itemId.size() <= 60
+          && d.itemName is string && d.itemName.size() > 0 && d.itemName.size() <= 60
+          && d.unit in ['litre', 'kg', 'count']
+          && d.quantity is number && d.quantity > 0 && d.quantity <= 100000
+          && d.price is number && d.price >= 0 && d.price <= 1000000
+          && (d.kind == 'stock' ? d.price == 0 : d.price > 0)
+          && d.amount is number && math.abs(d.amount - d.quantity * d.price) < 0.011
+          && d.get('voided', false) is bool
+          && d.get('notes', '') is string && d.get('notes', '').size() <= 200;
+      }
+      match /shop_entries/{entryId} {
+        allow read: if isMember(ranchId);
+        allow create: if canRecordEntries(ranchId)
+          && request.resource.data.createdByUid == request.auth.uid
+          && request.resource.data.cloudId == entryId
+          && request.resource.data.serverCreatedAt == request.time
+          && validShopEntry(request.resource.data);
+        allow update: if canRecordEntries(ranchId)
+          && resource.data.createdByUid == request.auth.uid
+          && resource.data.kind == 'sale'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voided', 'updatedAtMillis', 'updatedAtText', 'updatedBy'])
+          && request.resource.data.voided == true;
+        allow delete: if false;
+      }
+
       match /settings/{documentId} {
         allow read: if isMember(ranchId);
         allow create, update, delete: if isAdmin(ranchId);

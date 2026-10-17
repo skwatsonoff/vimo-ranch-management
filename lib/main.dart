@@ -68,6 +68,7 @@ part 'tamil_strings.dart';
 part 'vendor_extras.dart';
 part 'vendor_routes.dart';
 part 'vimo_links.dart';
+part 'milk_shop.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -110,6 +111,7 @@ const List<String> backupBoxNames = [
   'ranch_customers',
   'vendor_people',
   'vendor_entries',
+  'shop_entries',
 ];
 
 Future<void> main() async {
@@ -771,6 +773,11 @@ String buildCompleteExcelWorkbook({bool includeVendor = true}) {
     ..write(
       includeVendor
           ? _excelWorksheet('Vendor Ledger', boxData('vendor_entries'))
+          : '',
+    )
+    ..write(
+      includeVendor
+          ? _excelWorksheet('Shop Ledger', boxData('shop_entries'))
           : '',
     )
     ..write(_excelWorksheet('Deaths and Loss', boxData('death_records')))
@@ -4892,6 +4899,7 @@ class CloudSyncService {
         'ranch_customers',
         'vendor_people',
         'vendor_entries',
+        'shop_entries',
         'settings',
       ])
         name: () => uploadBox(name),
@@ -4979,7 +4987,9 @@ class CloudSyncService {
             ..remove('key')
             ..remove('pendingUpload');
           sent['updatedBy'] = currentUserName();
-          if (boxName == 'vendor_entries') sent.remove('serverCreatedAt');
+          final serverStamped =
+              boxName == 'vendor_entries' || boxName == 'shop_entries';
+          if (serverStamped) sent.remove('serverCreatedAt');
           if (boxName == 'vendor_entries' &&
               txt(sent, 'createdByUid').isEmpty) {
             sent['createdByUid'] = FirebaseAuth.instance.currentUser!.uid;
@@ -5011,7 +5021,7 @@ class CloudSyncService {
               }
               transaction.set(ref, {
                 ...sent,
-                if (boxName == 'vendor_entries' && remote == null)
+                if (serverStamped && remote == null)
                   'serverCreatedAt': FieldValue.serverTimestamp(),
               }, SetOptions(merge: true));
               return sent;
@@ -9897,7 +9907,8 @@ class _MainShellState extends State<MainShell> {
       for (final id in businessTabs)
         id: _NavItem(id, navLabel(id), navIcon(id), switch (id) {
           'Ranch' => CupertinoIcons.house,
-          'Vendor' => CupertinoIcons.drop,
+          'Vendor' =>
+            milkShopMode ? Icons.storefront_outlined : CupertinoIcons.drop,
           'Reports' => CupertinoIcons.chart_bar,
           'Social' => CupertinoIcons.globe,
           'Chat' => CupertinoIcons.chat_bubble_2,
@@ -10397,7 +10408,7 @@ class _NavCell extends StatelessWidget {
           children: [
             SizedBox(
               height: 28,
-              child: item.id == 'Vendor'
+              child: item.id == 'Vendor' && !milkShopMode
                   ? MilkVendorIcon(size: 30, color: color)
                   : item.active == null
                   ? CowHoofIcon(size: 26, color: color)
