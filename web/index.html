@@ -185,6 +185,30 @@
     window.addEventListener('focus', keepVimoAwake);
     window.addEventListener('pointerdown', keepVimoAwake, { passive: true });
     keepVimoAwake();
+
+    // iOS Home Screen apps can stay shifted up after the keyboard closes, so
+    // a tap lands above the button it is aimed at: scrolling still works but
+    // nothing can be pressed. When no text field is being typed in, put the
+    // page back where it belongs.
+    function vimoTyping() {
+      var active = document.activeElement;
+      return !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+    }
+    function vimoSettleViewport() {
+      if (vimoTyping()) return;
+      if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+      var root = document.scrollingElement || document.documentElement;
+      if (root.scrollTop !== 0) root.scrollTop = 0;
+      if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+    }
+    document.addEventListener('focusout', function () {
+      // The next field may take focus a moment later; wait for it.
+      setTimeout(vimoSettleViewport, 120);
+    }, true);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', vimoSettleViewport);
+    }
+    window.addEventListener('pageshow', vimoSettleViewport);
   </script>
   <div id="loading">
     <div class="splash-card">
