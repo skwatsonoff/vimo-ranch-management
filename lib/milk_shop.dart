@@ -37,6 +37,11 @@ String shopUnitName(String unit) => switch (unit) {
   _ => bi('Litre', 'லிட்டர்'),
 };
 
+/// "1 sale" / "5 sales" as whole messages, so every language can phrase them.
+String shopSalesCount(int count) => count == 1
+    ? bi('1 sale', '1 விற்பனை')
+    : bi('$count sales', '$count விற்பனை');
+
 String shopMoney(num amount) =>
     '${currencySymbol()}${vendorFieldNumber(amount)}';
 
@@ -304,18 +309,8 @@ class ShopQuantity {
       ? ShopQuantity(whole: whole)
       : ShopQuantity(whole: whole ~/ 10);
 
-  /// "1½", "¾", "12¼".
-  String get label {
-    final fraction = half && quarter
-        ? '¾'
-        : half
-        ? '½'
-        : quarter
-        ? '¼'
-        : '';
-    if (whole == 0) return fraction.isEmpty ? '0' : fraction;
-    return '$whole$fraction';
-  }
+  /// Plain decimals: "1", "1.5", "1.25", "0.75".
+  String get label => vendorFieldNumber(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -375,8 +370,12 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
             .localToGlobal(Offset(0, panel.size.height))
             .dy;
         final rowSlack = row.localToGlobal(Offset.zero).dy - top - Gold.s8;
-        final delta = math.min(panelBottom - bottom, rowSlack);
-        if (delta <= 1) return;
+        // A row scrolled out of view comes back to the top; otherwise
+        // scroll only as far as the slider needs.
+        final delta = rowSlack < 0
+            ? rowSlack
+            : math.max(0.0, math.min(panelBottom - bottom, rowSlack));
+        if (delta.abs() <= 1) return;
         final position = _scroll.position;
         final target = (position.pixels + delta).clamp(
           position.minScrollExtent,
@@ -514,6 +513,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
           )
           .toList();
       final reduce = MediaQuery.disableAnimationsOf(context);
+      final selling = selected != null || _others;
       return Shell(
         edgeToEdge: true,
         child: SizedBox.expand(
@@ -528,65 +528,86 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _ShopStockCard(
-                  items: [for (final id in quick) byId[id]!],
-                  onTap: () => _open(const ShopStockScreen()),
-                ),
-                const SizedBox(height: 16),
-                VendorProvidersStrip(
-                  suppliers: suppliers,
-                  session: session,
-                  enabled: !_busy,
-                  onOpen: _open,
-                ),
-                const SizedBox(height: 13),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Semantics(
-                        button: true,
-                        label: bi('Today\'s sales', 'இன்றைய விற்பனை'),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _open(const ShopSalesScreen()),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Row(
+                // While selling, only what the sale needs stays on screen.
+                AnimatedSize(
+                  duration: reduce ? Duration.zero : Gold.base,
+                  curve: Gold.ease,
+                  alignment: Alignment.topCenter,
+                  child: selling
+                      ? const SizedBox(width: double.infinity)
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _ShopStockCard(
+                              items: [for (final id in quick) byId[id]!],
+                              onTap: () => _open(const ShopStockScreen()),
+                            ),
+                            const SizedBox(height: 16),
+                            VendorProvidersStrip(
+                              suppliers: suppliers,
+                              session: session,
+                              enabled: !_busy,
+                              onOpen: _open,
+                            ),
+                            const SizedBox(height: 13),
+                            Row(
                               children: [
-                                Flexible(
-                                  child: AppText(
-                                    '${bi('Today', 'இன்று')} · ${shopMoney(today.fold(0.0, (s, r) => s + numv(r, 'amount')))} · ${today.length} ${bi(today.length == 1 ? 'sale' : 'sales', 'விற்பனை')}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Ink.muted,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
+                                Expanded(
+                                  child: Semantics(
+                                    button: true,
+                                    label: bi(
+                                      'Today\'s sales',
+                                      'இன்றைய விற்பனை',
+                                    ),
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () =>
+                                          _open(const ShopSalesScreen()),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Flexible(
+                                              child: AppText(
+                                                '${bi('Today', 'இன்று')} · ${shopMoney(today.fold(0.0, (s, r) => s + numv(r, 'amount')))} · ${shopSalesCount(today.length)}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Ink.muted,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              CupertinoIcons.chevron_right,
+                                              size: 13,
+                                              color: Ink.faint,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  CupertinoIcons.chevron_right,
-                                  size: 13,
-                                  color: Ink.faint,
+                                TextButton.icon(
+                                  onPressed: canRecordEntries
+                                      ? () => _open(const ShopCustomizeScreen())
+                                      : null,
+                                  icon: const Icon(
+                                    CupertinoIcons.slider_horizontal_3,
+                                  ),
+                                  label: Text(bi('Customize', 'மாற்று')),
                                 ),
                               ],
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                          ],
                         ),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: canRecordEntries
-                          ? () => _open(const ShopCustomizeScreen())
-                          : null,
-                      icon: const Icon(CupertinoIcons.slider_horizontal_3),
-                      label: Text(bi('Customize', 'மாற்று')),
-                    ),
-                  ],
                 ),
-                const SizedBox(height: 8),
                 Row(
                   key: _buttons,
                   children: [
@@ -833,7 +854,8 @@ class _ShopProductButton extends StatelessWidget {
   }
 }
 
-/// The amount, the keypad (1–9, 0, ½, ¼) and the slide to sell.
+/// Only what a sale needs, large: the item, how much, the price, the
+/// keypad (1–9, 0, .500, .250) and the slide to sell.
 class _ShopSellPanel extends StatelessWidget {
   final Map<String, dynamic> item;
   final ShopQuantity quantity;
@@ -859,138 +881,143 @@ class _ShopSellPanel extends StatelessWidget {
     final price = shopPrice(item);
     final amount = quantity.value * price;
     final fractions = unit != 'count';
-    final keys = <(String, VoidCallback?)>[
-      for (var d = 1; d <= 9; d++) ('$d', () => onKey(quantity.digit(d))),
-      ('0', () => onKey(quantity.digit(0))),
-      ('½', fractions ? () => onKey(quantity.toggleHalf()) : null),
-      ('¼', fractions ? () => onKey(quantity.toggleQuarter()) : null),
+    final keys = <(String, VoidCallback?, bool)>[
+      for (var d = 1; d <= 9; d++)
+        ('$d', () => onKey(quantity.digit(d)), false),
+      ('0', () => onKey(quantity.digit(0)), false),
+      (
+        '.500',
+        fractions ? () => onKey(quantity.toggleHalf()) : null,
+        quantity.half,
+      ),
+      (
+        '.250',
+        fractions ? () => onKey(quantity.toggleQuarter()) : null,
+        quantity.quarter,
+      ),
     ];
+    // Once litres are entered, .500 and .250 turn green with "+" to show
+    // they add to it.
+    final canAdd = fractions && quantity.whole > 0;
+    final empty = quantity.isEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Glass(
           radius: Gold.r27,
-          padding: const EdgeInsets.fromLTRB(18, 8, 8, 13),
+          padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  if (fromOthers)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: IconButton(
-                        tooltip: bi('Others', 'மற்றவை'),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: onBackToOthers,
-                        icon: Icon(
-                          CupertinoIcons.chevron_left,
-                          color: Ink.violetDeep,
+              // Items from Others name themselves; the main buttons above
+              // already show which item is being sold.
+              if (fromOthers)
+                Row(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onBackToOthers,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              CupertinoIcons.chevron_left,
+                              size: 17,
+                              color: Ink.violetDeep,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              shopItemName(item),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Ink.navy,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  Icon(shopItemIcon(item), color: Ink.violetDeep, size: 21),
-                  const SizedBox(width: 8),
+                  ],
+                ),
+              Row(
+                children: [
                   Expanded(
-                    child: Text(
-                      shopItemName(item),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: Ink.navy,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: quantity.label,
+                              style: TextStyle(
+                                fontSize: 48,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -1.2,
+                                color: empty ? Ink.faint : Ink.navy,
+                              ),
+                            ),
+                            TextSpan(
+                              text: ' ${shopUnitShort(unit)}',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                                color: Ink.muted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  AppText(
-                    '${bi('In stock', 'இருப்பு')} ${vendorFieldNumber(shopAvailable(txt(item, 'id')))} ${shopUnitShort(unit)}',
-                    style: TextStyle(color: Ink.muted, fontSize: 13),
-                  ),
+                  const SizedBox(width: 8),
+                  if (price > 0)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.sizeOf(context).width * .38,
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: AppText(
+                          shopMoney(amount),
+                          style: TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -1,
+                            color: empty ? Ink.faint : Ink.violetDeep,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    TextButton.icon(
+                      onPressed: canRecordEntries
+                          ? () => showShopItemSheet(context, item: item)
+                          : null,
+                      icon: const Icon(CupertinoIcons.tag_fill),
+                      label: Text(bi('Set price', 'விலை அமை')),
+                    ),
                   IconButton(
                     tooltip: bi('Delete', 'நீக்கு'),
-                    onPressed: quantity.isEmpty
-                        ? null
-                        : () => onKey(quantity.backspace()),
+                    onPressed: empty ? null : () => onKey(quantity.backspace()),
                     icon: Icon(
                       CupertinoIcons.delete_left,
-                      color: quantity.isEmpty ? Ink.faint : Ink.muted,
+                      size: 26,
+                      color: empty ? Ink.faint : Ink.muted,
                     ),
                   ),
                 ],
               ),
-              Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              TextSpan(
-                                text: quantity.label,
-                                style: TextStyle(
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -1,
-                                  color: quantity.isEmpty
-                                      ? Ink.faint
-                                      : Ink.navy,
-                                ),
-                              ),
-                              TextSpan(
-                                text: ' ${shopUnitShort(unit)}',
-                                style: TextStyle(
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w600,
-                                  color: Ink.muted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (price > 0)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          AppText(
-                            '× ${shopMoney(price)} / ${shopUnitShort(unit)}',
-                            style: TextStyle(color: Ink.muted, fontSize: 13),
-                          ),
-                          AppText(
-                            shopMoney(amount),
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -.6,
-                              color: quantity.isEmpty
-                                  ? Ink.faint
-                                  : Ink.violetDeep,
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      TextButton.icon(
-                        onPressed: canRecordEntries
-                            ? () => showShopItemSheet(context, item: item)
-                            : null,
-                        icon: const Icon(CupertinoIcons.tag_fill),
-                        label: Text(bi('Set price', 'விலை அமை')),
-                      ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 13),
         LayoutBuilder(
           builder: (context, constraints) {
             const gap = 8.0;
@@ -999,22 +1026,27 @@ class _ShopSellPanel extends StatelessWidget {
               spacing: gap,
               runSpacing: gap,
               children: [
-                for (final (label, onTap) in keys)
+                for (final (label, onTap, active) in keys)
                   SizedBox(
                     width: width,
-                    child: _ShopKey(label: label, onTap: busy ? null : onTap),
+                    child: _ShopKey(
+                      label: label,
+                      added: active,
+                      adds: canAdd && label.startsWith('.'),
+                      onTap: busy ? null : onTap,
+                    ),
                   ),
               ],
             );
           },
         ),
-        const SizedBox(height: 13),
+        const SizedBox(height: 16),
         SlideToSell(
           key: ValueKey('slide-$revision'),
           label: price > 0
               ? '${bi('Slide to sell', 'விற்க இழுக்கவும்')} · ${shopMoney(amount)}'
               : bi('Set a price to sell', 'விற்க விலையை அமைக்கவும்'),
-          enabled: !busy && !quantity.isEmpty && price > 0 && canRecordEntries,
+          enabled: !busy && !empty && price > 0 && canRecordEntries,
           onSlide: onSell,
         ),
       ],
@@ -1022,53 +1054,87 @@ class _ShopSellPanel extends StatelessWidget {
   }
 }
 
+/// A keypad key. With litres entered, .500 and .250 show green with "+"
+/// (they add to the amount); once added they stay filled green, and a
+/// second press takes them off.
 class _ShopKey extends StatelessWidget {
   final String label;
+  final bool adds, added;
   final VoidCallback? onTap;
-  const _ShopKey({required this.label, required this.onTap});
+  const _ShopKey({
+    required this.label,
+    required this.onTap,
+    this.adds = false,
+    this.added = false,
+  });
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    enabled: onTap != null,
-    label: switch (label) {
-      '½' => bi('Half', 'அரை'),
-      '¼' => bi('Quarter', 'கால்'),
-      _ => label,
-    },
-    excludeSemantics: true,
-    child: Pressable(
-      onTap: onTap,
-      radius: Gold.r21,
-      child: Container(
-        height: 48,
-        alignment: Alignment.center,
-        decoration: ShapeDecoration(
-          shape: SquircleBorder(
-            radius: Gold.r21,
-            side: BorderSide(color: Ink.separator, width: .5),
-          ),
-          color: onTap == null ? Ink.fill : Ink.surface.withValues(alpha: .82),
-          shadows: [
-            if (onTap != null)
-              BoxShadow(
-                color: Ink.violetDeep.withValues(alpha: .06),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+  Widget build(BuildContext context) {
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final enabled = onTap != null;
+    final green = adds || added;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      selected: added,
+      label: switch (label) {
+        '.500' => bi('Add half', 'அரை சேர்'),
+        '.250' => bi('Add quarter', 'கால் சேர்'),
+        _ => label,
+      },
+      excludeSemantics: true,
+      child: Pressable(
+        onTap: onTap,
+        radius: Gold.r21,
+        child: AnimatedContainer(
+          duration: reduce ? Duration.zero : Gold.base,
+          curve: Gold.ease,
+          height: 54,
+          alignment: Alignment.center,
+          decoration: ShapeDecoration(
+            shape: SquircleBorder(
+              radius: Gold.r21,
+              side: BorderSide(
+                color: green ? Ink.green : Ink.separator,
+                width: green ? 1.5 : .5,
               ),
-          ],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w600,
-            color: onTap == null ? Ink.faint : Ink.navy,
+            ),
+            color: !enabled
+                ? Ink.fill
+                : added
+                ? Ink.green
+                : adds
+                ? Ink.green.withValues(alpha: .12)
+                : Ink.surface.withValues(alpha: .82),
+            shadows: [
+              if (enabled)
+                BoxShadow(
+                  color: (green ? Ink.green : Ink.violetDeep).withValues(
+                    alpha: green ? .20 : .06,
+                  ),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+            ],
+          ),
+          child: Text(
+            green ? '+$label' : label,
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: green ? FontWeight.w700 : FontWeight.w600,
+              color: !enabled
+                  ? Ink.faint
+                  : added
+                  ? Colors.white
+                  : adds
+                  ? Ink.greenText
+                  : Ink.navy,
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// A capsule with a knob: slide right to finish. VoiceOver users get a
@@ -1132,14 +1198,16 @@ class _SlideToSellState extends State<SlideToSell> {
                     child: Center(
                       child: Opacity(
                         opacity: (1 - progress * 1.6).clamp(0.0, 1.0),
-                        child: AppText(
-                          widget.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: enabled ? Ink.violetDeep : Ink.faint,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: AppText(
+                            widget.label,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: enabled ? Ink.violetDeep : Ink.faint,
+                            ),
                           ),
                         ),
                       ),
@@ -2093,7 +2161,7 @@ class ShopSalesScreen extends StatelessWidget {
                       ),
                     ),
                     AppText(
-                      '${live.length} ${bi(live.length == 1 ? 'sale' : 'sales', 'விற்பனை')}',
+                      shopSalesCount(live.length),
                       style: TextStyle(
                         color: Ink.muted,
                         fontWeight: FontWeight.w600,

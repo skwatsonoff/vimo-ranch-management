@@ -11,7 +11,7 @@ String ui(String value) {
         _tamilLabels[value] ??
         localizedAnimalLabel(value);
   }
-  return _englishFromTamil[value] ?? localizedAnimalLabel(value);
+  return tr(_englishFromTamil[value] ?? localizedAnimalLabel(value));
 }
 
 final Map<String, String> _englishFromTamil = {
@@ -210,7 +210,7 @@ const _tamilLabels = <String, String>{
   'Send': 'அனுப்பு',
   'Assigned': 'வேலை கொடுத்தாச்சு',
   'Completed': 'முடிச்சாச்சு',
-  'Open': 'முடிக்க வேண்டியது',
+  'To do': 'முடிக்க வேண்டியது',
   'No messages': 'மெசேஜ் எதுவும் இல்லை',
   'No tasks': 'வேலை எதுவும் இல்லை',
   'Task title is required': 'என்ன வேலைன்னு எழுதுங்க',
@@ -408,8 +408,11 @@ class _InsetGroup extends StatelessWidget {
     opacity: .50,
     elevation: .50,
     padding: EdgeInsets.zero,
+    // Press highlights follow the group's rounded corners.
     child: Material(
       color: Colors.transparent,
+      shape: const SquircleBorder(radius: 24),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1000,7 +1003,7 @@ class _ConversationViewState extends State<_ConversationView> {
             width: 44,
             height: 44,
             child: IconButton(
-              tooltip: ui(done ? 'Completed' : 'Open'),
+              tooltip: ui(done ? 'Completed' : 'To do'),
               onPressed: canComplete && !_pendingTasks.contains(task['_key'])
                   ? () => _toggle(task)
                   : null,
@@ -1091,7 +1094,7 @@ class _ConversationViewState extends State<_ConversationView> {
                       ),
                     ),
                     AppText(
-                      done ? 'Completed' : 'Open',
+                      done ? 'Completed' : 'To do',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,

@@ -182,7 +182,12 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
                 maxWidth: Gold.contentWidth + Gold.s55 - 42,
               ),
               child: LiquidSegmentBar(
-                labels: [bi('Ranch', 'பண்ணை'), bi('Vendor', 'விற்பனையாளர்')],
+                labels: [
+                  bi('Ranch', 'பண்ணை'),
+                  milkShopMode
+                      ? bi('Milk shop', 'பால் கடை')
+                      : bi('Vendor', 'விற்பனையாளர்'),
+                ],
                 icons: const [CupertinoIcons.house_fill, null],
                 index: _kind,
                 onChanged: (i) => setState(() => _kind = i),
@@ -261,52 +266,59 @@ class _VendorReportsState extends State<_VendorReports> {
       if (Hive.isBoxOpen(shopBox)) Hive.box(shopBox).listenable(),
     ]),
     builder: (context, _) {
-      final shop = shopRows()
-          .where(
-            (r) =>
-                r['kind'] == 'sale' &&
-                r['voided'] != true &&
-                matchPeriod(txt(r, 'date'), _period),
-          )
-          .toList();
-      final shopSales = shop.fold(0.0, (s, r) => s + numv(r, 'amount'));
-      // Milk added at the shop counter (not from a provider) is milk in too.
-      final shopMilkIn = shopRows()
-          .where(
-            (r) =>
-                r['kind'] == 'stock' &&
-                r['itemId'] == 'milk' &&
-                r['voided'] != true &&
-                matchPeriod(txt(r, 'date'), _period),
-          )
-          .fold(0.0, (s, r) => s + numv(r, 'quantity'));
-      final showShop = milkShopMode || shop.isNotEmpty;
+      // Each vendor mode reports only its own work. The shop's milk comes
+      // from providers, so their deliveries are its cost; customer sales,
+      // payments and clearances belong to delivery rides.
+      final shopMode = milkShopMode;
+      final shop = shopMode
+          ? shopRows()
+                .where(
+                  (r) =>
+                      r['voided'] != true &&
+                      (r['kind'] == 'sale' ||
+                          r['kind'] == 'stock' && r['itemId'] == 'milk') &&
+                      matchPeriod(txt(r, 'date'), _period),
+                )
+                .toList()
+          : <Map<String, dynamic>>[];
+      final shopSales = shop.where((r) => r['kind'] == 'sale').toList();
       final rows =
           vendorRows('vendor_entries')
               .where(
                 (r) =>
                     r['kind'] != 'ranch' &&
+                    (!shopMode ||
+                        r['kind'] == 'collection' ||
+                        r['kind'] == 'purchase') &&
                     matchPeriod(txt(r, 'date'), _period),
               )
               .toList()
             ..sort(
               (a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')),
             );
+      double shopSum(bool sale, String field) => shop
+          .where((r) => sale ? r['kind'] == 'sale' : r['kind'] == 'stock')
+          .where((r) => field == 'amount' || r['itemId'] == 'milk')
+          .fold(0.0, (s, r) => s + numv(r, field));
       final milkIn =
           _vendorSum(rows, 'collection', 'quantity') +
           _vendorSum(rows, 'purchase', 'quantity') +
-          shopMilkIn;
-      final delivered =
-          _vendorSum(rows, 'sale', 'quantity') +
-          shop
-              .where((r) => r['itemId'] == 'milk')
-              .fold(0.0, (s, r) => s + numv(r, 'quantity'));
-      final sales = _vendorSum(rows, 'sale', 'amount') + shopSales;
+          shopSum(false, 'quantity');
+      final delivered = shopMode
+          ? shopSum(true, 'quantity')
+          : _vendorSum(rows, 'sale', 'quantity');
+      final sales = shopMode
+          ? shopSum(true, 'amount')
+          : _vendorSum(rows, 'sale', 'amount');
       final cost =
           _vendorSum(rows, 'collection', 'amount') +
           _vendorSum(rows, 'purchase', 'amount');
+      final entries = [
+        ...rows,
+        for (final r in shop) {...r, '_shop': true},
+      ]..sort((a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')));
       final dates = <String>[];
-      for (final r in rows) {
+      for (final r in entries) {
         if (!dates.contains(txt(r, 'date'))) dates.add(txt(r, 'date'));
       }
       return Shell(
@@ -343,91 +355,72 @@ class _VendorReportsState extends State<_VendorReports> {
                     icon: CupertinoIcons.arrow_up_circle_fill,
                     color: Ink.violetDeep,
                     value: '${vendorFieldNumber(delivered)} L',
-                    label: milkShopMode
+                    label: shopMode
                         ? bi('Milk sold', 'விற்ற பால்')
                         : bi('Delivered', 'கொடுத்த பால்'),
                   ),
                 ),
               ],
             ),
-            if (showShop) ...[
+            if (!shopMode) ...[
               const SizedBox(height: 13),
-              Row(
-                children: [
-                  Expanded(
-                    child: _VendorReportTile(
-                      icon: Icons.storefront_rounded,
-                      color: Ink.violetDeep,
-                      value: shopMoney(shopSales),
-                      label: bi('Shop sales', 'கடை விற்பனை'),
+              Glass(
+                radius: 24,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                onTap: () => push(context, const CustomerReportsScreen()),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Ink.violetDeep.withValues(alpha: .1),
+                      ),
+                      child: Icon(
+                        CupertinoIcons.person_crop_rectangle_fill,
+                        color: Ink.violetDeep,
+                        size: 21,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: _VendorReportTile(
-                      icon: CupertinoIcons.cart_fill,
-                      color: Ink.greenText,
-                      value: '${shop.length}',
-                      label: bi('Counter sales', 'கடை விற்பனைகள்'),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            bi(
+                              'Customer profile reports',
+                              'வாடிக்கையாளர் அறிக்கைகள்',
+                            ),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              color: Ink.navy,
+                            ),
+                          ),
+                          Text(
+                            bi(
+                              'Each customer, month by month',
+                              'ஒவ்வொரு வாடிக்கையாளருக்கும் மாத வாரியாக',
+                            ),
+                            style: TextStyle(color: Ink.muted, fontSize: 13),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: Ink.faint,
+                    ),
+                  ],
+                ),
               ),
             ],
-            const SizedBox(height: 13),
-            Glass(
-              radius: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              onTap: () => push(context, const CustomerReportsScreen()),
-              child: Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Ink.violetDeep.withValues(alpha: .1),
-                    ),
-                    child: Icon(
-                      CupertinoIcons.person_crop_rectangle_fill,
-                      color: Ink.violetDeep,
-                      size: 21,
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          bi(
-                            'Customer profile reports',
-                            'வாடிக்கையாளர் அறிக்கைகள்',
-                          ),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            color: Ink.navy,
-                          ),
-                        ),
-                        Text(
-                          bi(
-                            'Each customer, month by month',
-                            'ஒவ்வொரு வாடிக்கையாளருக்கும் மாத வாரியாக',
-                          ),
-                          style: TextStyle(color: Ink.muted, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 16,
-                    color: Ink.faint,
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 27),
             Row(
               children: [
@@ -441,7 +434,7 @@ class _VendorReportsState extends State<_VendorReports> {
                     ),
                   ),
                 ),
-                if (rows.isNotEmpty || shop.isNotEmpty)
+                if (entries.isNotEmpty)
                   IconButton(
                     tooltip: bi(
                       'Export vendor report',
@@ -451,23 +444,34 @@ class _VendorReportsState extends State<_VendorReports> {
                       CupertinoIcons.arrow_down_doc,
                       color: Ink.violetDeep,
                     ),
-                    onPressed: () => _export(rows, shop),
+                    onPressed: () => _export(rows, shopSales),
                   ),
               ],
             ),
             const SizedBox(height: 8),
-            if (rows.isEmpty)
+            if (entries.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 34),
                 child: Column(
                   children: [
-                    MilkVendorIcon(size: 55, color: Ink.faint),
+                    shopMode
+                        ? Icon(
+                            Icons.storefront_rounded,
+                            size: 55,
+                            color: Ink.faint,
+                          )
+                        : MilkVendorIcon(size: 55, color: Ink.faint),
                     const SizedBox(height: 13),
                     Text(
-                      bi(
-                        'No vendor entries in this period.',
-                        'இந்தக் காலத்தில் விற்பனையாளர் பதிவுகள் இல்லை.',
-                      ),
+                      shopMode
+                          ? bi(
+                              'No shop entries in this period.',
+                              'இந்தக் காலத்தில் கடைப் பதிவுகள் இல்லை.',
+                            )
+                          : bi(
+                              'No vendor entries in this period.',
+                              'இந்தக் காலத்தில் விற்பனையாளர் பதிவுகள் இல்லை.',
+                            ),
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Ink.muted),
                     ),
@@ -493,7 +497,7 @@ class _VendorReportsState extends State<_VendorReports> {
                 child: Column(
                   children: [
                     for (final (i, r)
-                        in rows
+                        in entries
                             .where((r) => txt(r, 'date') == date)
                             .indexed) ...[
                       if (i > 0)
@@ -503,7 +507,9 @@ class _VendorReportsState extends State<_VendorReports> {
                           indent: 66,
                           color: Color(0x1A202635),
                         ),
-                      _VendorReportRow(row: r),
+                      r['_shop'] == true
+                          ? _ShopReportRow(row: r)
+                          : _VendorReportRow(row: r),
                     ],
                   ],
                 ),
@@ -700,6 +706,81 @@ class _VendorReportTile extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// A counter sale or milk added at the shop, in the Milk shop report.
+class _ShopReportRow extends StatelessWidget {
+  final Map<String, dynamic> row;
+  const _ShopReportRow({required this.row});
+  @override
+  Widget build(BuildContext context) {
+    final sale = row['kind'] == 'sale';
+    final color = sale ? Ink.violetDeep : Ink.amberText;
+    final unit = shopUnitShort(txt(row, 'unit'));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(13, 10, 16, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: .1),
+            ),
+            child: Icon(
+              sale ? CupertinoIcons.arrow_up : CupertinoIcons.arrow_down,
+              size: 19,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _shopRowName(row),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Ink.navy,
+                  ),
+                ),
+                AppText(
+                  '${sale ? bi('Sold', 'விற்றது') : bi('Stock added', 'இருப்பு சேர்த்தது')} · ${txt(row, 'time')}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              AppText(
+                '${vendorFieldNumber(numv(row, 'quantity'))} $unit',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  color: color,
+                ),
+              ),
+              if (sale)
+                AppText(
+                  shopMoney(numv(row, 'amount')),
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _VendorReportRow extends StatelessWidget {
