@@ -1617,64 +1617,14 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     }
   }
 
-  Widget _providersRow(List<Map<String, dynamic>> suppliers) => SizedBox(
-    height: 108,
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: suppliers.isEmpty
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _busy || !canRecordEntries
-                        ? null
-                        : () => _open(const VendorPersonForm(kind: 'supplier')),
-                    icon: const Icon(CupertinoIcons.add_circled),
-                    label: Text(
-                      bi('Add milk provider', 'பால் வழங்குநரைச் சேர்'),
-                    ),
-                  ),
-                )
-              : ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.only(top: 2, right: 8),
-                  itemCount: suppliers.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 14),
-                  itemBuilder: (_, i) {
-                    final p = suppliers[i];
-                    return _ProviderBubble(
-                      person: p,
-                      onTap: _busy
-                          ? null
-                          : () => _open(
-                              VendorPersonScreen(
-                                person: p,
-                                intakeKind: 'collection',
-                                entryPrefix: _active ? _rideId : '',
-                                initialSession: _session,
-                              ),
-                            ),
-                    );
-                  },
-                ),
-        ),
-        const SizedBox(width: 8),
-        _ProviderBubble(
-          label: bi('All', 'அனைத்தும்'),
-          icon: CupertinoIcons.person_3_fill,
-          onTap: _busy
-              ? null
-              : () => _open(
-                  VendorProvidersScreen(
-                    entryPrefix: _active ? _rideId : '',
-                    session: _session,
-                  ),
-                ),
-        ),
-      ],
-    ),
-  );
+  Widget _providersRow(List<Map<String, dynamic>> suppliers) =>
+      VendorProvidersStrip(
+        suppliers: suppliers,
+        session: _session,
+        entryPrefix: _active ? _rideId : '',
+        enabled: !_busy,
+        onOpen: _open,
+      );
 
   Widget _milkCard(List<Map<String, dynamic>> rows) {
     final today = todayDate();
@@ -1732,7 +1682,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: AppText(
-                    '${vendorFieldNumber(vendorMilkBalance(rows))} L',
+                    '${vendorFieldNumber(vendorMilkOnHand(rows))} L',
                     style: const TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.w800,
@@ -2361,6 +2311,84 @@ class _CircleGlassButton extends StatelessWidget {
           ),
         ),
       ),
+    ),
+  );
+}
+
+/// Today's milk providers as bubbles, then "All". Tapping one records the
+/// milk they bring.
+class VendorProvidersStrip extends StatelessWidget {
+  final List<Map<String, dynamic>> suppliers;
+  final String session, entryPrefix;
+  final bool enabled;
+  final Future<void> Function(Widget page) onOpen;
+  const VendorProvidersStrip({
+    super.key,
+    required this.suppliers,
+    required this.session,
+    required this.enabled,
+    required this.onOpen,
+    this.entryPrefix = '',
+  });
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 108,
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: suppliers.isEmpty
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: !enabled || !canRecordEntries
+                        ? null
+                        : () =>
+                              onOpen(const VendorPersonForm(kind: 'supplier')),
+                    icon: const Icon(CupertinoIcons.add_circled),
+                    label: Text(
+                      bi('Add milk provider', 'பால் வழங்குநரைச் சேர்'),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(top: 2, right: 8),
+                  itemCount: suppliers.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 14),
+                  itemBuilder: (_, i) {
+                    final p = suppliers[i];
+                    return _ProviderBubble(
+                      person: p,
+                      onTap: !enabled
+                          ? null
+                          : () => onOpen(
+                              VendorPersonScreen(
+                                person: p,
+                                intakeKind: 'collection',
+                                entryPrefix: entryPrefix,
+                                initialSession: session,
+                              ),
+                            ),
+                    );
+                  },
+                ),
+        ),
+        const SizedBox(width: 8),
+        _ProviderBubble(
+          label: bi('All', 'அனைத்தும்'),
+          icon: CupertinoIcons.person_3_fill,
+          onTap: !enabled
+              ? null
+              : () => onOpen(
+                  VendorProvidersScreen(
+                    entryPrefix: entryPrefix,
+                    session: session,
+                  ),
+                ),
+        ),
+      ],
     ),
   );
 }

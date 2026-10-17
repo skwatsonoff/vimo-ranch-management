@@ -139,6 +139,7 @@ Future<void> savePurpose(
   await setSetting('purposeProfiles', {
     ...asMap(settingValue('purposeProfiles', {})),
     _profileKey: {
+      ...purposeProfile,
       'purpose': purpose,
       'order': List<String>.of(order),
       'workspaces': list,
@@ -177,7 +178,8 @@ Widget workspaceIcon(String kind, {required Color color, double size = 26}) =>
 
 String navLabel(String tab) => switch (tab) {
   'Ranch' => bi('Ranch', 'தொழுவம்'),
-  'Vendor' => bi('Vendor', 'வியாபாரம்'),
+  'Vendor' =>
+    milkShopMode ? bi('Milk shop', 'பால் கடை') : bi('Vendor', 'வியாபாரம்'),
   'Reports' => bi('Reports', 'ரிப்போர்ட்'),
   'Social' => bi('Social', 'சமூகம்'),
   'Chat' => bi('Chat', 'சாட்'),
@@ -187,7 +189,8 @@ String navLabel(String tab) => switch (tab) {
 
 IconData navIcon(String tab) => switch (tab) {
   'Ranch' => CupertinoIcons.house_fill,
-  'Vendor' => CupertinoIcons.drop_fill,
+  'Vendor' =>
+    milkShopMode ? Icons.storefront_rounded : CupertinoIcons.drop_fill,
   'Reports' => CupertinoIcons.chart_bar_alt_fill,
   'Social' => CupertinoIcons.globe,
   'Chat' => CupertinoIcons.chat_bubble_2_fill,
@@ -212,6 +215,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       ? navigationOrder()
       : defaultNavigation(_purpose);
   bool _saving = false;
+  String _vendorMode = vendorMode;
 
   List<String> get _extras => [
     for (final t in availableTabs(_workspaces))
@@ -398,6 +402,87 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
+  /// One choice for now: delivery rides or a shop counter.
+  Widget _vendorModeRow(String mode) {
+    final selected = _vendorMode == mode;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: () async {
+          if (selected) return;
+          HapticFeedback.selectionClick();
+          setState(() => _vendorMode = mode);
+          try {
+            await saveVendorMode(mode);
+            // Tab names and icons below follow the saved mode.
+            if (mounted) setState(() {});
+          } catch (_) {
+            if (mounted) snack(context, ui('Unable to save. Try again.'));
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 38,
+                child: Center(
+                  child: mode == 'shop'
+                      ? Icon(Icons.storefront_rounded, color: _blue, size: 24)
+                      : MilkVendorIcon(size: 28, color: _blue),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      mode == 'shop'
+                          ? bi('Milk shop', 'பால் கடை')
+                          : bi('Milk vendor', 'பால் வியாபாரி'),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Ink.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      mode == 'shop'
+                          ? bi(
+                              'Sell milk, curd, ghee and more at the counter',
+                              'கடையில் பால், தயிர், நெய் மற்றும் பலவற்றை விற்கலாம்',
+                            )
+                          : bi(
+                              'Deliver to customers on a ride',
+                              'வாடிக்கையாளர்களுக்குச் சுற்றில் விநியோகம்',
+                            ),
+                      style: TextStyle(color: Ink.muted, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedOpacity(
+                opacity: selected ? 1 : 0,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : Gold.base,
+                child: Icon(
+                  CupertinoIcons.check_mark,
+                  color: Ink.tint,
+                  size: 21,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _tabChip(String tab, {bool dragging = false, bool muted = false}) =>
       Material(
         color: Colors.transparent,
@@ -424,7 +509,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              tab == 'Vendor'
+              tab == 'Vendor' && !milkShopMode
                   ? MilkVendorIcon(
                       size: 24,
                       color: dragging ? Colors.white : _blue,
@@ -504,7 +589,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           ),
         ),
         const SizedBox(width: 12),
-        tab == 'Vendor'
+        tab == 'Vendor' && !milkShopMode
             ? MilkVendorIcon(size: 26, color: _blue)
             : Icon(navIcon(tab), size: 21, color: _blue),
         const SizedBox(width: 10),
@@ -607,6 +692,19 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'நீங்கள் பயன்படுத்தும் அனைத்தையும் இயக்கலாம். ஒரு பகுதியை அணைத்தாலும் பதிவுகள் பாதுகாப்பாக இருக்கும்.',
                 ),
               ),
+              if (_workspaces.contains('Vendor')) ...[
+                const SizedBox(height: 28),
+                _sectionTitle(bi('Vendor mode', 'வியாபார முறை')),
+                _InsetGroup(
+                  children: [_vendorModeRow('vendor'), _vendorModeRow('shop')],
+                ),
+                _footnote(
+                  bi(
+                    'Choose one for now. Your records stay the same in both.',
+                    'இப்போதைக்கு ஒன்றைத் தேர்வு செய்யவும். இரண்டிலும் பதிவுகள் ஒன்றே.',
+                  ),
+                ),
+              ],
               if (showSync) ...[
                 const SizedBox(height: 28),
                 _InsetGroup(
@@ -837,7 +935,7 @@ class VendorLedger {
       if (box.containsKey(id)) return;
       final rows = vendorRows('vendor_entries');
       if ((kind == 'sale' || kind == 'clearance') &&
-          quantity > vendorMilkBalance(rows) + 0.000001) {
+          quantity > vendorMilkOnHand(rows) + 0.000001) {
         throw StateError(
           bi(
             'Not enough milk. Add the milk collected from a provider first.',
@@ -998,7 +1096,7 @@ class _VendorScreenState extends State<VendorScreen> {
                     ),
                     const SizedBox(height: 8),
                     AppText(
-                      '${vendorMilkBalance(rows).toStringAsFixed(2)} ${bi('L', 'லி')}',
+                      '${vendorMilkOnHand(rows).toStringAsFixed(2)} ${bi('L', 'லி')}',
                       style: const TextStyle(
                         fontSize: 42,
                         fontWeight: FontWeight.w700,
@@ -1198,7 +1296,7 @@ class VendorStockScreen extends StatelessWidget {
                   children: [
                     Expanded(
                       child: AppText(
-                        '${vendorMilkBalance(rows).toStringAsFixed(2)} L',
+                        '${vendorMilkOnHand(rows).toStringAsFixed(2)} L',
                         style: const TextStyle(
                           fontSize: 42,
                           fontWeight: FontWeight.w700,

@@ -234,6 +234,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     expect(find.text('Market'), findsOneWidget);
     expect(find.byType(CupertinoSwitch), findsNWidgets(3));
+    // With Vendor on, choose delivery rides or a shop counter.
+    expect(find.text('VENDOR MODE'), findsOneWidget);
+    expect(find.text('Milk vendor'), findsOneWidget);
+    expect(find.text('Milk shop'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('TAB ORDER'), 200);
     expect(find.text('TAB ORDER'), findsOneWidget);
     // Vendor alone offers exactly its four tabs, so nothing is left over.
     expect(find.text('MORE TABS'), findsNothing);

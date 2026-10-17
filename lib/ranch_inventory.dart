@@ -122,8 +122,15 @@ class VendorWorkspace extends StatefulWidget {
 }
 
 class _VendorWorkspaceState extends State<VendorWorkspace> {
+  // Preferences chooses Milk vendor (delivery rides) or Milk shop (counter).
   @override
-  Widget build(BuildContext context) => const VendorRideScreen();
+  Widget build(BuildContext context) => ValueListenableBuilder<Box<dynamic>>(
+    valueListenable: Hive.box(
+      'settings',
+    ).listenable(keys: const ['purposeProfiles']),
+    builder: (context, _, _) =>
+        milkShopMode ? const MilkShopScreen() : const VendorRideScreen(),
+  );
 }
 
 class RanchWorkspace extends StatefulWidget {
@@ -203,7 +210,10 @@ class _VendorReports extends StatefulWidget {
 class _VendorReportsState extends State<_VendorReports> {
   String _period = 'This Month';
 
-  Future<void> _export(List<Map<String, dynamic>> rows) async {
+  Future<void> _export(
+    List<Map<String, dynamic>> rows,
+    List<Map<String, dynamic>> shop,
+  ) async {
     final output = StringBuffer(
       'Date,Time,Session,Kind,Person,Quantity (L),Price,Amount,Paid\n',
     );
@@ -222,6 +232,22 @@ class _VendorReportsState extends State<_VendorReports> {
         ].map((key) => csv('${row[key] ?? ''}')).join(','),
       );
     }
+    // Shop sales: the item takes the person column, the unit the session.
+    for (final row in shop) {
+      output.writeln(
+        [
+          txt(row, 'date'),
+          txt(row, 'time'),
+          txt(row, 'unit'),
+          'shop sale',
+          _shopRowName(row),
+          '${row['quantity'] ?? ''}',
+          '${row['price'] ?? ''}',
+          '${row['amount'] ?? ''}',
+          '${row['amount'] ?? ''}',
+        ].map(csv).join(','),
+      );
+    }
     await downloadCsvFile(
       'vendor_${safeFileName(_period)}_${todayDate()}.csv',
       output.toString(),
@@ -229,9 +255,32 @@ class _VendorReportsState extends State<_VendorReports> {
   }
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder(
-    valueListenable: Hive.box('vendor_entries').listenable(),
-    builder: (context, _, _) {
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: Listenable.merge([
+      Hive.box('vendor_entries').listenable(),
+      if (Hive.isBoxOpen(shopBox)) Hive.box(shopBox).listenable(),
+    ]),
+    builder: (context, _) {
+      final shop = shopRows()
+          .where(
+            (r) =>
+                r['kind'] == 'sale' &&
+                r['voided'] != true &&
+                matchPeriod(txt(r, 'date'), _period),
+          )
+          .toList();
+      final shopSales = shop.fold(0.0, (s, r) => s + numv(r, 'amount'));
+      // Milk added at the shop counter (not from a provider) is milk in too.
+      final shopMilkIn = shopRows()
+          .where(
+            (r) =>
+                r['kind'] == 'stock' &&
+                r['itemId'] == 'milk' &&
+                r['voided'] != true &&
+                matchPeriod(txt(r, 'date'), _period),
+          )
+          .fold(0.0, (s, r) => s + numv(r, 'quantity'));
+      final showShop = milkShopMode || shop.isNotEmpty;
       final rows =
           vendorRows('vendor_entries')
               .where(
@@ -245,9 +294,14 @@ class _VendorReportsState extends State<_VendorReports> {
             );
       final milkIn =
           _vendorSum(rows, 'collection', 'quantity') +
-          _vendorSum(rows, 'purchase', 'quantity');
-      final delivered = _vendorSum(rows, 'sale', 'quantity');
-      final sales = _vendorSum(rows, 'sale', 'amount');
+          _vendorSum(rows, 'purchase', 'quantity') +
+          shopMilkIn;
+      final delivered =
+          _vendorSum(rows, 'sale', 'quantity') +
+          shop
+              .where((r) => r['itemId'] == 'milk')
+              .fold(0.0, (s, r) => s + numv(r, 'quantity'));
+      final sales = _vendorSum(rows, 'sale', 'amount') + shopSales;
       final cost =
           _vendorSum(rows, 'collection', 'amount') +
           _vendorSum(rows, 'purchase', 'amount');
@@ -289,11 +343,37 @@ class _VendorReportsState extends State<_VendorReports> {
                     icon: CupertinoIcons.arrow_up_circle_fill,
                     color: Ink.violetDeep,
                     value: '${vendorFieldNumber(delivered)} L',
-                    label: bi('Delivered', 'கொடுத்த பால்'),
+                    label: milkShopMode
+                        ? bi('Milk sold', 'விற்ற பால்')
+                        : bi('Delivered', 'கொடுத்த பால்'),
                   ),
                 ),
               ],
             ),
+            if (showShop) ...[
+              const SizedBox(height: 13),
+              Row(
+                children: [
+                  Expanded(
+                    child: _VendorReportTile(
+                      icon: Icons.storefront_rounded,
+                      color: Ink.violetDeep,
+                      value: shopMoney(shopSales),
+                      label: bi('Shop sales', 'கடை விற்பனை'),
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: _VendorReportTile(
+                      icon: CupertinoIcons.cart_fill,
+                      color: Ink.greenText,
+                      value: '${shop.length}',
+                      label: bi('Counter sales', 'கடை விற்பனைகள்'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 13),
             Glass(
               radius: 24,
@@ -361,7 +441,7 @@ class _VendorReportsState extends State<_VendorReports> {
                     ),
                   ),
                 ),
-                if (rows.isNotEmpty)
+                if (rows.isNotEmpty || shop.isNotEmpty)
                   IconButton(
                     tooltip: bi(
                       'Export vendor report',
@@ -371,7 +451,7 @@ class _VendorReportsState extends State<_VendorReports> {
                       CupertinoIcons.arrow_down_doc,
                       color: Ink.violetDeep,
                     ),
-                    onPressed: () => _export(rows),
+                    onPressed: () => _export(rows, shop),
                   ),
               ],
             ),
