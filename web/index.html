@@ -185,6 +185,45 @@
     window.addEventListener('focus', keepVimoAwake);
     window.addEventListener('pointerdown', keepVimoAwake, { passive: true });
     keepVimoAwake();
+
+    // iOS Home Screen apps can stay shifted up after the keyboard closes, so
+    // a tap lands above the button it is aimed at: scrolling still works but
+    // nothing can be pressed. When no text field is being typed in, put the
+    // page back where it belongs.
+    function vimoTyping() {
+      var active = document.activeElement;
+      return !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+    }
+    // The tallest visible area seen so far is the screen without a keyboard.
+    var vimoFullHeight = window.visualViewport ? window.visualViewport.height : 0;
+    function vimoKeyboardOpen() {
+      var viewport = window.visualViewport;
+      if (!viewport) return vimoTyping();
+      vimoFullHeight = Math.max(vimoFullHeight, viewport.height);
+      return viewport.height < vimoFullHeight - 120;
+    }
+    function vimoSettleViewport(force) {
+      // A field can keep focus after the keyboard is swiped or tapped away,
+      // so a closed keyboard is judged by the visible height, not by focus.
+      if (force !== true && vimoTyping()) return;
+      if (vimoKeyboardOpen()) return;
+      if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+      var root = document.scrollingElement || document.documentElement;
+      if (root.scrollTop !== 0) root.scrollTop = 0;
+      if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+    }
+    document.addEventListener('focusout', function () {
+      // The next field may take focus a moment later; wait for it.
+      setTimeout(vimoSettleViewport, 120);
+    }, true);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', function () {
+        vimoSettleViewport(true);
+      });
+    }
+    window.addEventListener('pageshow', function () {
+      vimoSettleViewport(true);
+    });
   </script>
   <div id="loading">
     <div class="splash-card">
