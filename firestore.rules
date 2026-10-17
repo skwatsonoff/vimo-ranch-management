@@ -343,6 +343,148 @@ service cloud.firestore {
       allow delete: if routeOwner();
     }
 
+    // Nearby milk search. A vendor or shop chooses to be listed; the place is
+    // stored only as a ~220 m grid square (gridLat/gridLng = degrees x 500),
+    // never the exact spot. "cell" is the ~5.5 km square used to find
+    // listings near a buyer and must match the grid.
+    match /vendor_listings/{uid} {
+      function validTime(t) {
+        return t is string && t.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+      }
+      function validHours(h) {
+        return h is map && (h.size() == 0
+          || (h.keys().hasOnly(['start', 'end']) && validTime(h.start) && validTime(h.end)));
+      }
+      // A cell is 25 x 25 grid squares; the grid square must fall inside it.
+      function inCell(grid, cell) {
+        return cell * 25 <= grid && grid < cell * 25 + 25;
+      }
+      function validListing(d) {
+        return d.keys().hasOnly(['name', 'kind', 'gridLat', 'gridLng', 'cell', 'price', 'morning', 'evening', 'active', 'holiday', 'onRide', 'rideAt', 'updatedAt'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 80
+          && d.kind in ['vendor', 'shop']
+          && d.gridLat is int && d.gridLat >= -45000 && d.gridLat <= 45000
+          && d.gridLng is int && d.gridLng >= -90000 && d.gridLng <= 90000
+          && d.cell is string && d.cell.matches('^-?[0-9]{1,4}:-?[0-9]{1,4}$')
+          && inCell(d.gridLat, int(d.cell.split(':')[0]))
+          && inCell(d.gridLng, int(d.cell.split(':')[1]))
+          && d.price is number && d.price >= 0 && d.price <= 1000
+          && validHours(d.morning) && validHours(d.evening)
+          && d.active is bool && d.holiday is bool && d.onRide is bool
+          && (!('rideAt' in d) || d.rideAt is timestamp)
+          && d.updatedAt == request.time;
+      }
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && validListing(request.resource.data);
+      allow delete: if signedIn() && request.auth.uid == uid;
+
+      // One review per buyer, and only from a real buyer: an accepted milk
+      // request with this vendor, or an accepted VIMO ID link from them.
+      match /reviews/{buyerUid} {
+        function realBuyer(d) {
+          return (d.proofKind == 'request'
+              && get(/databases/$(database)/documents/milk_requests/$(d.proof)).data.buyerUid == request.auth.uid
+              && get(/databases/$(database)/documents/milk_requests/$(d.proof)).data.vendorUid == uid
+              && 'acceptedAt' in get(/databases/$(database)/documents/milk_requests/$(d.proof)).data)
+            || (d.proofKind == 'link'
+              && get(/databases/$(database)/documents/link_requests/$(d.proof)).data.fromUid == uid
+              && get(/databases/$(database)/documents/link_requests/$(d.proof)).data.toUid == request.auth.uid
+              && get(/databases/$(database)/documents/link_requests/$(d.proof)).data.status == 'accepted');
+        }
+        function validReview(d) {
+          return d.keys().hasOnly(['stars', 'text', 'buyerName', 'proof', 'proofKind', 'createdAt', 'updatedAt'])
+            && d.stars is int && d.stars >= 1 && d.stars <= 5
+            && d.text is string && d.text.size() <= 300
+            && d.buyerName is string && d.buyerName.size() > 0 && d.buyerName.size() <= 80
+            && d.proof is string && d.proof.size() > 0 && d.proof.size() <= 200
+            && d.proofKind in ['request', 'link']
+            && d.updatedAt == request.time
+            && realBuyer(d);
+        }
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == buyerUid && buyerUid != uid
+          && exists(/databases/$(database)/documents/vendor_listings/$(uid))
+          && validReview(request.resource.data)
+          && request.resource.data.createdAt == request.time;
+        allow update: if signedIn() && request.auth.uid == buyerUid
+          && validReview(request.resource.data)
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if signedIn() && request.auth.uid == buyerUid;
+      }
+    }
+
+    // A buyer asks a listed vendor for milk, for today only or regularly.
+    // Only the two of them can read it. The vendor accepts, offers another
+    // time or price, or declines; either side can cancel. The vendor's exact
+    // place is added only after acceptance. Requests are never deleted
+    // because an accepted one is the proof behind a review.
+    match /milk_requests/{requestId} {
+      function validPoint(p) {
+        return p is map && p.keys().hasOnly(['lat', 'lng'])
+          && p.lat is number && p.lat >= -90 && p.lat <= 90
+          && p.lng is number && p.lng >= -180 && p.lng <= 180;
+      }
+      function validRequest(d) {
+        return d.keys().hasOnly(['buyerUid', 'buyerName', 'vendorUid', 'vendorName', 'kind', 'litres', 'session', 'time', 'days', 'payment', 'home', 'note', 'status', 'createdAt', 'updatedAt'])
+          && d.buyerUid == request.auth.uid
+          && d.vendorUid is string && d.vendorUid != request.auth.uid
+          && get(/databases/$(database)/documents/vendor_listings/$(d.vendorUid)).data.active == true
+          && d.buyerName is string && d.buyerName.size() > 0 && d.buyerName.size() <= 80
+          && d.vendorName is string && d.vendorName.size() <= 80
+          && d.kind in ['today', 'regular']
+          && d.litres is number && d.litres > 0 && d.litres <= 50
+          && d.session in ['Morning', 'Evening']
+          && d.time is string && d.time.matches('^(([01][0-9]|2[0-3]):[0-5][0-9])?$')
+          && d.days is list && d.days.hasOnly(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+          && (d.kind == 'today' ? d.days.size() == 0 && d.payment == '' : d.days.size() > 0 && d.payment in ['daily', 'weekly', 'monthly'])
+          && d.home is map && (d.home.size() == 0 || validPoint(d.home))
+          && d.note is string && d.note.size() <= 200
+          && d.status == 'pending'
+          && d.createdAt == request.time && d.updatedAt == request.time;
+      }
+      function changed() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
+      function offer(d) {
+        return (!('offerTime' in d) || d.offerTime is string && d.offerTime.matches('^(([01][0-9]|2[0-3]):[0-5][0-9])?$'))
+          && (!('offerPrice' in d) || (d.offerPrice is number && d.offerPrice >= 0 && d.offerPrice <= 1000));
+      }
+      function isVendor() { return signedIn() && resource.data.vendorUid == request.auth.uid; }
+      function isBuyer() { return signedIn() && resource.data.buyerUid == request.auth.uid; }
+      allow get, list: if isVendor() || isBuyer();
+      allow create: if signedIn() && validRequest(request.resource.data);
+      allow update: if request.resource.data.updatedAt == request.time && (
+        // The vendor answers a new request once.
+        (isVendor() && resource.data.status == 'pending'
+          && changed().hasOnly(['status', 'offerTime', 'offerPrice', 'vendorPoint', 'acceptedAt', 'updatedAt'])
+          && offer(request.resource.data)
+          && (
+            (request.resource.data.status == 'accepted'
+              && request.resource.data.acceptedAt == request.time
+              && validPoint(request.resource.data.vendorPoint))
+            || (request.resource.data.status in ['offered', 'declined']
+              && !('acceptedAt' in request.resource.data)
+              && !('vendorPoint' in request.resource.data))
+          ))
+        // The buyer agrees to the vendor's time or price.
+        || (isBuyer() && resource.data.status == 'offered'
+          && changed().hasOnly(['status', 'acceptedAt', 'updatedAt'])
+          && request.resource.data.status == 'accepted'
+          && request.resource.data.acceptedAt == request.time)
+        // After the buyer agrees, the vendor shares their exact place.
+        || (isVendor() && resource.data.status == 'accepted'
+          && changed().hasOnly(['vendorPoint', 'updatedAt'])
+          && validPoint(request.resource.data.vendorPoint))
+        // Either side can stop an open or running request.
+        || ((isVendor() || isBuyer()) && resource.data.status in ['pending', 'offered', 'accepted']
+          && changed().hasOnly(['status', 'cancelledBy', 'updatedAt'])
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == request.auth.uid)
+      );
+      allow delete: if false;
+    }
+
     match /direct_chats/{chat} {
       function participant() { return signedIn() && request.auth.uid in resource.data.participants; }
       allow read: if participant();

@@ -1052,6 +1052,8 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       _hint = !MediaQuery.disableAnimationsOf(context);
     });
     await _persist();
+    // Buyers searching nearby see "On ride" while this runs.
+    unawaited(MarketService.setRide(true));
     await _syncVolume();
     _revealCurrent();
     _hintTimer?.cancel();
@@ -1284,6 +1286,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       _hint = false;
     });
     await Hive.box('settings').delete(_storageKey);
+    unawaited(MarketService.setRide(false));
     await _syncVolume();
     if (!mounted ||
         done == 0 &&

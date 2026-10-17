@@ -72,6 +72,7 @@ part 'vimo_links.dart';
 part 'milk_shop.dart';
 part 'performance.dart';
 part 'languages.dart';
+part 'market.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -4830,6 +4831,8 @@ class CloudSyncService {
     'lastAutoSyncReason',
     'pendingAnimalEntryUpdates',
     'languageMode',
+    'marketPoint',
+    'marketSeen',
     'liveSyncError',
     'purposeProfiles',
     'usernameProfiles',
@@ -9976,6 +9979,7 @@ class _MainShellState extends State<MainShell> {
       'Chat': const CommunityChatsScreen(),
       'Reports': const VendorOnlyReports(),
       'Profile': const SocialProfileScreen(),
+      'Nearby': const NearbyScreen(),
     };
     final items = <String, _NavItem>{
       for (final id in businessTabs)
@@ -9983,6 +9987,7 @@ class _MainShellState extends State<MainShell> {
           'Ranch' => CupertinoIcons.house,
           'Vendor' =>
             milkShopMode ? Icons.storefront_outlined : CupertinoIcons.drop,
+          'Nearby' => CupertinoIcons.location,
           'Reports' => CupertinoIcons.chart_bar,
           'Social' => CupertinoIcons.globe,
           'Chat' => CupertinoIcons.chat_bubble_2,
@@ -10098,12 +10103,16 @@ class _MainShellState extends State<MainShell> {
                 ],
               ),
               _ScrollEdgeEffect(visible: _topEdge),
-              // "Someone added you as their milk customer" — answer here.
+              // "Someone added you as their milk customer" and nearby milk
+              // requests — answer here.
               const Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
-                child: LinkRequestBanner(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [LinkRequestBanner(), MarketRequestBanner()],
+                ),
               ),
             ],
           ),
@@ -18775,6 +18784,7 @@ class AppSettingsScreen extends StatelessWidget {
         'appearance',
         'performanceMode',
         'lowEndDevice',
+        'purposeProfiles',
       ],
     ),
     builder: (_, _, _) => Scaffold(
@@ -18885,6 +18895,12 @@ class AppSettingsScreen extends StatelessWidget {
                   label: 'Preferences',
                   onTap: () => push(context, const PreferencesScreen()),
                 ),
+                if (workspaceEnabled('Vendor') && MarketService.available)
+                  _ActionRow(
+                    icon: CupertinoIcons.location_circle,
+                    label: bi('Nearby search', 'அருகில் தேடல்'),
+                    onTap: () => push(context, const MarketListingScreen()),
+                  ),
               ],
             ),
           ],
