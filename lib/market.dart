@@ -328,7 +328,9 @@ class MarketService {
     if (!available) return;
     try {
       final snap = await myListing.get();
-      if (!snap.exists || snap.data()?['onRide'] == onRide) return;
+      // A start always refreshes the time, in case an earlier ride was never
+      // ended (the app was closed): the old time would hide this ride.
+      if (!snap.exists || (!onRide && snap.data()?['onRide'] != true)) return;
       await myListing.update({
         'onRide': onRide,
         'rideAt': FieldValue.serverTimestamp(),
