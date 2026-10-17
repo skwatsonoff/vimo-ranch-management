@@ -194,8 +194,19 @@
       var active = document.activeElement;
       return !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
     }
-    function vimoSettleViewport() {
-      if (vimoTyping()) return;
+    // The tallest visible area seen so far is the screen without a keyboard.
+    var vimoFullHeight = window.visualViewport ? window.visualViewport.height : 0;
+    function vimoKeyboardOpen() {
+      var viewport = window.visualViewport;
+      if (!viewport) return vimoTyping();
+      vimoFullHeight = Math.max(vimoFullHeight, viewport.height);
+      return viewport.height < vimoFullHeight - 120;
+    }
+    function vimoSettleViewport(force) {
+      // A field can keep focus after the keyboard is swiped or tapped away,
+      // so a closed keyboard is judged by the visible height, not by focus.
+      if (force !== true && vimoTyping()) return;
+      if (vimoKeyboardOpen()) return;
       if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
       var root = document.scrollingElement || document.documentElement;
       if (root.scrollTop !== 0) root.scrollTop = 0;
@@ -206,9 +217,13 @@
       setTimeout(vimoSettleViewport, 120);
     }, true);
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', vimoSettleViewport);
+      window.visualViewport.addEventListener('resize', function () {
+        vimoSettleViewport(true);
+      });
     }
-    window.addEventListener('pageshow', vimoSettleViewport);
+    window.addEventListener('pageshow', function () {
+      vimoSettleViewport(true);
+    });
   </script>
   <div id="loading">
     <div class="splash-card">
