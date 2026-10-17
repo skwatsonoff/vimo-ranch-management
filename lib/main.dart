@@ -30,6 +30,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -69,6 +70,8 @@ part 'vendor_extras.dart';
 part 'vendor_routes.dart';
 part 'vimo_links.dart';
 part 'milk_shop.dart';
+part 'performance.dart';
+part 'languages.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -202,6 +205,9 @@ Future<void> main() async {
   await seedSettingsAndUsers();
   AutoSyncService.start();
   RanchNotificationService.start();
+  // The chosen language's file is small and local; load it before the first
+  // frame so the app never flashes English.
+  await loadAppLanguage();
 
   runApp(const VimoApp());
 }
@@ -3115,7 +3121,8 @@ String ranchDetails() => [
   ownerName().trim(),
   placeName().trim(),
 ].where((value) => value.isNotEmpty).join(' • ');
-String currencySymbol() => settingText('currency', '\u20b9');
+// VIMO serves India: amounts are always in rupees.
+String currencySymbol() => '\u20b9';
 String currentUserName() {
   final stored = settingText('currentUser', '').trim();
   if (stored.isNotEmpty) return stored;
@@ -4105,7 +4112,10 @@ List<Map<String, dynamic>> recentActivities({int limit = 6}) {
   for (final r in boxRows('sale_records')) {
     list.add({
       'title': '${txt(r, 'category', 'Sale')} saved',
-      'sub': '${txt(r, 'animal')} \u2022 ${txt(r, 'date')}',
+      // A milk or manure sale names its buyer; the title already says
+      // what was sold.
+      'sub':
+          '${const {'Milk', 'Manure'}.contains(txt(r, 'type')) ? txt(r, 'customerName', txt(r, 'animal')) : txt(r, 'animal')} \u2022 ${txt(r, 'date')}',
       'value': money(numv(r, 'amount')),
       'icon': CupertinoIcons.tag_fill,
       'color': Ink.green,
@@ -4400,11 +4410,17 @@ class RanchAccessService {
           ).get().timeout(const Duration(seconds: 10));
           final ranch = snap.data();
           if (ranch == null || !sameSession()) return;
-          await setSetting('farmName', txt(ranch, 'farmName', 'My Ranch'));
-          if (!sameSession()) return;
-          await setSetting('ownerName', txt(ranch, 'ownerName'));
-          if (!sameSession()) return;
-          await setSetting('place', txt(ranch, 'place'));
+          // These come from the cloud: store them without queueing an upload,
+          // or every launch would show them as pending changes.
+          for (final (key, value) in [
+            ('farmName', txt(ranch, 'farmName', 'My Ranch')),
+            ('ownerName', txt(ranch, 'ownerName')),
+            ('place', txt(ranch, 'place')),
+          ]) {
+            if (!sameSession()) return;
+            if (settingValue(key, null) == value) continue;
+            await AutoSyncService.putRemote(Hive.box('settings'), key, value);
+          }
         }(),
       ]);
     } catch (error) {
@@ -4792,6 +4808,8 @@ class CloudSyncService {
 
   static const Set<String> localOnlySettings = {
     'appearance',
+    'performanceMode',
+    'lowEndDevice',
     'ranchId',
     'pendingRanchId',
     'firebaseUid',
@@ -6022,7 +6040,7 @@ const AssetImage heroArtImage = AssetImage(
 );
 
 /// The VIMO app mark.
-const AssetImage vimoIconImage = AssetImage('assets/images/vimo_logo_v3.png');
+const AssetImage vimoIconImage = AssetImage('assets/images/vimo_logo_v4.png');
 
 /// The house cow mark, used wherever a cow or calf needs representing.
 class CowMark extends StatelessWidget {
@@ -7479,6 +7497,28 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
     'settings',
   ).listenable(keys: const ['appearance']);
 
+  late final ValueListenable<Box<dynamic>> _language = Hive.box(
+    'settings',
+  ).listenable(keys: const ['languageMode']);
+  late final ValueListenable<Box<dynamic>> _performance = Hive.box(
+    'settings',
+  ).listenable(keys: const ['performanceMode', 'lowEndDevice']);
+  bool _systemReducedTransparency = false;
+
+  /// Solid surfaces when the phone asks for less transparency, or when VIMO
+  /// runs in its fast style. Returns whether anything changed.
+  bool _applyTransparency() {
+    final solid = _systemReducedTransparency || DevicePerformance.fast;
+    if (solid == Ink.reduceTransparency) return false;
+    Ink.reduceTransparency = solid;
+    return true;
+  }
+
+  void _applyPerformance() {
+    _applyTransparency();
+    _rebuildAll();
+  }
+
   void _applyAppearance() {
     final dark = _wantsDark;
     if (dark == Ink.dark) return;
@@ -7491,18 +7531,25 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
     super.initState();
     Ink.dark = _wantsDark;
     _appearance.addListener(_applyAppearance);
-    Ink.reduceTransparency = _browserRuntime.reducedTransparency;
+    _systemReducedTransparency = _browserRuntime.reducedTransparency;
+    _applyTransparency();
     _browserRuntime.watchReducedTransparency((reduced) {
-      if (reduced == Ink.reduceTransparency) return;
-      Ink.reduceTransparency = reduced;
-      _rebuildAll();
+      _systemReducedTransparency = reduced;
+      if (_applyTransparency()) _rebuildAll();
     });
+    _performance.addListener(_applyPerformance);
+    DevicePerformance.measure(_applyPerformance);
+    // Messages are read when widgets build, so a new language redraws every
+    // element once, as switching Light / Dark does.
+    _language.addListener(_rebuildAll);
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     _appearance.removeListener(_applyAppearance);
+    _performance.removeListener(_applyPerformance);
+    _language.removeListener(_rebuildAll);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -7534,8 +7581,8 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
         scaffoldMessengerKey: rootMessengerKey,
         navigatorKey: rootNavigatorKey,
         navigatorObservers: [appRouteObserver],
-        locale: Locale(tamilUi ? 'ta' : 'en'),
-        supportedLocales: const [Locale('en'), Locale('ta')],
+        locale: Locale(appLanguage.code),
+        supportedLocales: [for (final l in appLanguages) Locale(l.code)],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         title: 'VIMO',
         debugShowCheckedModeBanner: false,
@@ -7557,7 +7604,16 @@ class _VimoAppState extends State<VimoApp> with WidgetsBindingObserver {
             ),
             child: ColoredBox(
               color: Ink.canvasTop,
-              child: child ?? const SizedBox.shrink(),
+              // The fast style turns motion off everywhere, exactly as the
+              // phone's own Reduce Motion setting does.
+              child: DevicePerformance.fast
+                  ? MediaQuery(
+                      data: MediaQuery.of(
+                        context,
+                      ).copyWith(disableAnimations: true),
+                      child: child ?? const SizedBox.shrink(),
+                    )
+                  : child ?? const SizedBox.shrink(),
             ),
           ),
         ),
@@ -9105,9 +9161,11 @@ class _RanchChatScreenState extends State<RanchChatScreen> {
     });
     AutoSyncService.scheduleSync(reason: 'voice message');
     await addRanchNotification(
-      title: '${currentUserName()} sent a voice message',
-      message:
-          '${bi('Voice message', 'குரல் செய்தி')} • ${voiceDurationLabel(durationSeconds)}',
+      title: bi(
+        '${currentUserName()} sent a voice message',
+        '${currentUserName()} குரல் செய்தி அனுப்பினார்',
+      ),
+      message: voiceDurationLabel(durationSeconds),
       type: 'chat',
       sourceId: messageId,
     );
@@ -9941,21 +9999,25 @@ class _MainShellState extends State<MainShell> {
           // scroll edge effect below separates the title from content.
           backgroundColor: Ink.canvasTop,
           scrolledUnderElevation: 0,
-          leading: Semantics(
-            button: true,
-            label: bi('Profile', 'ப்ரொஃபைல்'),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => push(context, const SocialProfileScreen()),
-              child: const Padding(
-                padding: EdgeInsets.only(left: 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: CurrentProfileAvatar(radius: 23),
+          // On the Profile tab the page itself is the profile.
+          automaticallyImplyLeading: false,
+          leading: order[tab] == 'Profile'
+              ? null
+              : Semantics(
+                  button: true,
+                  label: bi('Profile', 'ப்ரொஃபைல்'),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => push(context, const SocialProfileScreen()),
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 10),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: CurrentProfileAvatar(radius: 23),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
           title: Text(
             order[tab] == 'Social'
                 ? bi('VIMO People', 'VIMO மக்கள்')
@@ -9972,7 +10034,14 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
           actions: [
-            if (order[tab] == 'Social')
+            if (order[tab] == 'Ranch' && ranchId().isNotEmpty)
+              IconButton(
+                tooltip: bi('Ranch Settings', 'தொழுவ அமைப்புகள்'),
+                icon: const Icon(CupertinoIcons.gear),
+                onPressed: () => push(context, const RanchSettingsScreen()),
+              ),
+            // Chat is offered here only when it is not already a tab.
+            if (order[tab] == 'Social' && !order.contains('Chat'))
               IconButton(
                 tooltip: ui('Chat'),
                 icon: const Icon(CupertinoIcons.chat_bubble_2),
@@ -10537,7 +10606,17 @@ class DashboardScreen extends StatelessWidget {
       _StatTile(
         type: 'reports',
         label: 'Reports',
-        value: '${reportDetailRows('income', 'This Month').length}',
+        // This month's result, not a count that repeats the Sell tile.
+        value: money(
+          reportDetailRows(
+                'income',
+                'This Month',
+              ).fold(0.0, (t, r) => t + numv(r, '_value')) -
+              reportDetailRows(
+                'expense',
+                'This Month',
+              ).fold(0.0, (t, r) => t + numv(r, '_value')),
+        ),
         icon: Icon(
           CupertinoIcons.chart_bar_alt_fill,
           size: 29,
@@ -10688,7 +10767,16 @@ class PendingJoinRequestsBanner extends StatelessWidget {
               const SizedBox(width: Gold.s13),
               Expanded(
                 child: AppText(
-                  '$count ${count == 1 ? 'person wants' : 'people want'} to join your ranch',
+                  // Whole sentences, so every language can phrase them.
+                  count == 1
+                      ? bi(
+                          '1 person wants to join your ranch',
+                          'ஒருவர் உங்கள் தொழுவத்தில் சேர விரும்புகிறார்',
+                        )
+                      : bi(
+                          '$count people want to join your ranch',
+                          '$count பேர் உங்கள் தொழுவத்தில் சேர விரும்புகிறார்கள்',
+                        ),
                   style: TextStyle(
                     color: Ink.navy,
                     fontWeight: FontWeight.w700,
@@ -11235,14 +11323,18 @@ class _StatTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: Gold.s2),
-                FlowText(
-                  value,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: Ink.navy,
-                    height: 1,
-                    letterSpacing: -0.8,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FlowText(
+                    value,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: Ink.navy,
+                      height: 1,
+                      letterSpacing: -0.8,
+                    ),
                   ),
                 ),
               ],
@@ -12053,7 +12145,6 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
           : bi('Maintained for $months months', '$months மாதங்கள் தொடர்ந்தது'),
       CupertinoIcons.rosette,
       rankColor(rank),
-      trailing: '$months ${months == 1 ? 'month' : 'months'}',
       displayDate: monthLabel(
         '${now.year}-${now.month.toString().padLeft(2, '0')}-01',
       ),
@@ -12480,12 +12571,8 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                   spacing: Gold.s5,
                   runSpacing: Gold.s5,
                   children: [
+                    // A bull's use is its own tab right below; no chip.
                     _Chip(label: status, color: statusColor(status)),
-                    if (isMaleAnimal(a) && maleUseOf(a).isNotEmpty)
-                      _Chip(
-                        label: maleUseLabel(maleUseOf(a)),
-                        color: maleUseColor(maleUseOf(a)),
-                      ),
                     if (rank > 0)
                       _Chip(
                         label:
@@ -15114,8 +15201,10 @@ class PregnantCowsScreen extends StatelessWidget {
                   Gold.s55,
                 ),
                 children: [
-                  _PregnancySummary(count: cows.length),
-                  const SizedBox(height: Gold.s16),
+                  if (cows.isNotEmpty) ...[
+                    _PregnancySummary(count: cows.length),
+                    const SizedBox(height: Gold.s16),
+                  ],
                   if (cows.isEmpty)
                     SizedBox(
                       width: double.infinity,
@@ -16327,11 +16416,6 @@ class _SellScreenState extends State<SellScreen> {
               color: Ink.violet.withValues(alpha: 0.10),
             ),
             _BalanceRow(
-              label: tamilUi ? 'இப்போது விற்பது' : 'Selling now',
-              value: '${selling.toStringAsFixed(1)} L',
-              color: Ink.violetDeep,
-            ),
-            _BalanceRow(
               label: tamilUi
                   ? (over ? 'பால் போதவில்லை' : 'விற்ற பின் மீதம்')
                   : (over ? 'Not enough milk' : 'Balance after sale'),
@@ -17240,7 +17324,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     ],
                   ),
                   const SizedBox(height: Gold.s13),
-                  ProfitBar(income: income, expense: expense),
+                  ProfitBar(
+                    income: income,
+                    expense: expense,
+                    showValues: false,
+                  ),
                   const SizedBox(height: Gold.s8),
                   AppText(
                     net >= 0
@@ -17375,7 +17463,16 @@ class ProfitBar extends StatelessWidget {
   final double income;
   final double expense;
 
-  const ProfitBar({super.key, required this.income, required this.expense});
+  /// Off where the amounts already sit on the same screen, so each figure
+  /// appears once; the coloured labels still explain the bar.
+  final bool showValues;
+
+  const ProfitBar({
+    super.key,
+    required this.income,
+    required this.expense,
+    this.showValues = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -17431,7 +17528,7 @@ class ProfitBar extends StatelessWidget {
               child: _ProfitLegend(
                 color: Ink.green,
                 label: 'Income',
-                value: money(income),
+                value: showValues ? money(income) : '',
               ),
             ),
             const SizedBox(width: Gold.s16),
@@ -17439,7 +17536,7 @@ class ProfitBar extends StatelessWidget {
               child: _ProfitLegend(
                 color: Ink.red,
                 label: 'Expense',
-                value: money(expense),
+                value: showValues ? money(expense) : '',
                 end: true,
               ),
             ),
@@ -17484,19 +17581,21 @@ class _ProfitLegend extends StatelessWidget {
           ),
         ],
       ),
-      const SizedBox(height: Gold.s2),
-      FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: end ? Alignment.centerRight : Alignment.centerLeft,
-        child: AppText(
-          value,
-          style: TextStyle(
-            fontSize: Gold.t16,
-            fontWeight: FontWeight.w800,
-            color: Ink.navy,
+      if (value.isNotEmpty) ...[
+        const SizedBox(height: Gold.s2),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: end ? Alignment.centerRight : Alignment.centerLeft,
+          child: AppText(
+            value,
+            style: TextStyle(
+              fontSize: Gold.t16,
+              fontWeight: FontWeight.w800,
+              color: Ink.navy,
+            ),
           ),
         ),
-      ),
+      ],
     ],
   );
 }
@@ -17727,20 +17826,7 @@ class ReportDetailScreen extends StatelessWidget {
           color: Ink.violet,
         ),
         const SizedBox(height: Gold.s13),
-        InfoRow(
-          title: 'Lifetime Income',
-          value: money(lifeIncome),
-          icon: CupertinoIcons.arrow_up_right,
-          color: Ink.green,
-        ),
-        const SizedBox(height: Gold.s13),
-        InfoRow(
-          title: 'Lifetime Expense',
-          value: money(lifeExpense),
-          icon: CupertinoIcons.arrow_down_right,
-          color: Ink.red,
-        ),
-        const SizedBox(height: Gold.s13),
+
         InfoRow(
           title: 'Net Result',
           value: money(lifeIncome - lifeExpense),
@@ -18326,96 +18412,36 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: Gold.s21),
-              _InsetGroup(
-                children: [
-                  ListTile(
-                    leading: Icon(CupertinoIcons.globe, color: _blue),
-                    title: const AppText('Language'),
-                    trailing: PickerButton<String>(
-                      value: tamilUi ? 'Tamil' : 'English',
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'English',
-                          child: AppText('English'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Tamil',
-                          child: AppText('Tamil'),
-                        ),
-                      ],
-                      onChanged: (v) => setSetting('languageMode', v),
-                    ),
+              Reveal(
+                index: 1,
+                child: _SettingLink(
+                  title: 'App Settings',
+                  subtitle: bi(
+                    'Language, appearance and preferences',
+                    'மொழி, தோற்றம் மற்றும் விருப்பங்கள்',
                   ),
-                  ListTile(
-                    leading: Icon(
-                      CupertinoIcons.circle_lefthalf_fill,
-                      color: _blue,
-                    ),
-                    title: AppText(bi('Appearance', 'தோற்றம்')),
-                    subtitle: AppText(
-                      bi(
-                        'Automatic follows your phone\'s Light / Dark setting.',
-                        'தானியங்கி: உங்கள் போனின் Light / Dark அமைப்பைப் பின்பற்றும்.',
-                      ),
-                      style: TextStyle(fontSize: 13, color: Ink.muted),
-                    ),
-                    trailing: PickerButton<String>(
-                      value: appearanceMode(),
-                      items: [
-                        DropdownMenuItem(
-                          value: 'system',
-                          child: AppText(bi('Automatic', 'தானியங்கி')),
-                        ),
-                        DropdownMenuItem(
-                          value: 'light',
-                          child: AppText(bi('Light', 'வெளிர்')),
-                        ),
-                        DropdownMenuItem(
-                          value: 'dark',
-                          child: AppText(bi('Dark', 'இருள்')),
-                        ),
-                      ],
-                      onChanged: (v) =>
-                          Hive.box('settings').put('appearance', v),
-                    ),
-                  ),
-                  _ActionRow(
-                    icon: CupertinoIcons.slider_horizontal_3,
-                    label: 'Preferences',
-                    onTap: () => push(context, const PreferencesScreen()),
-                  ),
-                  _ActionRow(
-                    icon: CupertinoIcons.at,
-                    label: bi('Profile', 'ப்ரொஃபைல்'),
-                    onTap: () => push(context, const SocialProfileScreen()),
-                  ),
-                ],
+                  icon: CupertinoIcons.slider_horizontal_3,
+                  color: Ink.violet,
+                  onTap: () => push(context, const AppSettingsScreen()),
+                ),
               ),
-              const SizedBox(height: 24),
-              if (ranchId().isNotEmpty || !firebaseReady) ...[
-                Reveal(index: 1, child: const SectionTitle(title: 'Ranch')),
+              // Ranch details live on the Ranch tab. Without that tab, keep a
+              // way in so members can still be managed.
+              if (ranchId().isNotEmpty && !workspaceEnabled('Ranch'))
                 Reveal(
                   index: 2,
                   child: _SettingLink(
-                    title: 'App Settings',
-                    subtitle: 'Farm name, owner, currency and milk price',
-                    icon: CupertinoIcons.slider_horizontal_3,
-                    color: Ink.violet,
-                    onTap: () => push(context, const AppSettingsScreen()),
-                  ),
-                ),
-                Reveal(
-                  index: 3,
-                  child: _SettingLink(
-                    title: 'Family Users',
-                    subtitle: 'Admin, Editor and Data Entry access',
-                    icon: CupertinoIcons.person_3_fill,
+                    title: 'Ranch Settings',
+                    subtitle: bi(
+                      'Ranch details and family users',
+                      'தொழுவ விவரங்கள் மற்றும் குடும்ப உறுப்பினர்கள்',
+                    ),
+                    icon: CupertinoIcons.house_fill,
                     color: Ink.blue,
-                    onTap: () => push(context, const FamilyUsersScreen()),
+                    onTap: () => push(context, const RanchSettingsScreen()),
                   ),
                 ),
-                const SizedBox(height: Gold.s16),
-              ],
+              const SizedBox(height: Gold.s16),
               Reveal(index: 4, child: const SectionTitle(title: 'Data')),
               Reveal(
                 index: 5,
@@ -18510,7 +18536,7 @@ class SettingsScreen extends StatelessWidget {
               const SizedBox(height: Gold.s21),
               Center(
                 child: AppText(
-                  'VIMO \u2022 Manage. Care. Grow.',
+                  'Manage. Care. Grow.',
                   style: TextStyle(
                     color: Ink.faint,
                     fontSize: 11,
@@ -18591,18 +18617,17 @@ class _SettingLink extends StatelessWidget {
 //  App settings
 // -----------------------------------------------------------------------------
 
-class AppSettingsScreen extends StatefulWidget {
-  const AppSettingsScreen({super.key});
+class RanchSettingsScreen extends StatefulWidget {
+  const RanchSettingsScreen({super.key});
 
   @override
-  State<AppSettingsScreen> createState() => _AppSettingsScreenState();
+  State<RanchSettingsScreen> createState() => _RanchSettingsScreenState();
 }
 
-class _AppSettingsScreenState extends State<AppSettingsScreen> {
+class _RanchSettingsScreenState extends State<RanchSettingsScreen> {
   late final TextEditingController _farm;
   late final TextEditingController _owner;
   late final TextEditingController _place;
-  late final TextEditingController _currency;
   late final TextEditingController _price;
   late final TextEditingController _ranch;
   bool _saving = false;
@@ -18613,7 +18638,6 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     _farm = TextEditingController(text: farmName());
     _owner = TextEditingController(text: ownerName());
     _place = TextEditingController(text: placeName());
-    _currency = TextEditingController(text: currencySymbol());
     _price = TextEditingController(text: defaultMilkPrice().toStringAsFixed(0));
     _ranch = TextEditingController(text: ranchId());
   }
@@ -18623,7 +18647,6 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     _farm.dispose();
     _owner.dispose();
     _place.dispose();
-    _currency.dispose();
     _price.dispose();
     _ranch.dispose();
     super.dispose();
@@ -18642,10 +18665,6 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     );
     await setSetting('ownerName', _owner.text.trim());
     await setSetting('place', _place.text.trim());
-    await setSetting(
-      'currency',
-      _currency.text.trim().isEmpty ? '\u20b9' : _currency.text.trim(),
-    );
     final price = toDouble(_price.text);
     await setSetting('defaultMilkPrice', price <= 0 ? 60.0 : price);
 
@@ -18660,7 +18679,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return FormPage(
-      title: 'App Settings',
+      title: 'Ranch Settings',
       children: [
         TextField(
           controller: _farm,
@@ -18678,14 +18697,6 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
           controller: _place,
           textCapitalization: TextCapitalization.words,
           decoration: fieldStyle('Place', icon: CupertinoIcons.location),
-        ),
-        const SizedBox(height: Gold.s13),
-        TextField(
-          controller: _currency,
-          decoration: fieldStyle(
-            'Currency Symbol',
-            icon: CupertinoIcons.arrow_right_arrow_left,
-          ),
         ),
         const SizedBox(height: Gold.s13),
         TextField(
@@ -18719,9 +18730,149 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                   'Only the ranch admin can change these settings',
                 ),
         ),
+        const SizedBox(height: Gold.s27),
+        _SettingLink(
+          title: 'Family Users',
+          subtitle: 'Admin, Editor and Data Entry access',
+          icon: CupertinoIcons.person_3_fill,
+          color: Ink.blue,
+          onTap: () => push(context, const FamilyUsersScreen()),
+        ),
       ],
     );
   }
+}
+
+/// How the app looks and works on this phone: language, appearance and the
+/// workspaces in use.
+class AppSettingsScreen extends StatelessWidget {
+  const AppSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<Box<dynamic>>(
+    valueListenable: Hive.box('settings').listenable(
+      keys: const [
+        'languageMode',
+        'appearance',
+        'performanceMode',
+        'lowEndDevice',
+      ],
+    ),
+    builder: (_, _, _) => Scaffold(
+      backgroundColor: Ink.canvasTop,
+      appBar: AppBar(title: const AppText('App Settings')),
+      body: Shell(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+            Gold.s21,
+            Gold.s13,
+            Gold.s21,
+            Gold.s55,
+          ),
+          children: [
+            _InsetGroup(
+              children: [
+                ListTile(
+                  leading: Icon(CupertinoIcons.globe, color: _blue),
+                  title: const AppText('Language'),
+                  trailing: PickerButton<String>(
+                    value: appLanguage.mode,
+                    items: [
+                      for (final l in appLanguages)
+                        DropdownMenuItem(value: l.mode, child: Text(l.native)),
+                    ],
+                    onChanged: (v) async {
+                      await loadAppLanguage(v);
+                      await setSetting('languageMode', v);
+                    },
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(
+                    CupertinoIcons.circle_lefthalf_fill,
+                    color: _blue,
+                  ),
+                  title: AppText(bi('Appearance', 'தோற்றம்')),
+                  subtitle: AppText(
+                    bi(
+                      'Automatic follows your phone\'s Light / Dark setting.',
+                      'தானியங்கி: உங்கள் போனின் Light / Dark அமைப்பைப் பின்பற்றும்.',
+                    ),
+                    style: TextStyle(fontSize: 13, color: Ink.muted),
+                  ),
+                  trailing: PickerButton<String>(
+                    value: appearanceMode(),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'system',
+                        child: AppText(bi('Automatic', 'தானியங்கி')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'light',
+                        child: AppText(bi('Light', 'வெளிர்')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'dark',
+                        child: AppText(bi('Dark', 'இருள்')),
+                      ),
+                    ],
+                    onChanged: (v) => Hive.box('settings').put('appearance', v),
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(CupertinoIcons.sparkles, color: _blue),
+                  title: AppText(bi('Effects', 'விளைவுகள்')),
+                  subtitle: AppText(
+                    DevicePerformance.mode != 'auto'
+                        ? bi(
+                            'Automatic picks the best for your phone.',
+                            'தானியங்கி உங்கள் போனுக்கு ஏற்றதைத் தேர்வு செய்யும்.',
+                          )
+                        : DevicePerformance.lowEnd
+                        ? bi(
+                            'Fast and simple on this phone.',
+                            'இந்த போனில் வேகமான எளிய முறை.',
+                          )
+                        : bi(
+                            'Full Liquid Glass on this phone.',
+                            'இந்த போனில் முழு Liquid Glass.',
+                          ),
+                    style: TextStyle(fontSize: 13, color: Ink.muted),
+                  ),
+                  trailing: PickerButton<String>(
+                    value: DevicePerformance.mode,
+                    items: [
+                      DropdownMenuItem(
+                        value: 'auto',
+                        child: AppText(bi('Automatic', 'தானியங்கி')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'full',
+                        child: AppText(
+                          bi('Full Liquid Glass', 'முழு Liquid Glass'),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'fast',
+                        child: AppText(bi('Fast & simple', 'வேகம் & எளிமை')),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        Hive.box('settings').put('performanceMode', v),
+                  ),
+                ),
+                _ActionRow(
+                  icon: CupertinoIcons.slider_horizontal_3,
+                  label: 'Preferences',
+                  onTap: () => push(context, const PreferencesScreen()),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -19069,14 +19220,6 @@ class FamilyUsersScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (canManageRanch)
-                    const Chip(
-                      avatar: Icon(
-                        CupertinoIcons.shield_lefthalf_fill,
-                        size: Gold.t13,
-                      ),
-                      label: AppText('Admin'),
-                    ),
                 ],
               ),
             ),

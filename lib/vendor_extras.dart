@@ -1077,11 +1077,6 @@ class _CustomerMonthlyReportScreenState
                 pinned: true,
                 backgroundColor: Ink.canvasTop.withValues(alpha: .92),
                 surfaceTintColor: Colors.transparent,
-                title: Text(
-                  txt(widget.person, 'name'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
                 actions: [
                   IconButton(
                     tooltip: bi('Export report', 'அறிக்கையைப் பதிவிறக்கு'),
@@ -1153,6 +1148,7 @@ class _CustomerMonthlyReportScreenState
                       ),
                     ),
                     const SizedBox(height: 13),
+                    // Money appears once, in the balance card below.
                     Row(
                       children: [
                         Expanded(
@@ -1163,30 +1159,6 @@ class _CustomerMonthlyReportScreenState
                             label: supplier
                                 ? bi('Milk received', 'பெற்ற பால்')
                                 : bi('Milk delivered', 'கொடுத்த பால்'),
-                          ),
-                        ),
-                        const SizedBox(width: 13),
-                        Expanded(
-                          child: _ReportFigure(
-                            icon: CupertinoIcons.money_dollar_circle_fill,
-                            color: Ink.blue,
-                            value: money(amount),
-                            label: bi('Milk value', 'பால் மதிப்பு'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 13),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ReportFigure(
-                            icon: CupertinoIcons.checkmark_seal_fill,
-                            color: Ink.greenText,
-                            value: money(received),
-                            label: supplier
-                                ? bi('Paid', 'செலுத்தியது')
-                                : bi('Received', 'பெற்றது'),
                           ),
                         ),
                         const SizedBox(width: 13),

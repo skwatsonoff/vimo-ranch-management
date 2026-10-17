@@ -1427,7 +1427,8 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                           ),
                         ),
                       ),
-                      if (_active)
+                      // With place bubbles, their "All" bubble shows progress.
+                      if (_active && groups.isEmpty)
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -1445,7 +1446,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                             ),
                           ),
                         )
-                      else
+                      else if (!_active)
                         TextButton.icon(
                           onPressed: _busy ? null : _customize,
                           icon: const Icon(
@@ -1507,7 +1508,6 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                     for (final g in _placeFirst(groups)) ...[
                       _GroupHeader(
                         label: g.label,
-                        count: g.people.length,
                         highlighted: g.key == _place,
                       ),
                       for (final p in g.people)
@@ -2045,8 +2045,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       Padding(
         padding: const EdgeInsets.fromLTRB(6, 8, 6, 12),
         child: AppText(
-          '${bi('Amount', 'தொகை')} ${money(litres * price)}'
-          '${due > 0.001 ? '  ·  ${bi('Due', 'நிலுவை')} ${money(due)}' : ''}',
+          '${bi('Amount', 'தொகை')} ${money(litres * price)}',
           style: TextStyle(color: Ink.body, fontWeight: FontWeight.w600),
         ),
       ),
@@ -2223,13 +2222,8 @@ class _ClearanceChip extends StatelessWidget {
 /// Place heading inside the grouped customer list.
 class _GroupHeader extends StatelessWidget {
   final String label;
-  final int count;
   final bool highlighted;
-  const _GroupHeader({
-    required this.label,
-    required this.count,
-    this.highlighted = false,
-  });
+  const _GroupHeader({required this.label, this.highlighted = false});
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
@@ -2253,8 +2247,6 @@ class _GroupHeader extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 6),
-        Text('· $count', style: TextStyle(color: Ink.faint, fontSize: 13)),
         const SizedBox(width: 10),
         Expanded(child: Divider(color: Ink.violetDeep.withValues(alpha: .1))),
       ],
@@ -2438,12 +2430,30 @@ class _ProviderBubble extends StatelessWidget {
                 child: Icon(icon, color: Colors.white, size: 26),
               ),
             const SizedBox(height: 6),
-            Text(
-              p == null ? label : txt(p, 'name'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-            ),
+            // A label like "All" shrinks to fit rather than being cut;
+            // long names still end in an ellipsis.
+            if (p == null)
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              )
+            else
+              Text(
+                txt(p, 'name'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
             if (p != null)
               Text(
                 txt(p, 'place'),

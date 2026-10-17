@@ -1062,6 +1062,11 @@ class _SocialPost extends StatefulWidget {
 }
 
 class _SocialPostState extends State<_SocialPost> {
+  /// One tag per card: the same post can sit in the feed and on a profile
+  /// at once, and a shared tag made its photo fly between pages. The photo
+  /// should move only into and out of the full-screen viewer.
+  final Object _photoHero = Object();
+
   bool _busy = false;
   bool _hidden = false;
   bool _commentsVisible = false;
@@ -1341,7 +1346,7 @@ class _SocialPostState extends State<_SocialPost> {
                           pageBuilder: (_, _, _) => SocialPhotoViewer(
                             image: MemoryImage(bytes),
                             saveBytes: bytes,
-                            heroTag: 'post-photo-${widget.post.id}',
+                            heroTag: _photoHero,
                           ),
                           transitionsBuilder: (_, animation, _, child) =>
                               FadeTransition(opacity: animation, child: child),
@@ -1349,7 +1354,7 @@ class _SocialPostState extends State<_SocialPost> {
                       );
                     },
                     child: Hero(
-                      tag: 'post-photo-${widget.post.id}',
+                      tag: _photoHero,
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(22),
                         child: Image.memory(

@@ -161,6 +161,9 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
   bool get own => uid == signedInUid;
   int _tab = 0;
   bool _busy = false;
+
+  /// Unique to this page, so two open profiles never share a flying photo.
+  final Object _photoHero = Object();
   @override
   Widget build(BuildContext context) => Scaffold(
     extendBodyBehindAppBar: true,
@@ -519,12 +522,12 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                 context,
                                 SocialPhotoViewer(
                                   image: image,
-                                  heroTag: 'profile-photo-$uid',
+                                  heroTag: _photoHero,
                                 ),
                               );
                             },
                             child: Hero(
-                              tag: 'profile-photo-$uid',
+                              tag: _photoHero,
                               child: profileAvatar(
                                 txt(data, 'photo'),
                                 radius: 56,

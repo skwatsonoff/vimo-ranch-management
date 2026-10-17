@@ -1395,7 +1395,7 @@ class _RecordHero extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         LiquidButton(
-          label: bi('Record path', 'பாதையைப் பதிவு செய்'),
+          label: bi('Start recording', 'பதிவைத் தொடங்கு'),
           icon: CupertinoIcons.largecircle_fill_circle,
           height: 52,
           radius: 26,
@@ -3749,10 +3749,15 @@ class _RouteShareSheetState extends State<_RouteShareSheet> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  bi(
-                    'They see only name, place, litres${_collectLater ? '' : ' and balance'}. No history, contact number or photo.',
-                    'அவர்கள் பெயர், இடம், லிட்டர்${_collectLater ? '' : ', நிலுவை'} மட்டும் பார்ப்பார்கள். வரலாறு, தொலைபேசி எண், புகைப்படம் இல்லை.',
-                  ),
+                  _collectLater
+                      ? bi(
+                          'They see only name, place and litres. No history, contact number or photo.',
+                          'அவர்கள் பெயர், இடம், லிட்டர் மட்டும் பார்ப்பார்கள். வரலாறு, தொலைபேசி எண், புகைப்படம் இல்லை.',
+                        )
+                      : bi(
+                          'They see only name, place, litres and balance. No history, contact number or photo.',
+                          'அவர்கள் பெயர், இடம், லிட்டர், நிலுவை மட்டும் பார்ப்பார்கள். வரலாறு, தொலைபேசி எண், புகைப்படம் இல்லை.',
+                        ),
                   style: TextStyle(color: Ink.muted, fontSize: 13),
                 ),
                 const SizedBox(height: 21),
@@ -4556,10 +4561,6 @@ class _RouteInviteScreenState extends State<RouteInviteScreen> {
                             bi('Stopped by owner', 'உரிமையாளர் நிறுத்தினார்')
                           else
                             bi('Ended', 'முடிந்தது'),
-                          bi(
-                            '${routeStops(route).length} homes',
-                            '${routeStops(route).length} வீடுகள்',
-                          ),
                           if (data['collectLater'] == true)
                             bi(
                               'Owner collects money later',
@@ -5308,15 +5309,20 @@ class _HomeCard extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  _TotalLine(label: bi('Today', 'இன்று'), value: money(today)),
+                  // With no old balance, today's amount is what to collect;
+                  // the breakdown appears only when there is one.
                   if (due > .001) ...[
+                    _TotalLine(
+                      label: bi('Today', 'இன்று'),
+                      value: money(today),
+                    ),
                     const SizedBox(height: 4),
                     _TotalLine(
                       label: bi('Balance', 'நிலுவை'),
                       value: money(due),
                     ),
+                    const Divider(height: 16),
                   ],
-                  const Divider(height: 16),
                   _TotalLine(
                     label: bi('Collect', 'வாங்க வேண்டியது'),
                     value: money(today + due),
