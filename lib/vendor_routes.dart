@@ -907,11 +907,17 @@ class VendorLocationField extends StatelessWidget {
   final ll.LatLng? value;
   final String name;
   final ValueChanged<ll.LatLng?> onChanged;
+
+  /// What the place is, when it is not a customer's home.
+  final String? title;
+  final IconData marker;
   const VendorLocationField({
     super.key,
     required this.value,
     required this.name,
     required this.onChanged,
+    this.title,
+    this.marker = CupertinoIcons.house_fill,
   });
 
   Future<void> _pick(BuildContext context) async {
@@ -951,7 +957,7 @@ class VendorLocationField extends StatelessWidget {
                             height: 44,
                             alignment: Alignment.topCenter,
                             child: Icon(
-                              CupertinoIcons.house_fill,
+                              marker,
                               color: Ink.violetDeep,
                               size: 34,
                             ),
@@ -975,15 +981,16 @@ class VendorLocationField extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    point == null
-                        ? bi(
-                            'Home location · optional',
-                            'வீட்டு இடம் · விருப்பம்',
-                          )
-                        : bi(
-                            'Home location saved',
-                            'வீட்டு இடம் சேமிக்கப்பட்டது',
-                          ),
+                    title ??
+                        (point == null
+                            ? bi(
+                                'Home location · optional',
+                                'வீட்டு இடம் · விருப்பம்',
+                              )
+                            : bi(
+                                'Home location saved',
+                                'வீட்டு இடம் சேமிக்கப்பட்டது',
+                              )),
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: Ink.navy,

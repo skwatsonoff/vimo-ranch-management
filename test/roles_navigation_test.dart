@@ -45,16 +45,20 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  test('Market uses Social, Reports, Chat and Profile', () async {
+  test('Market opens on Nearby; Reports stays available', () async {
     expect(defaultNavigation('Market'), [
+      'Nearby',
       'Social',
-      'Reports',
       'Chat',
       'Profile',
     ]);
+    expect(availableTabs(['Market']), contains('Reports'));
     await savePurpose('Market', defaultNavigation('Market'));
-    expect(navigationOrder(), ['Social', 'Reports', 'Chat', 'Profile']);
+    expect(navigationOrder(), ['Nearby', 'Social', 'Chat', 'Profile']);
     expect(enabledWorkspaces, ['Market']);
+    // A layout saved before Nearby existed is kept as it was.
+    await savePurpose('Market', ['Social', 'Reports', 'Chat', 'Profile']);
+    expect(navigationOrder(), ['Social', 'Reports', 'Chat', 'Profile']);
   });
 
   test('Every enabled workspace offers its tabs; the bar keeps four', () async {
@@ -62,6 +66,7 @@ void main() {
     expect(availableTabs(all), [
       'Ranch',
       'Vendor',
+      'Nearby',
       'Reports',
       'Social',
       'Chat',

@@ -4,6 +4,7 @@ String bi(String en, String ta) => tamilUi ? ta : tr(en);
 const businessTabs = [
   'Ranch',
   'Vendor',
+  'Nearby',
   'Reports',
   'Social',
   'Chat',
@@ -53,7 +54,8 @@ bool get accountWantsRanch => purposeChosen
 
 List<String> workspaceTabs(String kind) => switch (kind) {
   'Vendor' => const ['Vendor', 'Reports', 'Social', 'Chat'],
-  'Market' => const ['Social', 'Reports', 'Chat', 'Profile'],
+  // Reports is offered to Market too, after the four default tabs.
+  'Market' => const ['Nearby', 'Social', 'Chat', 'Profile', 'Reports'],
   _ => const ['Ranch', 'Social', 'Chat', 'Profile'],
 };
 
@@ -82,7 +84,9 @@ List<String> defaultNavigation(
   List<String>? workspaces,
 }) {
   final list = _workspacesFor(purpose, secondaryEnabled, workspaces);
-  if (list.length == 1) return List.of(workspaceTabs(purpose));
+  if (list.length == 1) {
+    return workspaceTabs(purpose).take(navigationSlots).toList();
+  }
   // Home of the chosen purpose first, then the other workspaces' homes, then
   // the purpose's own remaining destinations.
   final order = <String>[];
@@ -92,7 +96,7 @@ List<String> defaultNavigation(
 
   add(workspaceTabs(purpose).first);
   for (final w in list) {
-    if (w != 'Market') add(workspaceTabs(w).first);
+    add(workspaceTabs(w).first);
   }
   for (final t in workspaceTabs(purpose)) {
     add(t);
@@ -160,8 +164,8 @@ String workspaceSubtitle(String kind) => switch (kind) {
     'பால் வாங்கி வீடுகளுக்கும் கடைகளுக்கும் விற்பனை',
   ),
   'Market' => bi(
-    'People, posts, chats and reports',
-    'மக்கள், பதிவுகள், சாட், அறிக்கைகள்',
+    'Find milk near you, people, posts and chats',
+    'அருகிலுள்ள பால், மக்கள், பதிவுகள், சாட்',
   ),
   _ => bi(
     'Care for your cows and manage the ranch',
@@ -180,6 +184,7 @@ String navLabel(String tab) => switch (tab) {
   'Ranch' => bi('Ranch', 'தொழுவம்'),
   'Vendor' =>
     milkShopMode ? bi('Milk shop', 'பால் கடை') : bi('Vendor', 'வியாபாரம்'),
+  'Nearby' => bi('Nearby', 'அருகில்'),
   'Reports' => bi('Reports', 'ரிப்போர்ட்'),
   'Social' => bi('Social', 'சமூகம்'),
   'Chat' => bi('Chat', 'சாட்'),
@@ -191,6 +196,7 @@ IconData navIcon(String tab) => switch (tab) {
   'Ranch' => CupertinoIcons.house_fill,
   'Vendor' =>
     milkShopMode ? Icons.storefront_rounded : CupertinoIcons.drop_fill,
+  'Nearby' => CupertinoIcons.location_fill,
   'Reports' => CupertinoIcons.chart_bar_alt_fill,
   'Social' => CupertinoIcons.globe,
   'Chat' => CupertinoIcons.chat_bubble_2_fill,
@@ -257,7 +263,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       if (!order.contains(t)) order.add(t);
     }
     // A newly enabled workspace should appear on the bar straight away.
-    if (on && kind != 'Market') {
+    if (on) {
       final home = workspaceTabs(kind).first;
       if (!order.contains(home)) {
         order.insert(math.min(1, order.length), home);

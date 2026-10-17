@@ -44,8 +44,8 @@ void main() {
       );
       expect(navigationOrder().first, 'Social');
       expect(defaultNavigation('Market'), [
+        'Nearby',
         'Social',
-        'Reports',
         'Chat',
         'Profile',
       ]);
