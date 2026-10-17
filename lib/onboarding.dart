@@ -197,29 +197,53 @@ class _StepFrame extends StatelessWidget {
     required this.onNext,
   });
 
+  /// The choices scroll; the button stays at the bottom, always in reach,
+  /// as in the iPhone's own setup screens.
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.fromLTRB(Gold.s21, Gold.s13, Gold.s21, Gold.s34),
+  Widget build(BuildContext context) => Column(
     children: [
-      Text(
-        title,
-        style: TextStyle(
-          color: Ink.navy,
-          fontSize: Gold.t34,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -.8,
-          height: 1.15,
+      Expanded(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+            Gold.s21,
+            Gold.s13,
+            Gold.s21,
+            Gold.s21,
+          ),
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: Ink.navy,
+                fontSize: Gold.t34,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -.8,
+                height: 1.15,
+              ),
+            ),
+            const SizedBox(height: Gold.s8),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Ink.muted,
+                fontSize: Gold.t16,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: Gold.s34),
+            child,
+          ],
         ),
       ),
-      const SizedBox(height: Gold.s8),
-      Text(
-        subtitle,
-        style: TextStyle(color: Ink.muted, fontSize: Gold.t16, height: 1.4),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Gold.s21,
+          Gold.s8,
+          Gold.s21,
+          Gold.s34,
+        ),
+        child: LiquidButton(label: action, onPressed: onNext),
       ),
-      const SizedBox(height: Gold.s34),
-      child,
-      const SizedBox(height: Gold.s34),
-      LiquidButton(label: action, onPressed: onNext),
     ],
   );
 }
@@ -299,7 +323,7 @@ class _LanguageStep extends StatelessWidget {
       'settings',
     ).listenable(keys: const ['languageMode']),
     builder: (context, _, _) {
-      final tamil = tamilUi;
+      final current = appLanguage.mode;
       return _StepFrame(
         title: bi('Choose your language', 'உங்கள் மொழியைத் தேர்வு செய்யுங்கள்'),
         subtitle: bi(
@@ -310,27 +334,25 @@ class _LanguageStep extends StatelessWidget {
         onNext: onNext,
         child: Column(
           children: [
-            _ChoiceCard(
-              selected: !tamil,
-              title: 'English',
-              subtitle: 'Use VIMO in English',
-              leading: const Text(
-                'Aa',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+            for (final (i, l) in appLanguages.indexed) ...[
+              if (i > 0) const SizedBox(height: Gold.s13),
+              _ChoiceCard(
+                selected: current == l.mode,
+                title: l.native,
+                subtitle: l.use,
+                leading: Text(
+                  l.glyph,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                onTap: () async {
+                  await loadAppLanguage(l.mode);
+                  await setSetting('languageMode', l.mode);
+                },
               ),
-              onTap: () => setSetting('languageMode', 'English'),
-            ),
-            const SizedBox(height: Gold.s13),
-            _ChoiceCard(
-              selected: tamil,
-              title: 'தமிழ்',
-              subtitle: 'VIMO-வைத் தமிழில் பயன்படுத்துங்கள்',
-              leading: const Text(
-                'அ',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-              ),
-              onTap: () => setSetting('languageMode', 'Tamil'),
-            ),
+            ],
           ],
         ),
       );

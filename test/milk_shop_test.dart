@@ -71,14 +71,14 @@ void main() {
       var q = const ShopQuantity().digit(1);
       expect(q.value, 1);
       q = q.toggleHalf();
-      expect((q.value, q.label), (1.5, '1½'));
+      expect((q.value, q.label), (1.5, '1.5'));
       q = q.toggleQuarter();
-      expect((q.value, q.label), (1.75, '1¾'));
+      expect((q.value, q.label), (1.75, '1.75'));
       q = q.digit(2);
-      expect((q.value, q.label), (12.75, '12¾'));
+      expect((q.value, q.label), (12.75, '12.75'));
       q = q.backspace().backspace();
       expect(q.label, '12');
-      expect(const ShopQuantity().toggleQuarter().label, '¼');
+      expect(const ShopQuantity().toggleQuarter().label, '0.25');
       expect(const ShopQuantity(whole: 9999).digit(9).whole, 9999);
     });
   });
@@ -259,11 +259,16 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
+    // Before any litres the fraction keys are plain.
+    expect(find.text('.500'), findsOneWidget);
     await tester.tap(find.text('1'));
     await tester.pump();
-    await tester.tap(find.text('½'));
+    // With litres entered both keys offer to add: "+.500" and "+.250".
+    expect(find.text('+.500'), findsOneWidget);
+    expect(find.text('+.250'), findsOneWidget);
+    await tester.tap(find.text('+.500'));
     await tester.pump();
-    expect(find.textContaining('1½', findRichText: true), findsOneWidget);
+    expect(find.textContaining('1.5', findRichText: true), findsOneWidget);
     expect(find.textContaining('₹90', findRichText: true), findsWidgets);
 
     final slider = find.byType(SlideToSell);
@@ -276,6 +281,19 @@ void main() {
     final sale = shopRows().single;
     expect(sale['quantity'], 1.5);
     expect(sale['amount'], 90.0);
+    // Selling keeps only the sale on screen; closing it shows the stock.
+    expect(find.byType(VendorProvidersStrip), findsNothing);
+    await tester.tap(
+      find
+          .ancestor(
+            of: find.text('Milk').first,
+            matching: find.byType(Pressable),
+          )
+          .first,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(VendorProvidersStrip), findsOneWidget);
     expect(find.textContaining('8.5 L', findRichText: true), findsWidgets);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.binding.setSurfaceSize(null);

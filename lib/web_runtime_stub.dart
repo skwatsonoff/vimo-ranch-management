@@ -19,6 +19,9 @@ class BrowserRuntime {
 
   void dismissBootSplash() {}
 
+  /// Native apps judge the phone by frame timing alone.
+  bool get lowEndHint => false;
+
   /// Reduce Transparency is reported only by browsers.
   bool get reducedTransparency => false;
 

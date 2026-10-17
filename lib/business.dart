@@ -1,6 +1,6 @@
 part of 'main.dart';
 
-String bi(String en, String ta) => tamilUi ? ta : en;
+String bi(String en, String ta) => tamilUi ? ta : tr(en);
 const businessTabs = [
   'Ranch',
   'Vendor',
@@ -1665,21 +1665,6 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        if (due > .001)
-                          _InfoChip(
-                            icon: CupertinoIcons.money_dollar_circle_fill,
-                            label:
-                                '${supplier ? bi('To pay', 'கொடுக்க') : bi('To collect', 'பெற')} ${money(due)}',
-                            color: supplier ? Ink.amberText : Ink.redText,
-                          ),
-                        _InfoChip(
-                          icon: supplier
-                              ? CupertinoIcons.arrow_down_circle
-                              : CupertinoIcons.arrow_up_circle,
-                          label: supplier
-                              ? bi('Provider', 'வழங்குநர்')
-                              : bi('Buyer', 'வாங்குபவர்'),
-                        ),
                         _InfoChip(
                           icon: CupertinoIcons.calendar,
                           label: vendorPaymentScheduleLabel(p),
@@ -2074,9 +2059,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color? _color;
-  Color get color => _color ?? Ink.body;
-  const _InfoChip({required this.icon, required this.label, this._color});
+  const _InfoChip({required this.icon, required this.label});
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -2089,7 +2072,7 @@ class _InfoChip extends StatelessWidget {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 15, color: color == Ink.body ? Ink.violetDeep : color),
+        Icon(icon, size: 15, color: Ink.violetDeep),
         const SizedBox(width: 6),
         Flexible(
           child: AppText(
@@ -2099,7 +2082,7 @@ class _InfoChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: color,
+              color: Ink.body,
             ),
           ),
         ),

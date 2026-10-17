@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
@@ -31,6 +32,22 @@ class BrowserRuntime {
       _transparencyListener = ((web.Event _) => onChange(query.matches)).toJS;
       query.addEventListener('change', _transparencyListener);
     } catch (_) {}
+  }
+
+  /// A first guess at a low-end phone from the memory the browser reports
+  /// (Chromium only). Safari reports nothing, so frame timing decides there.
+  bool get lowEndHint {
+    try {
+      final navigator = web.window.navigator as JSObject;
+      final memory = navigator
+          .getProperty<JSNumber?>('deviceMemory'.toJS)
+          ?.toDartDouble;
+      if (memory == null) return false;
+      final cores = web.window.navigator.hardwareConcurrency;
+      return memory <= 2 || (memory <= 4 && cores <= 4);
+    } catch (_) {
+      return false;
+    }
   }
 
   bool get online => web.window.navigator.onLine;
