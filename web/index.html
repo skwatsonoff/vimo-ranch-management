@@ -250,15 +250,24 @@
       }
     }, 9000);
 
-    setTimeout(function () {
+    // On a slow connection the app can take well over 15 seconds to arrive.
+    // Taking the splash away before then shows a blank screen where nothing
+    // can be pressed, so the safety net only steps in once Flutter has drawn
+    // its first screen (in case it never dismisses the splash itself).
+    var vimoSplashWatch = setInterval(function () {
       var loading = document.getElementById('loading');
-      if (loading) {
-        loading.style.transition = 'opacity 260ms ease';
-        loading.style.opacity = '0';
-        setTimeout(function () {
-          loading.remove();
-        }, 300);
+      if (!loading) {
+        clearInterval(vimoSplashWatch);
+        return;
       }
+      if (document.body.getAttribute('data-vimo-ready') !== '1') return;
+      clearInterval(vimoSplashWatch);
+      loading.style.pointerEvents = 'none';
+      loading.style.transition = 'opacity 260ms ease';
+      loading.style.opacity = '0';
+      setTimeout(function () {
+        loading.remove();
+      }, 300);
     }, 15000);
   </script>
 

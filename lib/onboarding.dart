@@ -188,7 +188,7 @@ class _StepFrame extends StatelessWidget {
   final String subtitle;
   final Widget child;
   final String action;
-  final VoidCallback onNext;
+  final VoidCallback? onNext;
   const _StepFrame({
     required this.title,
     required this.subtitle,
@@ -323,7 +323,12 @@ class _LanguageStep extends StatelessWidget {
       'settings',
     ).listenable(keys: const ['languageMode']),
     builder: (context, _, _) {
-      final current = appLanguage.mode;
+      // A new phone has not chosen yet ('Tamil-English' from the first
+      // launch), so no card starts selected: tapping English then visibly
+      // selects it instead of looking as if nothing happened.
+      final stored = settingText('languageMode', '');
+      final chosen = appLanguages.any((l) => l.mode == stored);
+      final current = chosen ? stored : '';
       return _StepFrame(
         title: bi('Choose your language', 'உங்கள் மொழியைத் தேர்வு செய்யுங்கள்'),
         subtitle: bi(
@@ -331,7 +336,7 @@ class _LanguageStep extends StatelessWidget {
           'செட்டிங்ஸில் எப்போது வேண்டுமானாலும் மாற்றலாம்.',
         ),
         action: bi('Continue', 'தொடரவும்'),
-        onNext: onNext,
+        onNext: chosen ? onNext : null,
         child: Column(
           children: [
             for (final (i, l) in appLanguages.indexed) ...[

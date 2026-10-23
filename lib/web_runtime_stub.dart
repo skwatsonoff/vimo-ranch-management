@@ -19,6 +19,8 @@ class BrowserRuntime {
 
   void dismissBootSplash() {}
 
+  void markAppReady() {}
+
   /// Native apps judge the phone by frame timing alone.
   bool get lowEndHint => false;
 

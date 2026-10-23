@@ -139,10 +139,18 @@ class BrowserRuntime {
     }
   }
 
+  /// Tells the page the app has drawn its first screen and can take taps,
+  /// so the splash's safety net never uncovers a screen that is not live.
+  void markAppReady() {
+    web.document.body?.setAttribute('data-vimo-ready', '1');
+  }
+
   void dismissBootSplash() {
     final loading = web.document.getElementById('loading') as web.HTMLElement?;
     if (loading == null) return;
+    // Taps reach the app while the splash fades, not only once it is gone.
     loading.style
+      ..pointerEvents = 'none'
       ..transition = 'opacity 260ms ease'
       ..opacity = '0';
     Timer(const Duration(milliseconds: 300), () => loading.remove());
