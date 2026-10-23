@@ -211,6 +211,9 @@ Future<void> main() async {
   await loadAppLanguage();
 
   runApp(const VimoApp());
+  WidgetsBinding.instance.addPostFrameCallback(
+    (_) => _browserRuntime.markAppReady(),
+  );
 }
 
 // -----------------------------------------------------------------------------

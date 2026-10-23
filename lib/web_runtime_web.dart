@@ -139,6 +139,12 @@ class BrowserRuntime {
     }
   }
 
+  /// Tells the page the app has drawn its first screen and can take taps,
+  /// so the splash's safety net never uncovers a screen that is not live.
+  void markAppReady() {
+    web.document.body?.setAttribute('data-vimo-ready', '1');
+  }
+
   void dismissBootSplash() {
     final loading = web.document.getElementById('loading') as web.HTMLElement?;
     if (loading == null) return;
