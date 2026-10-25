@@ -19471,6 +19471,23 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => push(context, const AppSettingsScreen()),
                 ),
               ),
+              if (workspaceEnabled('Vendor'))
+                Reveal(
+                  index: 2,
+                  child: _SettingLink(
+                    title: bi(
+                      'Customize customers',
+                      'வாடிக்கையாளர் பட்டியலை மாற்று',
+                    ),
+                    subtitle: bi(
+                      'Group by place, volume buttons for the ride',
+                      'இடவாரியாகக் குழு, சவாரிக்கு volume பொத்தான்கள்',
+                    ),
+                    icon: CupertinoIcons.slider_horizontal_3,
+                    color: Ink.violetDeep,
+                    onTap: () => openVendorCustomize(context),
+                  ),
+                ),
               // Once Google is on the account there is nothing left to add.
               if (firebaseReady &&
                   FirebaseAuth.instance.currentUser != null &&

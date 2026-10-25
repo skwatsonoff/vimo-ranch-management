@@ -110,20 +110,37 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('Walk-in customer'), findsOneWidget);
-    expect(find.text('Gives 333 ml for ₹20, paid now'), findsOneWidget);
-    await tester.tap(find.text('₹10'));
+    // Nothing chosen yet: nothing to sell.
+    expect(find.text('Gives 333 ml for ₹20, paid now'), findsNothing);
+    await tester.tap(find.text('₹20'));
     await tester.pump();
-    expect(find.text('Gives 167 ml for ₹10, paid now'), findsOneWidget);
+    expect(find.text('Gives 333 ml for ₹20, paid now'), findsOneWidget);
+    // After the first tap each button adds.
+    await tester.tap(find.text('+₹10'));
+    await tester.pump();
+    expect(find.text('Gives 500 ml for ₹30, paid now'), findsOneWidget);
+    // ✕ clears it; by litres, 100 ml then +50 ml.
+    await tester.tap(find.byTooltip('Clear'));
+    await tester.pump();
+    expect(find.text('₹10'), findsOneWidget);
+    await tester.tap(find.text('By litres'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('100 ml'));
+    await tester.pump();
+    await tester.tap(find.text('+50 ml'));
+    await tester.pump();
+    expect(find.text('Gives 150 ml for ₹9, paid now'), findsOneWidget);
     await tester.runAsync(() async {
-      await tester.tap(find.text('Sold · ₹10'));
+      await tester.tap(find.text('Sold · ₹9'));
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
     await tester.pumpAndSettle();
     final sale = vendorRows(
       'vendor_entries',
     ).firstWhere((r) => r['personKind'] == 'walkin');
-    expect(numv(sale, 'paid'), 10);
-    expect(numv(sale, 'amount'), 10);
+    expect(numv(sale, 'paid'), 9);
+    expect(numv(sale, 'amount'), 9);
+    expect(numv(sale, 'quantity'), closeTo(.15, 1e-9));
     expect(tester.takeException(), isNull);
   });
 
