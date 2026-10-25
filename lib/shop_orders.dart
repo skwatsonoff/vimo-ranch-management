@@ -634,7 +634,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     final price = numv(_p, 'price');
     final fee = shopDeliveryFee(_p, _method);
-    final stock = math.max(1, toInt(_p['stock']));
+    // The most this buyer can take: the stock, within the seller's limit.
+    final most = _p['maxPerOrder'] == null ? 1 : toInt(_p['maxPerOrder']);
+    final stock = math.max(1, math.min(toInt(_p['stock']), math.max(1, most)));
     final total = price * _qty + fee;
     return Scaffold(
       backgroundColor: Ink.canvasTop,
@@ -686,46 +688,48 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ],
               ),
             ),
-            _shopSection(bi('Quantity', 'எண்ணிக்கை')),
-            Row(
-              children: [
-                IconButton.filledTonal(
-                  tooltip: bi('Fewer', 'குறைவு'),
-                  onPressed: _qty <= 1
-                      ? null
-                      : () {
-                          selectionFeedback();
-                          setState(() => _qty--);
-                        },
-                  icon: const Icon(CupertinoIcons.minus),
-                ),
-                Expanded(
-                  child: Text(
-                    '$_qty',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
+            if (stock > 1) ...[
+              _shopSection(bi('Quantity', 'எண்ணிக்கை')),
+              Row(
+                children: [
+                  IconButton.filledTonal(
+                    tooltip: bi('Fewer', 'குறைவு'),
+                    onPressed: _qty <= 1
+                        ? null
+                        : () {
+                            selectionFeedback();
+                            setState(() => _qty--);
+                          },
+                    icon: const Icon(CupertinoIcons.minus),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '$_qty',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                IconButton.filledTonal(
-                  tooltip: bi('More', 'அதிகம்'),
-                  onPressed: _qty >= stock
-                      ? null
-                      : () {
-                          selectionFeedback();
-                          setState(() => _qty++);
-                        },
-                  icon: const Icon(CupertinoIcons.plus),
-                ),
-              ],
-            ),
-            Text(
-              bi('$stock available', '$stock கிடைக்கும்'),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Ink.muted, fontSize: 13),
-            ),
+                  IconButton.filledTonal(
+                    tooltip: bi('More', 'அதிகம்'),
+                    onPressed: _qty >= stock
+                        ? null
+                        : () {
+                            selectionFeedback();
+                            setState(() => _qty++);
+                          },
+                    icon: const Icon(CupertinoIcons.plus),
+                  ),
+                ],
+              ),
+              Text(
+                bi('$stock available', '$stock கிடைக்கும்'),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Ink.muted, fontSize: 13),
+              ),
+            ],
             _shopSection(bi('How you get it', 'பெறும் முறை')),
             _ChoiceChips(
               choices: [

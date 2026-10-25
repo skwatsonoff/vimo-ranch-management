@@ -46,6 +46,7 @@ void main() {
     'unit': 'pack',
     'unitSize': '500 ml',
     'stock': 3,
+    'maxPerOrder': 3,
     'delivery': {
       'methods': ['pickup', 'courier'],
       'payer': 'buyer',
@@ -147,6 +148,32 @@ void main() {
     expect(find.text('a2'), findsOneWidget);
     // At five the field goes away.
     expect(find.widgetWithText(TextField, 'Add a tag'), findsNothing);
+  });
+
+  testWidgets('One-per-order items have no quantity to choose', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      app(
+        CheckoutScreen(
+          id: 'cow',
+          product: {
+            ...product,
+            'title': 'Jersey cow, 3 years',
+            'category': 'animals',
+            'maxPerOrder': 1,
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Quantity'), findsNothing);
+    expect(find.byIcon(CupertinoIcons.plus), findsNothing);
+    expect(find.text('Place order · ₹450'), findsOneWidget);
   });
 
   testWidgets('Checkout shows the total and asks for an address to deliver', (

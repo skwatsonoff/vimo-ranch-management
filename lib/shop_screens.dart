@@ -94,6 +94,14 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
   late final _stock = TextEditingController(
     text: _p['stock'] == null ? '1' : '${toInt(_p['stock'])}',
   );
+  late final _maxPerOrder = TextEditingController(
+    text: toInt(_p['maxPerOrder']) > 1 ? '${toInt(_p['maxPerOrder'])}' : '',
+  );
+
+  /// One per order (a cow, a used phone) unless the seller lets buyers
+  /// choose how many (milk packets, ghee jars).
+  late bool _single =
+      _p['maxPerOrder'] == null || toInt(_p['maxPerOrder']) <= 1;
   late final _fee = TextEditingController(
     text: numv(asMap(_p['delivery']), 'fee') > 0
         ? vendorFieldNumber(numv(asMap(_p['delivery']), 'fee'))
@@ -172,6 +180,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
       _mrp,
       _unitSize,
       _stock,
+      _maxPerOrder,
       _fee,
       _shipsFrom,
       _tag,
@@ -267,6 +276,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
         ? 0.0
         : double.tryParse(_mrp.text.trim());
     final stock = int.tryParse(_stock.text.trim());
+    final most = int.tryParse(_maxPerOrder.text.trim());
     final fee = _fee.text.trim().isEmpty
         ? 0.0
         : double.tryParse(_fee.text.trim());
@@ -287,6 +297,12 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
     }
     if (stock == null || stock < 0 || stock > 100000) {
       return bi('Enter how many you have', 'கையிருப்பு எண்ணிக்கையை உள்ளிடவும்');
+    }
+    if (!_single && (most == null || most < 2 || most > 100000)) {
+      return bi(
+        'Enter how many one buyer can order (2 or more)',
+        'ஒருவர் எத்தனை ஆர்டர் செய்யலாம் என்பதை உள்ளிடவும் (2 அல்லது அதிகம்)',
+      );
     }
     if (_methods.isEmpty) {
       return bi(
@@ -348,6 +364,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
           'unit': _unit,
           'unitSize': _unitSize.text.trim(),
           'stock': int.parse(_stock.text.trim()),
+          'maxPerOrder': _single ? 1 : int.parse(_maxPerOrder.text.trim()),
           'sku': _sku.text.trim(),
           'weightGrams': int.tryParse(_weight.text.trim()) ?? 0,
           'origin': _origin.text.trim(),
@@ -730,6 +747,32 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
                 icon: CupertinoIcons.cube_box,
               ),
             ),
+            const SizedBox(height: 12),
+            // The seller decides whether one order can take several.
+            LiquidSegmentBar(
+              labels: [
+                bi('One per order', 'ஆர்டருக்கு ஒன்று'),
+                bi('Buyer chooses how many', 'எத்தனை என வாங்குபவர் தேர்வு'),
+              ],
+              index: _single ? 0 : 1,
+              onChanged: (v) => setState(() {
+                _single = v == 0;
+                if (!_single && _maxPerOrder.text.trim().isEmpty) {
+                  _maxPerOrder.text = _stock.text.trim();
+                }
+              }),
+            ),
+            if (!_single) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _maxPerOrder,
+                keyboardType: TextInputType.number,
+                decoration: fieldStyle(
+                  bi('Most in one order', 'ஒரு ஆர்டரில் அதிகபட்சம்'),
+                  icon: CupertinoIcons.number,
+                ),
+              ),
+            ],
             _shopSection(
               bi('Delivery', 'டெலிவரி'),
               note: bi(

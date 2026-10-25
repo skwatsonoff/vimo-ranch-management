@@ -17,7 +17,7 @@ const fs = require('node:fs');
     const product = (over = {}) => ({
       sellerUid: 'seller', sellerName: 'Selvi', title: 'A2 Ghee 500 ml', description: 'Fresh', features: ['Hand made'],
       category: 'ghee', condition: 'new', brand: '', tags: ['a2'], searchTerms: ['a2', 'ghee'],
-      price: 450, mrp: 500, unit: 'pack', unitSize: '500 ml', stock: 3, sku: '', weightGrams: 520,
+      price: 450, mrp: 500, unit: 'pack', unitSize: '500 ml', stock: 3, maxPerOrder: 2, sku: '', weightGrams: 520,
       origin: 'India', manufacturer: '', gstPercent: 5, hsn: '0405',
       delivery: {methods: ['pickup', 'courier'], payer: 'buyer', fee: 40, days: '2-3', shipsFrom: 'Salem'},
       returns: 'none', cover: jpeg, photoCount: 1, status: 'active',
@@ -59,6 +59,8 @@ const fs = require('node:fs');
     await assertFails(setDoc(oRef(buyer), order({deliveryFee: 0, total: 900}))); checks++; // fee belongs to buyer
     await assertFails(setDoc(oRef(buyer), order({total: 100}))); checks++;
     await assertFails(setDoc(oRef(buyer), order({quantity: 4, total: 1840}))); checks++; // more than stock
+    await assertFails(setDoc(oRef(buyer), order({quantity: 3, total: 1390}))); checks++; // more than the seller allows per order
+    await assertFails(setDoc(pRef(seller), product({maxPerOrder: 0}))); checks++;
     await assertFails(setDoc(oRef(buyer), order({address: {}}))); checks++; // courier needs an address
     await assertFails(setDoc(oRef(buyer), order({address: {name: 'K', phone: '12', line: '12, Gandhi Street', city: 'Salem', pincode: '636001'}}))); checks++;
     await assertFails(setDoc(oRef(seller), order({buyerUid: 'seller'}))); checks++; // no buying your own

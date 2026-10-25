@@ -359,7 +359,7 @@ service cloud.firestore {
           && v.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$');
       }
       function validProduct(d) {
-        return d.keys().hasOnly(['sellerUid', 'sellerName', 'title', 'description', 'features', 'category', 'condition', 'brand', 'tags', 'searchTerms', 'price', 'mrp', 'unit', 'unitSize', 'stock', 'sku', 'weightGrams', 'origin', 'manufacturer', 'gstPercent', 'hsn', 'delivery', 'returns', 'cover', 'photoCount', 'status', 'createdAt', 'updatedAt'])
+        return d.keys().hasOnly(['sellerUid', 'sellerName', 'title', 'description', 'features', 'category', 'condition', 'brand', 'tags', 'searchTerms', 'price', 'mrp', 'unit', 'unitSize', 'stock', 'maxPerOrder', 'sku', 'weightGrams', 'origin', 'manufacturer', 'gstPercent', 'hsn', 'delivery', 'returns', 'cover', 'photoCount', 'status', 'createdAt', 'updatedAt'])
           && d.sellerUid == request.auth.uid
           && d.sellerName is string && d.sellerName.size() > 0 && d.sellerName.size() <= 80
           && d.title is string && d.title.size() >= 3 && d.title.size() <= 80
@@ -375,6 +375,8 @@ service cloud.firestore {
           && d.unit in ['piece', 'litre', 'kg', 'pack', 'dozen']
           && d.unitSize is string && d.unitSize.size() <= 20
           && d.stock is int && d.stock >= 0 && d.stock <= 100000
+          // The seller decides how many one order may take (1 for a cow).
+          && d.maxPerOrder is int && d.maxPerOrder >= 1 && d.maxPerOrder <= 100000
           && d.sku is string && d.sku.size() <= 40
           && d.weightGrams is int && d.weightGrams >= 0 && d.weightGrams <= 1000000
           && d.origin is string && d.origin.size() <= 40
@@ -441,6 +443,7 @@ service cloud.firestore {
           && d.sellerUid != request.auth.uid
           && product().status == 'active'
           && d.quantity is int && d.quantity >= 1 && d.quantity <= product().stock
+          && d.quantity <= product().maxPerOrder
           && d.unitPrice == product().price
           && d.deliveryMethod in product().delivery.methods
           && d.deliveryFee == ((d.deliveryMethod == 'pickup' || product().delivery.payer != 'buyer') ? 0 : product().delivery.fee)
