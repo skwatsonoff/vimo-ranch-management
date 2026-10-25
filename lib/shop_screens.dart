@@ -140,7 +140,10 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
   late final List<String> _tags = [
     for (final t in (_p['tags'] as List?) ?? const []) '$t',
   ];
-  late bool _listed = txt(_p, 'status', 'active') == 'active';
+
+  /// Taken down by the VIMO Team: stays hidden until the team allows it.
+  late final bool _takenDown = _p['pausedByTeam'] == true;
+  late bool _listed = !_takenDown && txt(_p, 'status', 'active') == 'active';
 
   List<String> _photos = [];
   bool _loadingPhotos = false;
@@ -384,7 +387,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
             'shipsFrom': _shipsFrom.text.trim(),
           },
           'returns': _returns,
-          'status': _listed ? 'active' : 'paused',
+          'status': _listed && !_takenDown ? 'active' : 'paused',
         },
       );
       if (!mounted) return;
@@ -995,13 +998,20 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
               children: [
                 SoundSwitchListTile(
                   value: _listed,
-                  onChanged: (v) => setState(() => _listed = v),
+                  onChanged: _takenDown
+                      ? null
+                      : (v) => setState(() => _listed = v),
                   title: Text(bi('Show in my shop', 'என் கடையில் காட்டு')),
                   subtitle: Text(
-                    bi(
-                      'Turn off to pause without deleting.',
-                      'நீக்காமல் நிறுத்த அணைக்கவும்.',
-                    ),
+                    _takenDown
+                        ? bi(
+                            'Taken down by VIMO Team. Open Settings → Help to talk to them.',
+                            'VIMO Team நீக்கியது. பேச Settings → உதவி திறக்கவும்.',
+                          )
+                        : bi(
+                            'Turn off to pause without deleting.',
+                            'நீக்காமல் நிறுத்த அணைக்கவும்.',
+                          ),
                   ),
                 ),
               ],

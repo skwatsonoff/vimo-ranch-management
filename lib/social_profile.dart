@@ -666,6 +666,15 @@ class SocialActivityService {
       await watch.cancel();
     }
     _chatLatest.clear();
+    await _support?.cancel();
+    await _teamReports?.cancel();
+    _support = null;
+    _teamReports = null;
+    for (final watch in [..._marketWatches, ..._likedPrices]) {
+      await watch.cancel();
+    }
+    _marketWatches.clear();
+    _likedPrices.clear();
     _followers = null;
     _allFollowers = null;
     _chats = null;

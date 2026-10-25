@@ -42,12 +42,15 @@ class VimoTeam {
     if (uid.isEmpty) return false;
     if (_memberUid == uid) return _member;
     try {
-      _member = (await _db.collection('vimo_admins').doc(uid).get()).exists;
+      final member =
+          (await _db.collection('vimo_admins').doc(uid).get()).exists;
+      // Remembered only once known: a failed read is asked again later.
+      _member = member;
+      _memberUid = uid;
+      return member;
     } catch (_) {
-      _member = false;
+      return false;
     }
-    _memberUid = uid;
-    return _member;
   }
 
   /// Sends a report. It also opens the conversation and the orders between
@@ -219,10 +222,21 @@ class VimoTeam {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-  static Future<void> takeDown(String productId) => _db
-      .collection('shop_products')
-      .doc(productId)
-      .update({'status': 'paused', 'updatedAt': FieldValue.serverTimestamp()});
+  /// Takes a listing down; the seller cannot show it again until the team
+  /// [allowAgain]s it.
+  static Future<void> takeDown(String productId) =>
+      _db.collection('shop_products').doc(productId).update({
+        'status': 'paused',
+        'pausedByTeam': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+  /// The seller may show the listing again (it stays paused until they do).
+  static Future<void> allowAgain(String productId) =>
+      _db.collection('shop_products').doc(productId).update({
+        'pausedByTeam': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 }
 
 String _vimoWhen(dynamic stamp) {
@@ -866,19 +880,19 @@ class _VimoTeamConsoleState extends State<VimoTeamConsole> {
   int _view = 0;
 
   Widget _reports() => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    key: ValueKey(_view),
+    // Each tab asks for its own state, so no open report is ever pushed out
+    // by newer ones; sorted here, so no composite index is needed.
     stream: VimoTeam.reports
-        .orderBy('createdAt', descending: true)
-        .limit(200)
+        .where('status', isEqualTo: vimoReportStatuses[_view].$1)
+        .limit(500)
         .snapshots(),
     builder: (context, snap) {
       if (snap.hasError) return Text(accountError(snap.error!));
       if (!snap.hasData) {
         return const SkeletonList(rows: 4, padding: EdgeInsets.zero);
       }
-      final want = vimoReportStatuses[_view].$1;
-      final docs = snap.data!.docs
-          .where((d) => txt(d.data(), 'status') == want)
-          .toList();
+      final docs = snap.data!.docs.toList()..sort(VimoTeam._newest);
       if (docs.isEmpty) {
         return Padding(
           padding: const EdgeInsets.only(top: 24),
@@ -1126,7 +1140,9 @@ class _ReportCaseScreenState extends State<ReportCaseScreen> {
                               uid,
                               blocked: blocked,
                               warnings: warnings + 1,
-                              reason: why,
+                              // A pause keeps its own reason; the warning
+                              // goes in the message.
+                              reason: blocked ? txt(s, 'reason') : why,
                             );
                             await VimoTeam.send(
                               uid,
@@ -1405,16 +1421,47 @@ class _ReportCaseScreenState extends State<ReportCaseScreen> {
                         style: TextStyle(color: Ink.redText),
                       ),
                     ),
-                  TextButton.icon(
-                    style: liquidActionStyle(),
-                    onPressed: _busy
-                        ? null
-                        : () => _run(
-                            () => VimoTeam.takeDown(txt(o, 'productId')),
-                            bi('Listing taken down', 'பட்டியல் நீக்கப்பட்டது'),
-                          ),
-                    icon: const Icon(CupertinoIcons.eye_slash, size: 18),
-                    label: Text(bi('Take listing down', 'பட்டியலை நீக்கு')),
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: ShopService.products
+                        .doc(txt(o, 'productId'))
+                        .snapshots(),
+                    builder: (context, product) {
+                      final p = product.data?.data();
+                      // Deleted by the seller: nothing to take down.
+                      if (p == null) return const SizedBox.shrink();
+                      final down = p['pausedByTeam'] == true;
+                      return TextButton.icon(
+                        style: liquidActionStyle(),
+                        onPressed: _busy
+                            ? null
+                            : () => _run(
+                                () => down
+                                    ? VimoTeam.allowAgain(txt(o, 'productId'))
+                                    : VimoTeam.takeDown(txt(o, 'productId')),
+                                down
+                                    ? bi(
+                                        'The seller may show it again',
+                                        'விற்பவர் மீண்டும் காட்டலாம்',
+                                      )
+                                    : bi(
+                                        'Listing taken down',
+                                        'பட்டியல் நீக்கப்பட்டது',
+                                      ),
+                              ),
+                        icon: Icon(
+                          down ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+                          size: 18,
+                        ),
+                        label: Text(
+                          down
+                              ? bi(
+                                  'Allow listing again',
+                                  'பட்டியலை மீண்டும் அனுமதி',
+                                )
+                              : bi('Take listing down', 'பட்டியலை நீக்கு'),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),

@@ -379,7 +379,7 @@ service cloud.firestore {
           && v.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$');
       }
       function validProduct(d) {
-        return d.keys().hasOnly(['sellerUid', 'sellerName', 'title', 'description', 'features', 'category', 'condition', 'brand', 'tags', 'searchTerms', 'price', 'mrp', 'unit', 'unitSize', 'stock', 'maxPerOrder', 'sku', 'weightGrams', 'origin', 'manufacturer', 'gstPercent', 'hsn', 'delivery', 'returns', 'cover', 'photoCount', 'status', 'createdAt', 'updatedAt'])
+        return d.keys().hasOnly(['sellerUid', 'sellerName', 'title', 'description', 'features', 'category', 'condition', 'brand', 'tags', 'searchTerms', 'price', 'mrp', 'unit', 'unitSize', 'stock', 'maxPerOrder', 'sku', 'weightGrams', 'origin', 'manufacturer', 'gstPercent', 'hsn', 'delivery', 'returns', 'cover', 'photoCount', 'status', 'pausedByTeam', 'createdAt', 'updatedAt'])
           && d.sellerUid == request.auth.uid
           && d.sellerName is string && d.sellerName.size() > 0 && d.sellerName.size() <= 80
           && d.title is string && d.title.size() >= 3 && d.title.size() <= 80
@@ -418,15 +418,21 @@ service cloud.firestore {
       }
       allow read: if signedIn();
       allow create: if signedIn() && !marketBlocked() && validProduct(request.resource.data)
+        && !('pausedByTeam' in request.resource.data)
         && request.resource.data.createdAt == request.time;
       allow update: if (signedIn() && resource.data.sellerUid == request.auth.uid
         && !marketBlocked()
         && validProduct(request.resource.data)
-        && request.resource.data.createdAt == resource.data.createdAt)
-        // The VIMO Team takes a listing down.
-        || (isVimoTeam() && request.resource.data.status == 'paused'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
-          && request.resource.data.updatedAt == request.time);
+        && request.resource.data.createdAt == resource.data.createdAt
+        // A listing the team took down stays down until the team says so.
+        && request.resource.data.get('pausedByTeam', false) == resource.data.get('pausedByTeam', false)
+        && !(request.resource.data.get('pausedByTeam', false) == true && request.resource.data.status == 'active'))
+        // The VIMO Team takes a listing down, or allows it again.
+        || (isVimoTeam() && request.resource.data.updatedAt == request.time
+          && ((request.resource.data.status == 'paused' && request.resource.data.pausedByTeam == true
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'pausedByTeam', 'updatedAt']))
+            || (request.resource.data.pausedByTeam == false
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pausedByTeam', 'updatedAt']))));
       allow delete: if signedIn() && resource.data.sellerUid == request.auth.uid;
 
       match /photos/{index} {

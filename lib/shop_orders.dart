@@ -881,8 +881,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 8),
             Text(
               bi(
-                'The seller confirms the order. You can cancel until they accept.',
-                'விற்பவர் ஆர்டரை உறுதிசெய்வார். அவர் ஏற்கும் வரை ரத்து செய்யலாம்.',
+                'The seller confirms the order. Before it is sent, you can ask them to cancel.',
+                'விற்பவர் ஆர்டரை உறுதிசெய்வார். அனுப்பும் முன் ரத்து செய்ய அவரிடம் கேட்கலாம்.',
               ),
               textAlign: TextAlign.center,
               style: TextStyle(color: Ink.muted, fontSize: 13),
@@ -1649,15 +1649,20 @@ class _OrderBodyState extends State<_OrderBody> {
                       Expanded(
                         child: Text(
                           [
-                            txt(o, 'cancelledBy') == 'seller'
-                                ? bi(
-                                    'Cancelled · the seller asked, the buyer agreed',
-                                    'ரத்தானது · விற்பவர் கேட்டார், வாங்குபவர் ஒப்புக்கொண்டார்',
-                                  )
-                                : bi(
-                                    'Cancelled · the buyer asked, the seller agreed',
-                                    'ரத்தானது · வாங்குபவர் கேட்டார், விற்பவர் ஒப்புக்கொண்டார்',
-                                  ),
+                            switch (txt(o, 'cancelledBy')) {
+                              'vimo' => bi(
+                                'Ended by VIMO Team',
+                                'VIMO Team முடித்தது',
+                              ),
+                              'seller' => bi(
+                                'Cancelled · the seller asked, the buyer agreed',
+                                'ரத்தானது · விற்பவர் கேட்டார், வாங்குபவர் ஒப்புக்கொண்டார்',
+                              ),
+                              _ => bi(
+                                'Cancelled · the buyer asked, the seller agreed',
+                                'ரத்தானது · வாங்குபவர் கேட்டார், விற்பவர் ஒப்புக்கொண்டார்',
+                              ),
+                            },
                             if (txt(o, 'cancelReason').isNotEmpty)
                               txt(o, 'cancelReason'),
                           ].join('\n'),

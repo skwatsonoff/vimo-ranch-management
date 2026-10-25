@@ -19336,6 +19336,38 @@ class _ExportTile extends StatelessWidget {
 //  PART 15 — SETTINGS, FAMILY, SYNC
 // =============================================================================
 
+/// Settings row for VIMO Team members. Membership is looked up once, not on
+/// every settings write while a sync runs.
+class _TeamConsoleLink extends StatefulWidget {
+  const _TeamConsoleLink();
+  @override
+  State<_TeamConsoleLink> createState() => _TeamConsoleLinkState();
+}
+
+class _TeamConsoleLinkState extends State<_TeamConsoleLink> {
+  late final Future<bool> _member = VimoTeam.isMember();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _member,
+    builder: (context, team) => team.data == true
+        ? Reveal(
+            index: 3,
+            child: _SettingLink(
+              title: 'VIMO Team console',
+              subtitle: bi(
+                'Reports and messages from people',
+                'மக்களின் அறிக்கைகளும் செய்திகளும்',
+              ),
+              icon: CupertinoIcons.shield_lefthalf_fill,
+              color: Ink.orange,
+              onTap: () => push(context, const VimoTeamConsole()),
+            ),
+          )
+        : const SizedBox.shrink(),
+  );
+}
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -19454,24 +19486,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
               if (firebaseReady && FirebaseAuth.instance.currentUser != null)
-                FutureBuilder<bool>(
-                  future: VimoTeam.isMember(),
-                  builder: (context, team) => team.data == true
-                      ? Reveal(
-                          index: 3,
-                          child: _SettingLink(
-                            title: 'VIMO Team console',
-                            subtitle: bi(
-                              'Reports and messages from people',
-                              'மக்களின் அறிக்கைகளும் செய்திகளும்',
-                            ),
-                            icon: CupertinoIcons.shield_lefthalf_fill,
-                            color: Ink.orange,
-                            onTap: () => push(context, const VimoTeamConsole()),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
+                const _TeamConsoleLink(),
               // Ranch details live on the Ranch tab. Without that tab, keep a
               // way in so members can still be managed.
               if (ranchId().isNotEmpty && !workspaceEnabled('Ranch'))
