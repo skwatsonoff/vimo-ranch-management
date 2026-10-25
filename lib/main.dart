@@ -10334,7 +10334,7 @@ class _MainShellState extends State<MainShell> {
           'Ranch' => CupertinoIcons.house,
           'Vendor' =>
             milkShopMode ? Icons.storefront_outlined : CupertinoIcons.drop,
-          'Nearby' => CupertinoIcons.location,
+          'Nearby' => CupertinoIcons.bag,
           'Reports' => CupertinoIcons.chart_bar,
           'Social' => CupertinoIcons.globe,
           'Chat' => CupertinoIcons.chat_bubble_2,
@@ -19845,10 +19845,12 @@ class AppSettingsScreen extends StatelessWidget {
                   label: 'Preferences',
                   onTap: () => push(context, const PreferencesScreen()),
                 ),
-                if (workspaceEnabled('Vendor') && MarketService.available)
+                if ((workspaceEnabled('Vendor') ||
+                        workspaceEnabled('Ranch')) &&
+                    MarketService.available)
                   _ActionRow(
-                    icon: CupertinoIcons.location_circle,
-                    label: bi('Nearby search', 'அருகில் தேடல்'),
+                    icon: CupertinoIcons.bag,
+                    label: bi('Market listing', 'சந்தைப் பட்டியல்'),
                     onTap: () => push(context, const MarketListingScreen()),
                   ),
               ],

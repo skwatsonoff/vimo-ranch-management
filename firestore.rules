@@ -368,9 +368,11 @@ service cloud.firestore {
         return cell * 25 <= grid && grid < cell * 25 + 25;
       }
       function validListing(d) {
-        return d.keys().hasOnly(['name', 'kind', 'gridLat', 'gridLng', 'cell', 'price', 'morning', 'evening', 'active', 'holiday', 'onRide', 'rideAt', 'updatedAt'])
+        return d.keys().hasOnly(['name', 'nameFold', 'kind', 'gridLat', 'gridLng', 'cell', 'price', 'morning', 'evening', 'active', 'holiday', 'onRide', 'rideAt', 'updatedAt'])
           && d.name is string && d.name.size() > 0 && d.name.size() <= 80
-          && d.kind in ['vendor', 'shop']
+          // Lower-case name for searching Market by name.
+          && (!('nameFold' in d) || d.nameFold == d.name.lower())
+          && d.kind in ['vendor', 'shop', 'ranch']
           && d.gridLat is int && d.gridLat >= -45000 && d.gridLat <= 45000
           && d.gridLng is int && d.gridLng >= -90000 && d.gridLng <= 90000
           && d.cell is string && d.cell.matches('^-?[0-9]{1,4}:-?[0-9]{1,4}$')

@@ -28,10 +28,15 @@ const fs = require('node:fs');
     await assertFails(setDoc(listRef(vendor), listing({ lat: 13.0827 }))); checks++; // exact place never stored
     await assertFails(setDoc(listRef(vendor), listing({ gridLat: 6541.5 }))); checks++; // grid only
     await assertFails(setDoc(listRef(vendor), listing({ cell: '1:1' }))); checks++; // cell must match grid
-    await assertFails(setDoc(listRef(vendor), listing({ kind: 'ranch' }))); checks++;
+    // Ranches can be listed too; any other kind cannot.
+    await assertFails(setDoc(listRef(vendor), listing({ kind: 'farm' }))); checks++;
+    // The search name must be the real name in lower case.
+    await assertFails(setDoc(listRef(vendor), listing({ nameFold: 'other name' }))); checks++;
     await assertFails(setDoc(listRef(vendor), listing({ morning: { start: '5:30', end: '08:00' } }))); checks++;
     await assertFails(setDoc(listRef(buyer, 'vendor'), listing())); checks++; // someone else's listing
     await assertFails(setDoc(listRef(anon), listing())); checks++;
+    await assertSucceeds(setDoc(listRef(vendor), listing({ kind: 'ranch', nameFold: 'selva milk' }))); checks++;
+    await assertSucceeds(getDocs(query(collection(buyer, 'vendor_listings'), where('nameFold', '>=', 'sel'), where('nameFold', '<', 'sel\uf8ff')))); checks++;
     await assertSucceeds(setDoc(listRef(vendor), listing())); checks++;
     // Negative grid (west/south) also matches its cell.
     await assertSucceeds(setDoc(listRef(stranger, 'stranger'), listing({ gridLat: -6541, gridLng: -40135, cell: '-262:-1606' }))); checks++;

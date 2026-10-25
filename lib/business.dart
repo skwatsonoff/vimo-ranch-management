@@ -184,7 +184,7 @@ String navLabel(String tab) => switch (tab) {
   'Ranch' => bi('Ranch', 'தொழுவம்'),
   'Vendor' =>
     milkShopMode ? bi('Milk shop', 'பால் கடை') : bi('Vendor', 'வியாபாரம்'),
-  'Nearby' => bi('Nearby', 'அருகில்'),
+  'Nearby' => bi('Market', 'சந்தை'),
   'Reports' => bi('Reports', 'ரிப்போர்ட்'),
   'Social' => bi('Social', 'சமூகம்'),
   'Chat' => bi('Chat', 'சாட்'),
@@ -196,7 +196,7 @@ IconData navIcon(String tab) => switch (tab) {
   'Ranch' => CupertinoIcons.house_fill,
   'Vendor' =>
     milkShopMode ? Icons.storefront_rounded : CupertinoIcons.drop_fill,
-  'Nearby' => CupertinoIcons.location_fill,
+  'Nearby' => CupertinoIcons.bag_fill,
   'Reports' => CupertinoIcons.chart_bar_alt_fill,
   'Social' => CupertinoIcons.globe,
   'Chat' => CupertinoIcons.chat_bubble_2_fill,
