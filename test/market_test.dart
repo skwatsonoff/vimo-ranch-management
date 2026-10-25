@@ -32,11 +32,27 @@ void main() {
     expect(marketCell(-6541, -40135), '-262:-1606');
   });
 
-  test('A search covers the buyer cell and the eight around it', () {
+  test('A search covers 10 km: the buyer cell and two rings around it', () {
     final cells = marketNearbyCells(const ll.LatLng(13.0827, 80.2707));
-    expect(cells.length, 9);
-    expect(cells.toSet().length, 9);
-    expect(cells, containsAll(['261:1605', '260:1604', '262:1606']));
+    expect(cells.length, 25);
+    expect(cells.toSet().length, 25);
+    expect(
+      cells,
+      containsAll(['261:1605', '260:1604', '262:1606', '259:1603', '263:1607']),
+    );
+    // One ring is the old 3 x 3 search.
+    expect(
+      marketNearbyCells(const ll.LatLng(13.0827, 80.2707), ring: 1).length,
+      9,
+    );
+  });
+
+  test('Search widens 2 km, then 5 km, then 10 km at most', () {
+    expect(marketSearchStep([1500, 7000]), 0);
+    expect(marketSearchStep([2600, 9000]), 1);
+    expect(marketSearchStep([8000]), 2);
+    expect(marketSearchStep([]), 2);
+    expect(marketSearchSteps.last, 10000);
   });
 
   test('Distances are rounded because places are approximate', () async {

@@ -654,6 +654,59 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _busy = false;
   bool _picking = false;
   bool _obscure = true;
+  bool _googleBusy = false;
+
+  /// Signed in with Google already: the account exists, so the form only
+  /// collects the VIMO details and hides email and password.
+  bool get _withGoogle =>
+      firebaseReady && FirebaseAuth.instance.currentUser != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillFromAccount();
+  }
+
+  void _prefillFromAccount() {
+    if (!_withGoogle) return;
+    final user = FirebaseAuth.instance.currentUser!;
+    if (_fullName.text.isEmpty) _fullName.text = user.displayName ?? '';
+    if (_email.text.isEmpty) _email.text = user.email ?? '';
+  }
+
+  Future<void> _google() async {
+    if (_busy || _googleBusy) return;
+    setState(() => _googleBusy = true);
+    try {
+      final credential = await GoogleAccount.signIn();
+      if (!mounted || credential == null) return;
+      if (credential.additionalUserInfo?.isNewUser ?? false) {
+        // New account: stay here to add the VIMO details.
+        setState(_prefillFromAccount);
+        snack(
+          context,
+          bi(
+            'Google account added. Finish your VIMO details below.',
+            'Google கணக்கு சேர்ந்தது. கீழே VIMO விவரங்களை நிரப்பவும்.',
+          ),
+          tone: SnackTone.success,
+        );
+      } else {
+        // An existing VIMO account: straight in.
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } catch (error) {
+      if (mounted) {
+        snack(
+          context,
+          GoogleAccount.friendlyError(error),
+          tone: SnackTone.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _googleBusy = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -725,17 +778,19 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       return;
     }
-    if (email.isEmpty || !email.contains('@')) {
-      snack(context, 'Please enter a valid email');
-      return;
-    }
-    if (password.length < 6) {
-      snack(context, 'Password needs at least 6 characters');
-      return;
-    }
-    if (password != _confirm.text) {
-      snack(context, 'Passwords do not match');
-      return;
+    if (!_withGoogle) {
+      if (email.isEmpty || !email.contains('@')) {
+        snack(context, 'Please enter a valid email');
+        return;
+      }
+      if (password.length < 6) {
+        snack(context, 'Password needs at least 6 characters');
+        return;
+      }
+      if (password != _confirm.text) {
+        snack(context, 'Passwords do not match');
+        return;
+      }
     }
     setState(() => _busy = true);
     try {
@@ -916,50 +971,71 @@ class _SignupScreenState extends State<SignupScreen> {
             icon: CupertinoIcons.location,
           ),
         ),
-        const SizedBox(height: Space.s12),
-        TextField(
-          controller: _email,
-          keyboardType: TextInputType.emailAddress,
-          autofillHints: const [AutofillHints.newUsername],
-          textInputAction: TextInputAction.next,
-          decoration: fieldStyle('Email', icon: CupertinoIcons.mail),
-        ),
-        const SizedBox(height: Space.s12),
-        TextField(
-          controller: _password,
-          obscureText: _obscure,
-          autofillHints: const [AutofillHints.newPassword],
-          textInputAction: TextInputAction.next,
-          decoration: fieldStyle(
-            'Create Password',
-            icon: CupertinoIcons.lock,
-            suffix: IconButton(
-              onPressed: () => setState(() => _obscure = !_obscure),
-              icon: Icon(
-                _obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+        if (!_withGoogle) ...[
+          const SizedBox(height: Space.s12),
+          TextField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.newUsername],
+            textInputAction: TextInputAction.next,
+            decoration: fieldStyle('Email', icon: CupertinoIcons.mail),
+          ),
+          const SizedBox(height: Space.s12),
+          TextField(
+            controller: _password,
+            obscureText: _obscure,
+            autofillHints: const [AutofillHints.newPassword],
+            textInputAction: TextInputAction.next,
+            decoration: fieldStyle(
+              'Create Password',
+              icon: CupertinoIcons.lock,
+              suffix: IconButton(
+                onPressed: () => setState(() => _obscure = !_obscure),
+                icon: Icon(
+                  _obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: Space.s12),
-        TextField(
-          controller: _confirm,
-          obscureText: _obscure,
-          autofillHints: const [AutofillHints.newPassword],
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _createAccount(),
-          decoration: fieldStyle(
-            'Confirm Password',
-            icon: CupertinoIcons.checkmark_shield,
+          const SizedBox(height: Space.s12),
+          TextField(
+            controller: _confirm,
+            obscureText: _obscure,
+            autofillHints: const [AutofillHints.newPassword],
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _createAccount(),
+            decoration: fieldStyle(
+              'Confirm Password',
+              icon: CupertinoIcons.checkmark_shield,
+            ),
           ),
-        ),
+        ] else ...[
+          const SizedBox(height: Space.s12),
+          AppText(
+            bi(
+              'Signed in with Google as ${_email.text}',
+              'Google கணக்கு: ${_email.text}',
+            ),
+            style: TextStyle(color: Ink.muted, fontSize: 13),
+          ),
+        ],
         const SizedBox(height: Space.s20),
         LiquidButton(
-          label: 'Create Account',
+          label: _withGoogle
+              ? bi('Finish Sign Up', 'பதிவை முடி')
+              : 'Create Account',
           icon: CupertinoIcons.person_badge_plus_fill,
           busy: _busy,
           onPressed: _createAccount,
         ),
+        if (!_withGoogle) ...[
+          const OrDivider(),
+          GoogleSignInButton(
+            label: bi('Sign up with Google', 'Google மூலம் பதிவு செய்'),
+            busy: _googleBusy,
+            onPressed: _google,
+          ),
+        ],
       ],
     );
   }

@@ -180,6 +180,7 @@ List<Map<String, dynamic>> vendorRoutePeople(
   final list = people
       .where(
         (p) =>
+            !vendorPersonRemoved(p) &&
             p['kind'] == (suppliers ? 'supplier' : 'customer') &&
             (suppliers || vendorScheduled(p, date, session)),
       )
@@ -972,7 +973,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     final route = VendorRoutes.byId(id);
     if (route == null) return;
     final people = {
-      for (final p in vendorRows('vendor_people'))
+      for (final p in activeVendorPeople())
         if (p['kind'] == 'customer') txt(p, 'id'): p,
     };
     final ordered = [
@@ -2789,7 +2790,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
 
   void _load() {
     _people = _orders.putIfAbsent(_day, () {
-      final all = vendorRows('vendor_people')
+      final all = activeVendorPeople()
           .where(
             (p) =>
                 p['kind'] == 'customer' &&

@@ -60,19 +60,158 @@ Widget profileAvatar(
   halo: halo,
 );
 
-/// Tells a member when someone new follows them. There is no push server, so
-/// this watches the member's own followers list while the app is open and,
-/// on the next launch, reports follows that arrived while it was closed.
+/// Tells a member when someone follows them, unfollows them or sends them a
+/// message. There is no push server, so this watches the member's own
+/// followers and chats while the app is open and, on the next launch,
+/// reports what arrived while it was closed.
 class SocialActivityService {
   const SocialActivityService._();
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _followers;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _allFollowers;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chats;
+  static final Map<
+    String,
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
+  >
+  _chatLatest = {};
   static String _uid = '';
+
+  /// The direct chat on screen right now: its messages need no alert.
+  static String openChatId = '';
+
+  static Future<String> _nameOf(String uid) async {
+    var name = bi('Someone', 'ஒருவர்');
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('profiles')
+          .doc(uid)
+          .get()
+          .timeout(CloudSyncService.networkTimeout);
+      final data = profile.data() ?? const <String, dynamic>{};
+      final username = txt(data, 'username');
+      name = txt(data, 'displayName', username.isEmpty ? name : '@$username');
+    } catch (_) {}
+    return name;
+  }
+
+  /// Someone stopped following: compares the whole followers list with the
+  /// one last seen on this device. The first run only records it.
+  static Future<void> _checkUnfollows(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    if (snapshot.metadata.isFromCache) return;
+    final known = asMap(settingValue('followerIds', {}));
+    final current = [for (final d in snapshot.docs) d.id];
+    final before = known[uid];
+    await setSetting('followerIds', {...known, uid: current});
+    if (before is! List) return;
+    final gone = before.map((e) => '$e').toSet().difference(current.toSet());
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    for (final follower in gone) {
+      final name = await _nameOf(follower);
+      await addRanchNotification(
+        title: '$name unfollowed you',
+        titleTa: '$name உங்களைப் பின்தொடர்வதை நிறுத்தினார்',
+        message: 'Tap to see their profile',
+        messageTa: 'அவர் சுயவிவரத்தைப் பார்க்க',
+        type: 'unfollow',
+        sourceId: 'unfollow-$uid-$follower-$stamp',
+        localOnly: true,
+        extra: {'profileUid': follower},
+      );
+      _browserRuntime.showNotification(
+        title: bi(
+          '$name unfollowed you',
+          '$name உங்களைப் பின்தொடர்வதை நிறுத்தினார்',
+        ),
+        body: bi('Open VIMO to see their profile', 'VIMO-வில் பார்க்கவும்'),
+        tag: 'unfollow-$follower',
+      );
+    }
+  }
+
+  /// One small listener per conversation (its newest message).
+  static void _watchChats(String uid, QuerySnapshot<Map<String, dynamic>> s) {
+    for (final chat in s.docs) {
+      if (_chatLatest.containsKey(chat.id)) continue;
+      _chatLatest[chat.id] = chat.reference
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .snapshots()
+          .listen(
+            (m) => unawaited(_messageArrived(uid, chat.id, m)),
+            onError: (_) {},
+          );
+    }
+  }
+
+  static Future<void> _messageArrived(
+    String uid,
+    String chatId,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final message = snapshot.docs.firstOrNull?.data();
+    if (message == null) return;
+    final at = message['createdAt'];
+    if (at is! Timestamp) return;
+    final millis = at.millisecondsSinceEpoch;
+    final seenByChat = asMap(settingValue('messageNotices', {}));
+    final seen = seenByChat[chatId];
+    if (seen is num && millis <= seen) return;
+    await setSetting('messageNotices', {...seenByChat, chatId: millis});
+    // The first sight of a chat only records where "new" starts.
+    if (seen is! num) return;
+    final sender = txt(message, 'senderUid');
+    if (sender.isEmpty || sender == uid || openChatId == chatId) return;
+    final name = await _nameOf(sender);
+    final text = txt(message, 'text').trim();
+    final preview = text.isEmpty
+        ? bi('Sent a voice or photo message', 'குரல் அல்லது படச் செய்தி')
+        : (text.length > 80 ? '${text.substring(0, 80)}…' : text);
+    await addRanchNotification(
+      title: '$name sent you a message',
+      titleTa: '$name உங்களுக்குச் செய்தி அனுப்பினார்',
+      message: preview,
+      type: 'message',
+      sourceId: 'message-$chatId-$millis',
+      localOnly: true,
+      extra: {'chatPeer': sender},
+    );
+    _browserRuntime.showNotification(
+      title: bi('$name sent you a message', '$name செய்தி அனுப்பினார்'),
+      body: preview,
+      tag: 'message-$chatId',
+    );
+  }
 
   static void start() {
     final uid = signedInUid;
     if (uid.isEmpty || (uid == _uid && _followers != null)) return;
     unawaited(_followers?.cancel());
+    unawaited(_allFollowers?.cancel());
+    unawaited(_chats?.cancel());
+    for (final watch in _chatLatest.values) {
+      unawaited(watch.cancel());
+    }
+    _chatLatest.clear();
     _uid = uid;
+    final profile = FirebaseFirestore.instance.collection('profiles').doc(uid);
+    _allFollowers = profile
+        .collection('followers')
+        .snapshots(includeMetadataChanges: true)
+        .listen(
+          (snapshot) => unawaited(_checkUnfollows(uid, snapshot)),
+          onError: (_) {},
+        );
+    _chats = FirebaseFirestore.instance
+        .collection('direct_chats')
+        .where('participants', arrayContains: uid)
+        .snapshots()
+        .listen((snapshot) => _watchChats(uid, snapshot), onError: (_) {});
     _followers = FirebaseFirestore.instance
         .collection('profiles')
         .doc(uid)
@@ -146,7 +285,15 @@ class SocialActivityService {
 
   static Future<void> stop() async {
     await _followers?.cancel();
+    await _allFollowers?.cancel();
+    await _chats?.cancel();
+    for (final watch in _chatLatest.values) {
+      await watch.cancel();
+    }
+    _chatLatest.clear();
     _followers = null;
+    _allFollowers = null;
+    _chats = null;
     _uid = '';
   }
 }
@@ -184,7 +331,8 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
               return ShareCard.profile(uid, snap.data() ?? const {});
             }),
           ),
-        if (own)
+        // As the Profile tab, the app bar above already has Settings.
+        if (own && !(ModalRoute.of(context)?.isFirst ?? false))
           IconButton(
             tooltip: ui('Settings'),
             icon: const Icon(CupertinoIcons.gear),
@@ -209,6 +357,20 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
               builder: (context, snap) {
                 final data = snap.data?.data() ?? <String, dynamic>{};
                 final name = txt(data, 'username', own ? accountUsername : '');
+                final showRanch = own
+                    ? workspaceEnabled('Ranch')
+                    : data['shareRanch'] == true;
+                final showVendor = own
+                    ? workspaceEnabled('Vendor')
+                    : data['shareShop'] == true;
+                final sections = [
+                  (0, bi('Post', 'பதிவுகள்'), CupertinoIcons.doc_text),
+                  if (showRanch)
+                    (1, bi('Ranch', 'பண்ணை'), CupertinoIcons.house),
+                  if (showVendor) (2, bi('Vendor', 'கடை'), CupertinoIcons.bag),
+                ];
+                // A hidden section falls back to the posts.
+                final tab = sections.any((s) => s.$1 == _tab) ? _tab : 0;
                 return ListView(
                   padding: EdgeInsets.fromLTRB(
                     20,
@@ -551,60 +713,58 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                         child: Text(accountError(snap.error!)),
                       ),
                     const SizedBox(height: 20),
-                    Glass(
-                      radius: 28,
-                      padding: const EdgeInsets.all(5),
-                      child: Row(
-                        children: [
-                          for (final item in [
-                            (
-                              0,
-                              bi('Post', 'பதிவுகள்'),
-                              CupertinoIcons.doc_text,
-                            ),
-                            (1, bi('Ranch', 'பண்ணை'), CupertinoIcons.house),
-                            (2, bi('Vendor', 'கடை'), CupertinoIcons.bag),
-                          ])
-                            Expanded(
-                              child: TextButton(
-                                onPressed: () => setState(() => _tab = item.$1),
-                                style: TextButton.styleFrom(
-                                  shape: const StadiumBorder(),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
+                    // Ranch and Vendor appear only for people who use them:
+                    // your own switched-on workspaces, or what another
+                    // person shares. Someone who uses VIMO only for the
+                    // market sees just their posts.
+                    if (sections.length > 1)
+                      Glass(
+                        radius: 28,
+                        padding: const EdgeInsets.all(5),
+                        child: Row(
+                          children: [
+                            for (final item in sections)
+                              Expanded(
+                                child: TextButton(
+                                  onPressed: () =>
+                                      setState(() => _tab = item.$1),
+                                  style: TextButton.styleFrom(
+                                    shape: const StadiumBorder(),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    backgroundColor: tab == item.$1
+                                        ? Ink.tint
+                                        : Colors.transparent,
+                                    foregroundColor: tab == item.$1
+                                        ? Colors.white
+                                        : Ink.muted,
                                   ),
-                                  backgroundColor: _tab == item.$1
-                                      ? Ink.tint
-                                      : Colors.transparent,
-                                  foregroundColor: _tab == item.$1
-                                      ? Colors.white
-                                      : Ink.muted,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (item.$1 == 1)
-                                      CowMark(
-                                        size: 25,
-                                        color: _tab == 1
-                                            ? Colors.white
-                                            : Ink.violetDeep,
-                                      )
-                                    else
-                                      Icon(item.$3, size: 21),
-                                    const SizedBox(width: 6),
-                                    Flexible(child: Text(item.$2)),
-                                  ],
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (item.$1 == 1)
+                                        CowMark(
+                                          size: 25,
+                                          color: tab == 1
+                                              ? Colors.white
+                                              : Ink.violetDeep,
+                                        )
+                                      else
+                                        Icon(item.$3, size: 21),
+                                      const SizedBox(width: 6),
+                                      Flexible(child: Text(item.$2)),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    if (_tab == 0) ProfilePostList(uid: uid, own: own),
-                    if (_tab == 1) PublicRanchView(uid: uid, profile: data),
-                    if (_tab == 2)
+                    if (sections.length > 1) const SizedBox(height: 20),
+                    if (tab == 0) ProfilePostList(uid: uid, own: own),
+                    if (tab == 1) PublicRanchView(uid: uid, profile: data),
+                    if (tab == 2)
                       Glass(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1108,24 +1268,28 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
           ),
         ),
       ),
-      SoundSwitchListTile(
-        value: _shareRanch,
-        title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
-        subtitle: Text(
-          bi(
-            'Only cow photos, names and breeds are shared.',
-            'மாட்டுப் படங்கள், பெயர்கள், இனங்கள் மட்டும் பகிரப்படும்.',
+      // Sharing a ranch or a shop is offered only to people who use them;
+      // a value already on stays editable so it can be switched off.
+      if (workspaceEnabled('Ranch') || _shareRanch)
+        SoundSwitchListTile(
+          value: _shareRanch,
+          title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
+          subtitle: Text(
+            bi(
+              'Only cow photos, names and breeds are shared.',
+              'மாட்டுப் படங்கள், பெயர்கள், இனங்கள் மட்டும் பகிரப்படும்.',
+            ),
           ),
+          onChanged: CloudSyncService.ready
+              ? (v) => setState(() => _shareRanch = v)
+              : null,
         ),
-        onChanged: CloudSyncService.ready
-            ? (v) => setState(() => _shareRanch = v)
-            : null,
-      ),
-      SoundSwitchListTile(
-        value: _shareShop,
-        title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
-        onChanged: (v) => setState(() => _shareShop = v),
-      ),
+      if (workspaceEnabled('Vendor') || _shareShop)
+        SoundSwitchListTile(
+          value: _shareShop,
+          title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
+          onChanged: (v) => setState(() => _shareShop = v),
+        ),
       if (_shareShop) ...[
         TextField(
           controller: _shop,
