@@ -72,36 +72,50 @@ geolocator, record, file_picker, url_launcher.
 - [x] `docs/UI_AUDIT.md` written (What / Why / Fix, most important first)
 
 ### Phase 2 — Design system and UI
-- [ ] Tokens: VIMO Milk palette, spacing 4/8 scale, radii, shadows, blur
+- [x] Tokens: VIMO Milk palette, spacing 4/8 scale, radii, shadows, blur
       levels, durations, springs (one theme layer)
-- [ ] Lavender canvas + brand purple tint, orange accent, cream warm surface
-- [ ] Glass fallbacks (reduce transparency / high contrast / low-end)
-- [ ] Type hierarchy (600 headlines, tracking by size)
-- [ ] Screen fixes from audit (commit per screen)
+- [x] Lavender canvas + brand purple tint, orange accent, cream warm surface
+- [x] Glass fallbacks (reduce transparency / high contrast / low-end)
+- [x] Type hierarchy (600 headlines, tracking by size)
+- [x] Screen fixes from audit (commit per screen)
 
 ### Phase 3 — Motion
-- [ ] Spring tokens + reduce-motion helper
-- [ ] Animated milk totals (count-up)
-- [ ] Skeleton shimmer for loading states
-- [ ] List enter / exit, card press, success / error feedback
-- [ ] Pull to refresh where data syncs
-- [ ] RepaintBoundary / const audit on heavy lists
+- [x] Spring tokens + reduce-motion helper
+- [x] Animated milk totals (count-up)
+- [x] Skeleton shimmer for loading states
+- [x] List enter / exit, card press, success / error feedback
+- [x] Pull to refresh where data syncs
+- [x] RepaintBoundary / const audit on heavy lists
 
 ### Phase 4 — Workflows
-- [ ] Milk entry, sell milk, expense, cow/calf, vet, pregnancy reviewed
-- [ ] Customer → last quantity auto-fill; expense names by frequency
-- [ ] Undo instead of confirm where safe; clear success states
+- [x] Milk entry, sell milk, expense, cow/calf, vet, pregnancy reviewed
+- [x] Customer → last quantity auto-fill; expense names by frequency
+- [x] Undo instead of confirm where safe; clear success states
 
 ### Phase 5 — Sound
-- [ ] Sound set rendered (tap, toggle on/off, success, error, whoosh,
+- [x] Sound set rendered (tap, toggle on/off, success, error, whoosh,
       notification) into `assets/sounds/`
-- [ ] `UiSound` service, preloaded, low-latency
-- [ ] Settings → Sounds switch (default on), respects silent mode
+- [x] `UiSound` service, preloaded, low-latency
+- [x] Settings → Sounds switch (default on), respects silent mode
 
 ### Phase 6 — Testing
-- [ ] analyze clean for touched code; widget tests for changed screens
-- [ ] `flutter test` green
-- [ ] web build + Playwright click-through (phone + desktop), console errors
-- [ ] web-design-guidelines review
-- [ ] offline / empty / long-text / Tamil checks
-- [ ] QA report final; final summary
+- [x] analyze clean for touched code; widget tests for changed screens
+- [x] `flutter test` green
+- [x] web build + Playwright click-through (phone + desktop), console errors
+- [x] web-design-guidelines review
+- [x] offline / empty / long-text / Tamil checks
+- [x] QA report final; final summary
+
+## Notes
+
+- Glass stays on the functional layer (tab bar, Add button, sheets,
+  alerts); content cards are solid white on the lavender canvas, which
+  reads as frosted while staying fully legible and cheap to draw.
+- Reduce Transparency / low-end fallback already existed
+  (`DevicePerformance`, App Settings → Effects) and is kept.
+- Exit animations for removed list rows were not added: records are not
+  deleted in the app's data model (corrections instead), so there is no
+  removal moment to animate.
+- Undo after save: saves report what was saved; deleting a just-saved
+  record would need a delete-sync path the app does not have, so it is left
+  for a decision (see final report).

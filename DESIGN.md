@@ -9,7 +9,14 @@ Apple's proprietary rendering engine; system fonts are not embedded.
 
 ## Foundations
 
-- **Color.** `Ink` holds iOS semantic colours in light and dark variants: label,
+- **Tokens.** `lib/design_tokens.dart`: `Space` (4-point grid), `Depth`
+  (shadows), `Blur` (glass strengths), `Motion` (springs as damping ratio +
+  response, durations, curves). Radii, type ladder and proportions stay on
+  the phi ladder in `Gold`.
+- **Color.** VIMO Milk palette: royal purple `#5A2CA0` is the tint, deep
+  purple `#3B1D5D` display text, orange `#FF7A00` only for today/milk
+  highlights, cream `#FFF3E0` warm surfaces, lavender canvas `#F5F2FA`
+  (dark `#0D0A12`). `Ink` holds iOS semantic colours in light and dark variants: label,
   secondary and tertiary label, grouped backgrounds (canvas, cell, elevated sheet cell),
   tertiary fill, separator and the system tints (red, orange, green, blue). The brand
   violet is the app tint: `violetDeep` for tinted text and symbols, `tint` for fills
@@ -47,10 +54,17 @@ Apple's proprietary rendering engine; system fonts are not embedded.
   speed, lifts while held, and can be scrubbed by sliding a finger along the bar
   (with selection haptics). Glass flexes slightly under a finger. Sheets rise on
   a quick settling ease-out and can be dragged away at any point. The Add button
-  scales and fades between tabs without Material's spin. Lists do not animate
-  in. Reduce Motion removes the spring, stretch, lift and flex (the touch light
+  scales and fades between tabs without Material's spin. Cards fade up from
+  97% as they appear, screen blocks settle in with a 40 ms stagger, tabs
+  fade and rise into place and the chosen tab symbol springs. Figures count
+  to new values. Presses run on springs (snappy in, critically damped out). Reduce Motion removes the spring, stretch, lift and flex (the touch light
   stays), replaces slides with fades and shortens sheets. Press states on
   solid controls dim and dip slightly.
+- **Sound.** `UiSound` (`lib/ui_sound.dart`) plays a quiet set from
+  `assets/sounds/`: tap (presses, selections), toggle on/off, success,
+  error, whoosh (page push/pop), notification. Preloaded, ambient session
+  on iOS, sonification on Android, held during voice notes, switch in App
+  Settings → Sounds.
 - **Accessibility.** 44 pt minimum targets, semantic labels on custom controls,
   selection haptics on tab and segment changes.
 
