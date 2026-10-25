@@ -12436,7 +12436,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(r, 'date'),
       'Income / Sale',
       '${txt(r, 'category', 'Sale')} • ${money(numv(r, 'amount'))}',
-      CupertinoIcons.money_dollar_circle_fill,
+      Icons.currency_rupee_rounded,
       Ink.green,
       time: txt(r, 'time'),
     );
@@ -14036,7 +14036,21 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
       }
 
       AutoSyncService.scheduleSync(reason: 'animal saved');
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        Navigator.of(context).pop();
+        snack(
+          context,
+          _edit
+              ? bi(
+                  'Changes saved · $identity',
+                  'மாற்றங்கள் சேமிக்கப்பட்டன · $identity',
+                )
+              : bi('$identity added', '$identity சேர்க்கப்பட்டது'),
+          tone: SnackTone.success,
+          messenger: messenger,
+        );
+      }
     } catch (error) {
       if (mounted) {
         snack(
@@ -14504,7 +14518,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: fieldStyle(
               'Purchase Amount',
-              icon: CupertinoIcons.money_dollar_circle,
+              icon: Icons.currency_rupee_rounded,
             ),
           ),
         ],
@@ -15001,10 +15015,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         TextField(
           controller: _amount,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: fieldStyle(
-            'Amount',
-            icon: CupertinoIcons.money_dollar_circle,
-          ),
+          decoration: fieldStyle('Amount', icon: Icons.currency_rupee_rounded),
         ),
       ],
     );
@@ -15091,8 +15102,21 @@ class DoctorScreen extends StatefulWidget {
 
 class _DoctorScreenState extends State<DoctorScreen> {
   int _visit = 0;
-  String _semen = semenTypes.first;
+  // The breed injection used most often on this ranch comes first.
+  String _semen = _usualSemen();
   bool _saving = false;
+
+  static String _usualSemen() {
+    final used = frequentNameSuggestions(
+      doctorRows(),
+      'injection',
+      where: (r) => txt(r, 'type') == 'Pregnancy Injection',
+    );
+    for (final name in used) {
+      if (semenTypes.contains(name)) return name;
+    }
+    return semenTypes.first;
+  }
 
   final _problem = TextEditingController();
   final _medicine = TextEditingController();
@@ -15174,7 +15198,25 @@ class _DoctorScreenState extends State<DoctorScreen> {
         );
       }
       AutoSyncService.scheduleSync(reason: 'doctor visit saved');
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        final name = txt(animal, 'name');
+        Navigator.of(context).pop();
+        snack(
+          context,
+          _visit == 1
+              ? bi(
+                  'Pregnancy recorded · $name',
+                  'சினைப் பதிவு சேமிக்கப்பட்டது · $name',
+                )
+              : bi(
+                  'Doctor visit saved · $name',
+                  'மருத்துவர் பதிவு சேமிக்கப்பட்டது · $name',
+                ),
+          tone: SnackTone.success,
+          messenger: messenger,
+        );
+      }
     } catch (error) {
       if (mounted) {
         snack(
@@ -15263,21 +15305,28 @@ class _DoctorScreenState extends State<DoctorScreen> {
         ],
         const SizedBox(height: Space.s12),
         if (_visit == 0) ...[
-          TextField(
+          // Problems and medicines already used on this ranch are offered
+          // as people type, most frequent first.
+          SuggestionField(
             controller: _problem,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: fieldStyle(
-              tamilUi ? 'உடல்நிலை பிரச்சனை' : 'Problem',
-              icon: Icons.healing_rounded,
+            suggestions: frequentNameSuggestions(
+              doctorRows(),
+              'problem',
+              where: (r) => txt(r, 'type') != 'Pregnancy Injection',
             ),
+            label: tamilUi ? 'உடல்நிலை பிரச்சனை' : 'Problem',
+            icon: Icons.healing_rounded,
           ),
           const SizedBox(height: Space.s12),
-          TextField(
+          SuggestionField(
             controller: _medicine,
-            decoration: fieldStyle(
-              tamilUi ? 'ஊசி / மருந்து' : 'Injection / Medicine',
-              icon: Icons.vaccines_rounded,
+            suggestions: frequentNameSuggestions(
+              doctorRows(),
+              'injection',
+              where: (r) => txt(r, 'type') != 'Pregnancy Injection',
             ),
+            label: tamilUi ? 'ஊசி / மருந்து' : 'Injection / Medicine',
+            icon: Icons.vaccines_rounded,
           ),
         ] else
           PickerField<String>(
@@ -15300,7 +15349,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             tamilUi ? 'செலவு' : 'Cost',
-            icon: CupertinoIcons.money_dollar_circle,
+            icon: Icons.currency_rupee_rounded,
           ),
         ),
         const SizedBox(height: Space.s12),
@@ -16331,7 +16380,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             'Sale Price / Income',
-            icon: CupertinoIcons.money_dollar_circle,
+            icon: Icons.currency_rupee_rounded,
           ),
         ),
         if (calfCount > 0) ...[
@@ -16570,7 +16619,7 @@ class _DeathScreenState extends State<DeathScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             'Cost / Expense',
-            icon: CupertinoIcons.money_dollar_circle,
+            icon: Icons.currency_rupee_rounded,
           ),
         ),
         const SizedBox(height: Space.s12),
@@ -17107,7 +17156,7 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                     decoration: fieldStyle(
                       tamilUi ? 'மொத்த தொகை' : 'Total Purchase Amount',
-                      icon: CupertinoIcons.money_dollar_circle,
+                      icon: Icons.currency_rupee_rounded,
                     ),
                   ),
                   const SizedBox(height: Space.s12),
@@ -17337,7 +17386,7 @@ class _SellScreenState extends State<SellScreen> {
                       ),
                       decoration: fieldStyle(
                         'Sale Amount',
-                        icon: CupertinoIcons.money_dollar_circle,
+                        icon: Icons.currency_rupee_rounded,
                       ),
                     ),
                   ),
@@ -17629,7 +17678,7 @@ class RecordListScreen extends StatelessWidget {
                         title: txt(list[i], 'cat'),
                         subtitle:
                             '${txt(list[i], 'date')} \u2022 ${txt(list[i], 'time', '--')}',
-                        icon: CupertinoIcons.money_dollar_circle_fill,
+                        icon: Icons.currency_rupee_rounded,
                         color: Ink.red,
                         details: [
                           '${bi('Details', 'விவரம்')}: ${cleanFoodLabel(txt(list[i], 'foodLabel', txt(list[i], 'type', txt(list[i], 'reason', '-'))))}',
@@ -18725,7 +18774,7 @@ class ExportReportScreen extends StatelessWidget {
         _ExportTile(
           title: 'Expenses',
           subtitle: 'Stock, others, doctor, purchase and loss',
-          icon: CupertinoIcons.money_dollar_circle_fill,
+          icon: Icons.currency_rupee_rounded,
           color: Ink.red,
           onTap: () async {
             if (await downloadCsvFile('expenses_$stamp.csv', _expenseCsv()) &&

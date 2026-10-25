@@ -234,7 +234,7 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
         (
           bi('Service income', 'கட்டண வருமானம்'),
           money(income),
-          CupertinoIcons.money_dollar_circle_fill,
+          Icons.currency_rupee_rounded,
           Ink.amber,
         ),
       ];
@@ -301,7 +301,7 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
         (
           bi('Earned this month', 'இந்த மாத வருமானம்'),
           money(earned),
-          CupertinoIcons.money_dollar_circle_fill,
+          Icons.currency_rupee_rounded,
           Ink.green,
         ),
         (
@@ -1032,7 +1032,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
   Widget _money(TextEditingController c, String label) => TextField(
     controller: c,
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-    decoration: fieldStyle(label, icon: CupertinoIcons.money_dollar_circle),
+    decoration: fieldStyle(label, icon: Icons.currency_rupee_rounded),
   );
 
   Widget _choices(

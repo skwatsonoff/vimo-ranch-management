@@ -1945,7 +1945,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                                 ),
                                 child: Icon(
                                   r['kind'] == 'payment'
-                                      ? CupertinoIcons.money_dollar
+                                      ? Icons.currency_rupee_rounded
                                       : CupertinoIcons.drop_fill,
                                   size: 20,
                                   color: r['kind'] == 'payment'

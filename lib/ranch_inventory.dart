@@ -800,7 +800,7 @@ class _VendorReportRow extends StatelessWidget {
         ? Ink.blue
         : Ink.violetDeep;
     final icon = payment
-        ? CupertinoIcons.money_dollar
+        ? Icons.currency_rupee_rounded
         : intake
         ? CupertinoIcons.arrow_down
         : clearance

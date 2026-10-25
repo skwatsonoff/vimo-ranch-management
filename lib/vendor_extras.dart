@@ -1370,7 +1370,7 @@ class _ReportDay extends StatelessWidget {
                   ),
                 if (paid > 0)
                   _SessionPill(
-                    icon: CupertinoIcons.money_dollar,
+                    icon: Icons.currency_rupee_rounded,
                     label: money(paid),
                     color: Ink.greenText,
                   ),
