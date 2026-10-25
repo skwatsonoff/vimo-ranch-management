@@ -332,6 +332,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
     }
     // Market is local: selling needs location allowed.
     if (!await MarketLocation.require(context) || !mounted) return;
+    if (!await VimoTeam.marketAllowed(context) || !mounted) return;
     setState(() => _saving = true);
     final features = [
       for (final f in _features)

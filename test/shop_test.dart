@@ -190,6 +190,39 @@ void main() {
     expect(find.widgetWithText(TextField, 'Add a tag'), findsNothing);
   });
 
+  testWidgets('A report needs a reason and a few words first', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      app(
+        const ReportProblemScreen(
+          againstUid: 'seller',
+          againstName: 'Selvi',
+          topic: 'order',
+          orderId: 'o1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Item not received'), findsOneWidget);
+    expect(find.textContaining('Only the VIMO Team sees this'), findsOneWidget);
+    await tester.tap(find.text('Send to VIMO Team'));
+    await tester.pump();
+    expect(find.text('Choose what happened'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.tap(find.text('Item not received'));
+    await tester.enterText(find.byType(TextField), 'late');
+    await tester.tap(find.text('Send to VIMO Team'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.textContaining('at least 10 letters'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('One-per-order items have no quantity to choose', (
     tester,
   ) async {

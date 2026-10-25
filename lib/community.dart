@@ -1535,6 +1535,35 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
       centerTitle: true,
       toolbarHeight: 96,
       backgroundColor: Ink.surface.withValues(alpha: .96),
+      actions: [
+        IconButton(
+          tooltip: bi('Report to VIMO Team', 'VIMO Team-க்குத் தெரிவி'),
+          icon: Icon(CupertinoIcons.flag, color: Ink.muted),
+          onPressed: () async {
+            var name = '';
+            try {
+              final p =
+                  (await FirebaseFirestore.instance
+                          .collection('profiles')
+                          .doc(widget.peer)
+                          .get())
+                      .data();
+              name = txt(
+                p ?? const {},
+                'displayName',
+                txt(p ?? const {}, 'username'),
+              );
+            } catch (_) {}
+            if (!mounted) return;
+            await openReport(
+              this.context,
+              againstUid: widget.peer,
+              againstName: name.isEmpty ? 'VIMO user' : name,
+              topic: 'chat',
+            );
+          },
+        ),
+      ],
       title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('profiles')

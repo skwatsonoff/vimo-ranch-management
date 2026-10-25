@@ -83,6 +83,7 @@ part 'performance.dart';
 part 'languages.dart';
 part 'market.dart';
 part 'location_gate.dart';
+part 'vimo_team.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -9661,6 +9662,18 @@ class NotificationHistoryScreen extends StatelessWidget {
                                     peer: peer,
                                   ),
                                 );
+                                return;
+                              }
+                              final report = txt(n, 'reportId');
+                              if (report.isNotEmpty && context.mounted) {
+                                await push(
+                                  context,
+                                  ReportCaseScreen(id: report),
+                                );
+                                return;
+                              }
+                              if (n['vimoSupport'] == true && context.mounted) {
+                                await push(context, const VimoHelpScreen());
                                 return;
                               }
                               final profile = txt(n, 'profileUid');
@@ -19320,6 +19333,39 @@ class SettingsScreen extends StatelessWidget {
               ),
               if (firebaseReady && FirebaseAuth.instance.currentUser != null)
                 const Reveal(index: 2, child: _GoogleLinkRow()),
+              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
+                Reveal(
+                  index: 3,
+                  child: _SettingLink(
+                    title: 'Help · VIMO Team',
+                    subtitle: bi(
+                      'Message the team, see your reports',
+                      'குழுவுக்குச் செய்தி, உங்கள் அறிக்கைகள்',
+                    ),
+                    icon: CupertinoIcons.question_circle_fill,
+                    color: Ink.violetDeep,
+                    onTap: () => push(context, const VimoHelpScreen()),
+                  ),
+                ),
+              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
+                FutureBuilder<bool>(
+                  future: VimoTeam.isMember(),
+                  builder: (context, team) => team.data == true
+                      ? Reveal(
+                          index: 3,
+                          child: _SettingLink(
+                            title: 'VIMO Team console',
+                            subtitle: bi(
+                              'Reports and messages from people',
+                              'மக்களின் அறிக்கைகளும் செய்திகளும்',
+                            ),
+                            icon: CupertinoIcons.shield_lefthalf_fill,
+                            color: Ink.orange,
+                            onTap: () => push(context, const VimoTeamConsole()),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
               // Ranch details live on the Ranch tab. Without that tab, keep a
               // way in so members can still be managed.
               if (ranchId().isNotEmpty && !workspaceEnabled('Ranch'))

@@ -71,6 +71,8 @@ class SocialActivityService {
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chats;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _selling;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _buying;
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _support;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _teamReports;
   static final Map<
     String,
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
@@ -190,6 +192,71 @@ class SocialActivityService {
     );
   }
 
+  /// A new message from the VIMO Team in this person's support thread.
+  static Future<void> _supportChanged(
+    String uid,
+    Map<String, dynamic> thread,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final at = thread['updatedAt'];
+    if (txt(thread, 'lastFrom') != 'team' || at is! Timestamp) return;
+    final seen = toInt(settingValue('vimoSupportSeen', 0));
+    final millis = at.millisecondsSinceEpoch;
+    if (millis <= seen) return;
+    await setSetting('vimoSupportSeen', millis);
+    if (seen == 0 &&
+        DateTime.now().millisecondsSinceEpoch - millis > 86400000) {
+      return;
+    }
+    if (openChatId == 'vimo-support') return;
+    await addRanchNotification(
+      title: 'VIMO Team sent you a message',
+      titleTa: 'VIMO Team உங்களுக்குச் செய்தி அனுப்பியது',
+      message: txt(thread, 'lastText'),
+      type: 'message',
+      sourceId: 'vimo-support-$millis',
+      localOnly: true,
+      extra: const {'vimoSupport': true},
+    );
+    _browserRuntime.showNotification(
+      title: bi('VIMO Team', 'VIMO Team'),
+      body: txt(thread, 'lastText'),
+      tag: 'vimo-support',
+    );
+  }
+
+  /// For team members: a report that was not there before.
+  static Future<void> _reportsChanged(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final seen = {
+      for (final id in (settingValue('vimoReportsSeen', const []) as List))
+        '$id',
+    };
+    final ids = [for (final d in snapshot.docs) d.id];
+    await setSetting('vimoReportsSeen', ids);
+    if (seen.isEmpty && settingValue('vimoReportsPrimed', false) != true) {
+      await setSetting('vimoReportsPrimed', true);
+      return;
+    }
+    for (final d in snapshot.docs.where((d) => !seen.contains(d.id))) {
+      await addRanchNotification(
+        title:
+            'New report: ${shopLabel(vimoReportReasons, txt(d.data(), 'reason'))}',
+        titleTa:
+            'புதிய அறிக்கை: ${shopLabel(vimoReportReasons, txt(d.data(), 'reason'))}',
+        message:
+            '${txt(d.data(), 'reporterName')} → ${txt(d.data(), 'againstName')}',
+        type: 'message',
+        sourceId: 'vimo-report-${d.id}',
+        localOnly: true,
+        extra: {'reportId': d.id},
+      );
+    }
+  }
+
   /// What a notice compares for an order: its step, plus who has an open
   /// request to cancel ("ordered:buyer").
   static String orderNoticeState(Map<String, dynamic> o) {
@@ -301,6 +368,9 @@ class SocialActivityService {
     unawaited(_chats?.cancel());
     unawaited(_selling?.cancel());
     unawaited(_buying?.cancel());
+    unawaited(_support?.cancel());
+    unawaited(_teamReports?.cancel());
+    _teamReports = null;
     for (final watch in _chatLatest.values) {
       unawaited(watch.cancel());
     }
@@ -317,6 +387,19 @@ class SocialActivityService {
     _selling = ShopService.selling().listen(
       (s) => unawaited(_ordersChanged(uid, s, selling: true)),
       onError: (_) {},
+    );
+    _support = VimoTeam.support(uid).snapshots().listen(
+      (d) => unawaited(_supportChanged(uid, d.data() ?? const {})),
+      onError: (_) {},
+    );
+    unawaited(
+      VimoTeam.isMember().then((team) {
+        if (!team || uid != _uid) return;
+        _teamReports = VimoTeam.reports
+            .where('status', isEqualTo: 'open')
+            .snapshots()
+            .listen((s) => unawaited(_reportsChanged(uid, s)), onError: (_) {});
+      }),
     );
     _buying = ShopService.buying().listen(
       (s) => unawaited(_ordersChanged(uid, s, selling: false)),
@@ -449,6 +532,34 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                   .get();
               return ShareCard.profile(uid, snap.data() ?? const {});
             }),
+          ),
+        if (uid.isNotEmpty && !own && signedInUid.isNotEmpty)
+          IconButton(
+            tooltip: bi('Report to VIMO Team', 'VIMO Team-க்குத் தெரிவி'),
+            icon: const Icon(CupertinoIcons.flag),
+            onPressed: () async {
+              var name = '';
+              try {
+                final p =
+                    (await FirebaseFirestore.instance
+                            .collection('profiles')
+                            .doc(uid)
+                            .get())
+                        .data();
+                name = txt(
+                  p ?? const {},
+                  'displayName',
+                  txt(p ?? const {}, 'username'),
+                );
+              } catch (_) {}
+              if (!context.mounted) return;
+              await openReport(
+                context,
+                againstUid: uid,
+                againstName: name.isEmpty ? 'VIMO user' : name,
+                topic: 'profile',
+              );
+            },
           ),
         // As the Profile tab, the app bar above already has Settings.
         if (own && !(ModalRoute.of(context)?.isFirst ?? false))

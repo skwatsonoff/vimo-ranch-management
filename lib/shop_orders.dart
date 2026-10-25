@@ -589,6 +589,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
     // Market is local: buying needs location allowed.
     if (!await MarketLocation.require(context) || !mounted) return;
+    if (!await VimoTeam.marketAllowed(context) || !mounted) return;
     setState(() => _busy = true);
     try {
       final id = await ShopService.placeOrder(
@@ -1794,6 +1795,24 @@ class _OrderBodyState extends State<_OrderBody> {
             ),
           ),
           _OrderMessages(id: widget.id),
+          const SizedBox(height: 16),
+          TextButton.icon(
+            onPressed: () => openReport(
+              context,
+              againstUid: _seller ? txt(o, 'buyerUid') : txt(o, 'sellerUid'),
+              againstName: _other,
+              topic: 'order',
+              orderId: widget.id,
+            ),
+            icon: Icon(CupertinoIcons.flag, size: 18, color: Ink.muted),
+            label: Text(
+              bi(
+                'Problem with this order? Tell VIMO Team',
+                'இந்த ஆர்டரில் பிரச்சனையா? VIMO Team-க்குச் சொல்லுங்கள்',
+              ),
+              style: TextStyle(color: Ink.muted),
+            ),
+          ),
           if (!cancelled && status != 'completed') ...[
             const SizedBox(height: 8),
             TextField(

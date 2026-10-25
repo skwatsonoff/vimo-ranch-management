@@ -508,8 +508,9 @@ class ShopService {
       if (restock) 'restocked': true,
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    if (restock)
+    if (restock) {
       batch.update(products.doc(txt(order, 'productId')), _back(order));
+    }
     await batch.commit();
   }
 
