@@ -19471,22 +19471,13 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => push(context, const AppSettingsScreen()),
                 ),
               ),
-              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
+              // Once Google is on the account there is nothing left to add.
+              if (firebaseReady &&
+                  FirebaseAuth.instance.currentUser != null &&
+                  !GoogleAccount.linked)
                 const Reveal(index: 2, child: _GoogleLinkRow()),
-              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
-                Reveal(
-                  index: 3,
-                  child: _SettingLink(
-                    title: 'Help · VIMO Team',
-                    subtitle: bi(
-                      'Message the team, see your reports',
-                      'குழுவுக்குச் செய்தி, உங்கள் அறிக்கைகள்',
-                    ),
-                    icon: CupertinoIcons.question_circle_fill,
-                    color: Ink.violetDeep,
-                    onTap: () => push(context, const VimoHelpScreen()),
-                  ),
-                ),
+              // Help lives where buying and selling happen (My orders, an
+              // order, an item), not in everyday Settings.
               if (firebaseReady && FirebaseAuth.instance.currentUser != null)
                 const _TeamConsoleLink(),
               // Ranch details live on the Ranch tab. Without that tab, keep a
@@ -19669,6 +19660,8 @@ class _GoogleLinkRowState extends State<_GoogleLinkRow> {
   @override
   Widget build(BuildContext context) {
     final linked = GoogleAccount.linked;
+    // Added just now: the row goes away, as there is nothing left to do.
+    if (linked && !_busy) return const SizedBox.shrink();
     return _SettingLink(
       title: linked
           ? bi('Google account added', 'Google கணக்கு சேர்க்கப்பட்டது')

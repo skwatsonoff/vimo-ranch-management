@@ -939,6 +939,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
     appBar: AppBar(
       leading: const _BackButton(),
       title: Text(bi('My orders', 'என் ஆர்டர்கள்')),
+      actions: [
+        IconButton(
+          tooltip: bi('Help · VIMO Team', 'உதவி · VIMO Team'),
+          icon: Icon(CupertinoIcons.question_circle, color: Ink.violetDeep),
+          onPressed: () => push(context, const VimoHelpScreen()),
+        ),
+      ],
     ),
     body: Shell(
       child: Column(

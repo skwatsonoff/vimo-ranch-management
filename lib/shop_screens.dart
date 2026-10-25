@@ -1005,8 +1005,8 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
                   subtitle: Text(
                     _takenDown
                         ? bi(
-                            'Taken down by VIMO Team. Open Settings → Help to talk to them.',
-                            'VIMO Team நீக்கியது. பேச Settings → உதவி திறக்கவும்.',
+                            'Taken down by VIMO Team. Open My orders → Help to talk to them.',
+                            'VIMO Team நீக்கியது. பேச என் ஆர்டர்கள் → உதவி திறக்கவும்.',
                           )
                         : bi(
                             'Turn off to pause without deleting.',

@@ -180,8 +180,8 @@ class VimoTeam {
       snack(
         context,
         bi(
-          'VIMO Team has paused Market for your account. Open Settings → Help to talk to them.',
-          'VIMO Team உங்கள் கணக்கிற்கு சந்தையை நிறுத்தியுள்ளது. பேச Settings → உதவி திறக்கவும்.',
+          'VIMO Team has paused Market for your account. Open My orders → Help to talk to them.',
+          'VIMO Team உங்கள் கணக்கிற்கு சந்தையை நிறுத்தியுள்ளது. பேச என் ஆர்டர்கள் → உதவி திறக்கவும்.',
         ),
         tone: SnackTone.error,
       );
@@ -358,8 +358,8 @@ class _ReportProblemScreenState extends State<ReportProblemScreen> {
               accent: Ink.greenText,
               title: bi('Sent to VIMO Team', 'VIMO Team-க்கு அனுப்பப்பட்டது'),
               message: bi(
-                'The team will look at what happened and message you in Settings → Help. Only the team takes action.',
-                'நடந்ததைக் குழு பார்த்து Settings → உதவி-யில் உங்களுக்குச் செய்தி அனுப்பும். நடவடிக்கை குழு மட்டுமே எடுக்கும்.',
+                'The team will look at what happened and message you in My orders → Help. Only the team takes action.',
+                'நடந்ததைக் குழு பார்த்து என் ஆர்டர்கள் → உதவி-யில் உங்களுக்குச் செய்தி அனுப்பும். நடவடிக்கை குழு மட்டுமே எடுக்கும்.',
               ),
               actionLabel: bi('Open Help', 'உதவியைத் திற'),
               actionIcon: CupertinoIcons.chat_bubble_2_fill,
@@ -463,7 +463,7 @@ class _ReportProblemScreenState extends State<ReportProblemScreen> {
   );
 }
 
-/// Settings → Help: a thread with the VIMO Team and the person's reports.
+/// My orders → Help: a thread with the VIMO Team and the person's reports.
 class VimoHelpScreen extends StatelessWidget {
   const VimoHelpScreen({super.key});
 
