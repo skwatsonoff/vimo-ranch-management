@@ -177,6 +177,7 @@ class _ProductBody extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          LikeButton(productId: id, product: p),
           if (own)
             IconButton(
               tooltip: bi('Edit product', 'பொருளைத் திருத்து'),
@@ -274,6 +275,9 @@ class _ProductBody extends StatelessWidget {
                 ),
               ],
             ),
+            if (!own && active && stock > 0 && ShopService.available)
+              OfferPanel(productId: id, product: p),
+            if (own) SellerOffers(productId: id),
             if (features.isNotEmpty) ...[
               _shopSection(bi('Key features', 'முக்கிய அம்சங்கள்')),
               for (final f in features)
@@ -360,6 +364,7 @@ class _ProductBody extends StatelessWidget {
                 ],
               ),
             ),
+            ProductQuestions(productId: id, product: p),
             _shopSection(bi('Seller', 'விற்பவர்')),
             _SellerCard(uid: txt(p, 'sellerUid'), name: txt(p, 'sellerName')),
             const SizedBox(height: 12),
@@ -515,7 +520,15 @@ class _SellerCard extends StatelessWidget {
 class CheckoutScreen extends StatefulWidget {
   final String id;
   final Map<String, dynamic> product;
-  const CheckoutScreen({super.key, required this.id, required this.product});
+
+  /// An accepted offer: one item at the offered price.
+  final String offerId;
+  const CheckoutScreen({
+    super.key,
+    required this.id,
+    required this.product,
+    this.offerId = '',
+  });
 
   @override
   State<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -607,6 +620,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'pincode': _pincode.text.trim(),
         },
         note: _note.text,
+        offerId: widget.offerId,
       );
       if (!mounted) return;
       UiSound.play(UiSoundKind.success);
@@ -639,7 +653,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final price = numv(_p, 'price');
     final fee = shopDeliveryFee(_p, _method);
     // The most this buyer can take: the stock, within the seller's limit.
-    final most = _p['maxPerOrder'] == null ? 1 : toInt(_p['maxPerOrder']);
+    final most = widget.offerId.isNotEmpty
+        ? 1
+        : _p['maxPerOrder'] == null
+        ? 1
+        : toInt(_p['maxPerOrder']);
     final stock = math.max(1, math.min(toInt(_p['stock']), math.max(1, most)));
     final total = price * _qty + fee;
     return Scaffold(
@@ -1952,6 +1970,8 @@ class MarketProducts extends StatefulWidget {
 
 class _MarketProductsState extends State<MarketProducts> {
   String _category = '';
+  String _sort = 'new';
+  bool _available = false;
   late Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _load =
       _fetch();
 
@@ -1986,6 +2006,39 @@ class _MarketProductsState extends State<MarketProducts> {
                   letterSpacing: -.5,
                 ),
               ),
+            ),
+            IconButton(
+              tooltip: bi('Liked', 'விரும்பியவை'),
+              onPressed: () => push(context, const LikedScreen()),
+              icon: Icon(CupertinoIcons.heart, color: Ink.violetDeep),
+            ),
+            PopupMenuButton<String>(
+              tooltip: bi('Sort', 'வரிசை'),
+              icon: Icon(
+                CupertinoIcons.arrow_up_arrow_down,
+                color: Ink.violetDeep,
+              ),
+              onSelected: (v) => setState(() {
+                if (v == 'available') {
+                  _available = !_available;
+                } else {
+                  _sort = v;
+                }
+              }),
+              itemBuilder: (_) => [
+                for (final s in shopSorts)
+                  CheckedPopupMenuItem(
+                    value: s.$1,
+                    checked: _sort == s.$1,
+                    child: Text(bi(s.$2, s.$3)),
+                  ),
+                const PopupMenuDivider(),
+                CheckedPopupMenuItem(
+                  value: 'available',
+                  checked: _available,
+                  child: Text(bi('On sale only', 'விற்பனையில் மட்டும்')),
+                ),
+              ],
             ),
             TextButton.icon(
               onPressed: () => push(context, const OrdersScreen()),
@@ -2039,7 +2092,13 @@ class _MarketProductsState extends State<MarketProducts> {
                 ),
               );
             }
-            final docs = snap.data ?? const [];
+            final docs = sortShopProducts(
+              snap.data ??
+                  const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+              (d) => d.data(),
+              sort: _sort,
+              available: _available,
+            );
             if (docs.isEmpty) {
               return _MarketNote(
                 searching

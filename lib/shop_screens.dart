@@ -1072,6 +1072,15 @@ class ProductTile extends StatelessWidget {
                       Image(image: image, fit: BoxFit.cover)
                     else
                       ColoredBox(color: Ink.lavender),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: LikeButton(
+                        productId: id,
+                        product: product,
+                        small: true,
+                      ),
+                    ),
                     if (paused || out)
                       ColoredBox(
                         color: Colors.black.withValues(alpha: .45),

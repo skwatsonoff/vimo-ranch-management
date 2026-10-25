@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' hide Ink;
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:ranch_management/main.dart';
@@ -143,6 +144,46 @@ void main() {
           'restocked': true,
         }),
         isFalse,
+      );
+    });
+
+    test('offers go down to half and last a day once accepted', () {
+      expect(shopOfferFloor(40000), 20000);
+      expect(shopOfferFloor(451), 226);
+      final now = DateTime(2026, 10, 25, 12);
+      Map<String, dynamic> offer(int hoursAgo) => {
+        'status': 'accepted',
+        'acceptedAt': Timestamp.fromDate(
+          now.subtract(Duration(hours: hoursAgo)),
+        ),
+      };
+      expect(ShopOffers.usable(offer(23), now), isTrue);
+      expect(ShopOffers.usable(offer(25), now), isFalse);
+      expect(ShopOffers.usable({'status': 'pending'}, now), isFalse);
+    });
+
+    test('products sort by price or newest, and hide sold out on ask', () {
+      final rows = [
+        {'id': 'a', 'price': 300, 'stock': 0, 'status': 'active'},
+        {'id': 'b', 'price': 100, 'stock': 2, 'status': 'active'},
+        {'id': 'c', 'price': 200, 'stock': 1, 'status': 'paused'},
+      ];
+      List<String> ids(List<Map<String, dynamic>> r) => [
+        for (final x in r) x['id'] as String,
+      ];
+      expect(ids(sortShopProducts(rows, (d) => d, sort: 'low')), [
+        'b',
+        'c',
+        'a',
+      ]);
+      expect(ids(sortShopProducts(rows, (d) => d, sort: 'high')), [
+        'a',
+        'c',
+        'b',
+      ]);
+      expect(
+        ids(sortShopProducts(rows, (d) => d, sort: 'low', available: true)),
+        ['b'],
       );
     });
 

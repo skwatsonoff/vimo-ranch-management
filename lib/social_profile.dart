@@ -72,6 +72,8 @@ class SocialActivityService {
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _selling;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _buying;
   static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _support;
+  static final List<StreamSubscription<Object?>> _marketWatches = [];
+  static final List<StreamSubscription<Object?>> _likedPrices = [];
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _teamReports;
   static final Map<
     String,
@@ -190,6 +192,161 @@ class SocialActivityService {
       body: preview,
       tag: 'message-$chatId',
     );
+  }
+
+  /// Offers, questions and liked items: each notice fires when the other
+  /// person changes something, never on first sight.
+  static void _watchMarket(String uid) {
+    final db = FirebaseFirestore.instance;
+    void watch(
+      Query<Map<String, dynamic>> query,
+      String key,
+      String Function(Map<String, dynamic>) state,
+      (String, String)? Function(Map<String, dynamic> d, String before) notice,
+    ) {
+      _marketWatches.add(
+        query.snapshots().listen((snapshot) async {
+          if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+          final seen = asMap(settingValue(key, {}));
+          final first = !seen.containsKey('_primed');
+          final next = {...seen, '_primed': true};
+          for (final doc in snapshot.docs) {
+            final d = doc.data();
+            final now = state(d);
+            final before = txt(seen, doc.id);
+            next[doc.id] = now;
+            if (first || before == now) continue;
+            final n = notice(d, before);
+            if (n == null) continue;
+            await addRanchNotification(
+              title: n.$1,
+              titleTa: n.$2,
+              message: txt(d, 'title'),
+              type: 'message',
+              sourceId: '$key-${doc.id}-$now',
+              localOnly: true,
+              extra: {'productId': txt(d, 'productId')},
+            );
+            _browserRuntime.showNotification(
+              title: bi(n.$1, n.$2),
+              body: txt(d, 'title'),
+              tag: '$key-${doc.id}',
+            );
+          }
+          await setSetting(key, next);
+        }, onError: (_) {}),
+      );
+    }
+
+    String price(Map<String, dynamic> d) => money(numv(d, 'price'));
+    // Offers on my items, and answers to my offers.
+    watch(
+      db.collection('shop_offers').where('sellerUid', isEqualTo: uid),
+      'offerNoticesSelling',
+      (d) => '${txt(d, 'status')}:${numv(d, 'price')}',
+      (d, _) => txt(d, 'status') == 'pending'
+          ? (
+              '${txt(d, 'buyerName')} offered ${price(d)}',
+              '${txt(d, 'buyerName')} ${price(d)} கேட்கிறார்',
+            )
+          : null,
+    );
+    watch(
+      db.collection('shop_offers').where('buyerUid', isEqualTo: uid),
+      'offerNoticesBuying',
+      (d) => txt(d, 'status'),
+      (d, _) => switch (txt(d, 'status')) {
+        'accepted' => (
+          'Offer accepted: buy at ${price(d)} within $shopOfferHours hours',
+          'ஏற்கப்பட்டது: $shopOfferHours மணி நேரத்தில் ${price(d)}-க்கு வாங்கலாம்',
+        ),
+        'declined' => (
+          'Your offer of ${price(d)} was declined',
+          'உங்கள் ${price(d)} ஏற்கப்படவில்லை',
+        ),
+        _ => null,
+      },
+    );
+    // Questions on my items, and answers to mine.
+    watch(
+      db.collection('shop_questions').where('sellerUid', isEqualTo: uid),
+      'questionNoticesSelling',
+      (d) => txt(d, 'answer').isEmpty ? 'asked' : 'answered',
+      (d, before) => before.isEmpty && txt(d, 'answer').isEmpty
+          ? (
+              '${txt(d, 'name')} asked: ${txt(d, 'text')}',
+              '${txt(d, 'name')} கேட்டார்: ${txt(d, 'text')}',
+            )
+          : null,
+    );
+    watch(
+      db.collection('shop_questions').where('uid', isEqualTo: uid),
+      'questionNoticesAsked',
+      (d) => txt(d, 'answer').isEmpty ? 'asked' : 'answered',
+      (d, _) => txt(d, 'answer').isNotEmpty
+          ? (
+              'The seller answered: ${txt(d, 'answer')}',
+              'விற்பவர் பதில்: ${txt(d, 'answer')}',
+            )
+          : null,
+    );
+    // Liked items that got cheaper.
+    _marketWatches.add(
+      ShopLikes.likes.where('uid', isEqualTo: uid).snapshots().listen((likes) {
+        for (final w in _likedPrices) {
+          unawaited(w.cancel());
+        }
+        _likedPrices.clear();
+        final likedAt = {
+          for (final l in likes.docs)
+            txt(l.data(), 'productId'): numv(l.data(), 'price'),
+        };
+        final ids = likedAt.keys.toList();
+        for (var i = 0; i < ids.length; i += 30) {
+          final chunk = ids.sublist(i, math.min(ids.length, i + 30));
+          _likedPrices.add(
+            ShopService.products
+                .where(FieldPath.documentId, whereIn: chunk)
+                .snapshots()
+                .listen(
+                  (s) => unawaited(_priceDrops(uid, s, likedAt)),
+                  onError: (_) {},
+                ),
+          );
+        }
+      }, onError: (_) {}),
+    );
+  }
+
+  static Future<void> _priceDrops(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+    Map<String, double> likedAt,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final told = asMap(settingValue('priceDropNotices', {}));
+    final next = {...told};
+    for (final doc in snapshot.docs) {
+      final p = doc.data();
+      final now = numv(p, 'price');
+      final was = likedAt[doc.id] ?? 0;
+      final lastTold = told[doc.id] is num
+          ? (told[doc.id] as num).toDouble()
+          : was;
+      if (now <= 0 || now >= was || now >= lastTold) continue;
+      if (txt(p, 'status') != 'active' || toInt(p['stock']) <= 0) continue;
+      next[doc.id] = now;
+      await addRanchNotification(
+        title: 'Price dropped to ${money(now)}',
+        titleTa: 'விலை ${money(now)}-ஆகக் குறைந்தது',
+        message: txt(p, 'title'),
+        type: 'message',
+        sourceId: 'price-drop-${doc.id}-$now',
+        localOnly: true,
+        extra: {'productId': doc.id},
+      );
+    }
+    await setSetting('priceDropNotices', next);
   }
 
   /// A new message from the VIMO Team in this person's support thread.
@@ -369,6 +526,11 @@ class SocialActivityService {
     unawaited(_selling?.cancel());
     unawaited(_buying?.cancel());
     unawaited(_support?.cancel());
+    for (final w in [..._marketWatches, ..._likedPrices]) {
+      unawaited(w.cancel());
+    }
+    _marketWatches.clear();
+    _likedPrices.clear();
     unawaited(_teamReports?.cancel());
     _teamReports = null;
     for (final watch in _chatLatest.values) {
@@ -388,6 +550,7 @@ class SocialActivityService {
       (s) => unawaited(_ordersChanged(uid, s, selling: true)),
       onError: (_) {},
     );
+    _watchMarket(uid);
     _support = VimoTeam.support(uid).snapshots().listen(
       (d) => unawaited(_supportChanged(uid, d.data() ?? const {})),
       onError: (_) {},

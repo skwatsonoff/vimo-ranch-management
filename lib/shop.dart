@@ -390,11 +390,21 @@ class ShopService {
     required String payment,
     required Map<String, dynamic> address,
     required String note,
+    String offerId = '',
   }) async {
     final unitPrice = numv(product, 'price');
     final fee = shopDeliveryFee(product, deliveryMethod);
     final ref = orders.doc();
-    await ref.set({
+    final batch = _db.batch();
+    // An accepted offer is used up by this order, in the same step.
+    if (offerId.isNotEmpty) {
+      batch.update(ShopOffers.offers.doc(offerId), {
+        'status': 'used',
+        'orderId': ref.id,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    batch.set(ref, {
       'productId': productId,
       'sellerUid': txt(product, 'sellerUid'),
       'buyerUid': signedInUid,
@@ -410,10 +420,12 @@ class ShopService {
       'payment': payment,
       'address': deliveryMethod == 'pickup' ? <String, dynamic>{} : address,
       'note': note.trim(),
+      if (offerId.isNotEmpty) 'offerId': offerId,
       'status': 'ordered',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    await batch.commit();
     await setSetting('shopAddress', address);
     return ref.id;
   }

@@ -464,14 +464,14 @@ service cloud.firestore {
           && r.text is string && r.text.size() <= 300;
       }
       function validOrder(d) {
-        return d.keys().hasOnly(['productId', 'sellerUid', 'buyerUid', 'sellerName', 'buyerName', 'title', 'cover', 'unitPrice', 'quantity', 'deliveryMethod', 'deliveryFee', 'total', 'payment', 'address', 'note', 'status', 'createdAt', 'updatedAt'])
+        return d.keys().hasOnly(['productId', 'sellerUid', 'buyerUid', 'sellerName', 'buyerName', 'title', 'cover', 'unitPrice', 'quantity', 'deliveryMethod', 'deliveryFee', 'total', 'payment', 'address', 'note', 'offerId', 'status', 'createdAt', 'updatedAt'])
           && d.buyerUid == request.auth.uid
           && d.sellerUid == product().sellerUid
           && d.sellerUid != request.auth.uid
           && product().status == 'active'
           && d.quantity is int && d.quantity >= 1 && d.quantity <= product().stock
           && d.quantity <= product().maxPerOrder
-          && d.unitPrice == product().price
+          && (('offerId' in d) ? offerPrice(d) : d.unitPrice == product().price)
           && d.deliveryMethod in product().delivery.methods
           && d.deliveryFee == ((d.deliveryMethod == 'pickup' || product().delivery.payer != 'buyer') ? 0 : product().delivery.fee)
           && d.total == d.unitPrice * d.quantity + d.deliveryFee
@@ -484,6 +484,21 @@ service cloud.firestore {
           && d.note is string && d.note.size() <= 300
           && d.status == 'ordered'
           && d.createdAt == request.time && d.updatedAt == request.time;
+      }
+      // Buying one at a price the seller accepted, within 24 hours; the
+      // offer is used up in the same step.
+      function offerPrice(d) {
+        let path = /databases/$(database)/documents/shop_offers/$(d.offerId);
+        let offer = get(path).data;
+        return d.offerId == d.productId + '_' + request.auth.uid
+          && offer.status == 'accepted'
+          && offer.buyerUid == request.auth.uid
+          && offer.productId == d.productId
+          && request.time < offer.acceptedAt + duration.value(24, 'h')
+          && d.unitPrice == offer.price
+          && d.quantity == 1
+          && getAfter(path).data.status == 'used'
+          && getAfter(path).data.orderId == orderId;
       }
       function changed(keys) {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
@@ -585,6 +600,90 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
         allow update, delete: if false;
       }
+    }
+
+    // Likes: one per person and item, public so items can show a count.
+    match /shop_likes/{likeId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && !marketBlocked()
+        && likeId == request.auth.uid + '_' + request.resource.data.productId
+        && request.resource.data.keys().hasOnly(['uid', 'productId', 'title', 'price', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && exists(/databases/$(database)/documents/shop_products/$(request.resource.data.productId))
+        && request.resource.data.title is string && request.resource.data.title.size() <= 80
+        && request.resource.data.price is number
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Offers, Mercari style: the buyer offers from half the price; the
+    // seller accepts or declines; an accepted offer buys one item within
+    // 24 hours and is then used up by that order.
+    match /shop_offers/{offerId} {
+      function item() {
+        return get(/databases/$(database)/documents/shop_products/$(request.resource.data.productId)).data;
+      }
+      function step(from, to) {
+        return resource.data.status == from && request.resource.data.status == to
+          && request.resource.data.updatedAt == request.time;
+      }
+      function only(keys) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+      }
+      allow read: if signedIn()
+        && (resource.data.buyerUid == request.auth.uid || resource.data.sellerUid == request.auth.uid);
+      allow create, update: if signedIn() && !marketBlocked()
+        && (resource == null || resource.data.status in ['declined', 'withdrawn', 'used'] || request.time > resource.data.updatedAt + duration.value(24, 'h'))
+        && offerId == request.resource.data.productId + '_' + request.auth.uid
+        && request.resource.data.keys().hasOnly(['productId', 'sellerUid', 'buyerUid', 'buyerName', 'title', 'listPrice', 'price', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.buyerUid == request.auth.uid
+        && request.resource.data.sellerUid == item().sellerUid
+        && request.resource.data.sellerUid != request.auth.uid
+        && item().status == 'active' && item().stock > 0
+        && request.resource.data.listPrice == item().price
+        && request.resource.data.price is number
+        && request.resource.data.price >= item().price / 2
+        && request.resource.data.price < item().price
+        && request.resource.data.title == item().title
+        && request.resource.data.buyerName is string && request.resource.data.buyerName.size() > 0 && request.resource.data.buyerName.size() <= 80
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn() && (
+        (request.auth.uid == resource.data.buyerUid && step('pending', 'withdrawn') && only(['status', 'updatedAt']))
+        || (request.auth.uid == resource.data.sellerUid && step('pending', 'declined') && only(['status', 'updatedAt']))
+        || (request.auth.uid == resource.data.sellerUid && step('pending', 'accepted')
+          && only(['status', 'updatedAt', 'acceptedAt']) && request.resource.data.acceptedAt == request.time)
+        // Used by the order that bought it (checked from the order's side).
+        || (request.auth.uid == resource.data.buyerUid && step('accepted', 'used')
+          && only(['status', 'updatedAt', 'orderId'])
+          && existsAfter(/databases/$(database)/documents/shop_orders/$(request.resource.data.orderId))
+          && getAfter(/databases/$(database)/documents/shop_orders/$(request.resource.data.orderId)).data.offerId == offerId)
+      );
+      allow delete: if false;
+    }
+
+    // Public questions on an item; the seller answers for everyone.
+    match /shop_questions/{questionId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && !marketBlocked()
+        && request.resource.data.keys().hasOnly(['productId', 'sellerUid', 'title', 'uid', 'name', 'text', 'answer', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.sellerUid == get(/databases/$(database)/documents/shop_products/$(request.resource.data.productId)).data.sellerUid
+        && request.resource.data.sellerUid != request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() <= 80
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 300
+        && request.resource.data.answer == ''
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && request.auth.uid == resource.data.sellerUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer', 'answeredAt'])
+        && request.resource.data.answer is string
+        && request.resource.data.answer.size() > 0 && request.resource.data.answer.size() <= 500
+        && request.resource.data.answeredAt == request.time;
+      allow delete: if signedIn()
+        && (request.auth.uid == resource.data.uid || request.auth.uid == resource.data.sellerUid);
     }
 
     // Public reviews, written in the same step as the order's rating and

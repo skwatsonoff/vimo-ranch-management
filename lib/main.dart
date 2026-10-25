@@ -85,6 +85,7 @@ part 'market.dart';
 part 'location_gate.dart';
 part 'vimo_team.dart';
 part 'shop_reviews.dart';
+part 'shop_social.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -9746,6 +9747,11 @@ class NotificationHistoryScreen extends StatelessWidget {
                                     peer: peer,
                                   ),
                                 );
+                                return;
+                              }
+                              final product = txt(n, 'productId');
+                              if (product.isNotEmpty && context.mounted) {
+                                await push(context, ProductScreen(id: product));
                                 return;
                               }
                               final report = txt(n, 'reportId');
