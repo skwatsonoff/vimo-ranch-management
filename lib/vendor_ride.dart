@@ -1738,6 +1738,15 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                     ? null
                     : () => showMilkClearance(context),
               ),
+              const SizedBox(height: 6),
+              _ClearanceChip(
+                label: bi('Walk-in', 'திடீர் வாடிக்கையாளர்'),
+                icon: CupertinoIcons.person_crop_circle_badge_plus,
+                color: Ink.violetDeep,
+                onTap: _busy || !canRecordEntries
+                    ? null
+                    : () => showWalkInSale(context),
+              ),
             ],
           ),
         ],
@@ -2205,11 +2214,19 @@ class _MilkFlow extends StatelessWidget {
 /// The small "Clearance" capsule on the milk balance card.
 class _ClearanceChip extends StatelessWidget {
   final VoidCallback? onTap;
-  const _ClearanceChip({required this.onTap});
+  final String? label;
+  final IconData icon;
+  final Color? color;
+  const _ClearanceChip({
+    required this.onTap,
+    this.label,
+    this.icon = CupertinoIcons.tray_arrow_down_fill,
+    this.color,
+  });
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
-    label: bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
+    label: label ?? bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
     child: Pressable(
       radius: 14,
       onTap: onTap,
@@ -2217,7 +2234,7 @@ class _ClearanceChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: ShapeDecoration(
           shape: StadiumBorder(
-            side: BorderSide(color: Ink.blue.withValues(alpha: .28)),
+            side: BorderSide(color: (color ?? Ink.blue).withValues(alpha: .28)),
           ),
           color: Ink.surface.withValues(alpha: .7),
         ),
@@ -2225,15 +2242,15 @@ class _ClearanceChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              CupertinoIcons.tray_arrow_down_fill,
+              icon,
               size: 12,
-              color: onTap == null ? Ink.faint : Ink.blue,
+              color: onTap == null ? Ink.faint : (color ?? Ink.blue),
             ),
             const SizedBox(width: 4),
             Text(
-              bi('Clearance', 'கிளியரன்ஸ்'),
+              label ?? bi('Clearance', 'கிளியரன்ஸ்'),
               style: TextStyle(
-                color: onTap == null ? Ink.faint : Ink.blue,
+                color: onTap == null ? Ink.faint : (color ?? Ink.blue),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),

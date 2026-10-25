@@ -76,6 +76,88 @@ void main() {
     home: home,
   );
 
+  testWidgets('Walk-in sale sells Rs 20 of milk paid on the spot', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(
+      () => VendorLedger.record(
+        id: 'in',
+        person: const {'id': 's', 'name': 'Kalai', 'kind': 'supplier'},
+        kind: 'purchase',
+        quantity: 5,
+        price: 40,
+      ),
+    );
+    await tester.runAsync(
+      () => Hive.box('settings').put('vendorWalkInPrice', 60),
+    );
+    await tester.pumpWidget(
+      app(
+        Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showWalkInSale(context),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('Walk-in customer'), findsOneWidget);
+    expect(find.text('Gives 333 ml for ₹20, paid now'), findsOneWidget);
+    await tester.tap(find.text('₹10'));
+    await tester.pump();
+    expect(find.text('Gives 167 ml for ₹10, paid now'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Sold · ₹10'));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+    final sale = vendorRows(
+      'vendor_entries',
+    ).firstWhere((r) => r['personKind'] == 'walkin');
+    expect(numv(sale, 'paid'), 10);
+    expect(numv(sale, 'amount'), 10);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Fridge shows what is left and how long it keeps', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      await VendorLedger.record(
+        id: 'in',
+        person: const {'id': 's', 'name': 'Kalai', 'kind': 'supplier'},
+        kind: 'purchase',
+        quantity: 5,
+        price: 40,
+      );
+      await VendorLedger.record(
+        id: 'lot',
+        person: vendorFridge,
+        kind: 'clearance',
+        quantity: 2,
+      );
+    });
+    await tester.pumpWidget(app(const FridgeScreen()));
+    await tester.pumpAndSettle();
+    expect(find.text('2 L'), findsWidgets);
+    expect(find.textContaining('h left'), findsOneWidget);
+    expect(find.text('Make curd'), findsOneWidget);
+    expect(find.text('Sell'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   group('voice notes', () {
     Uint8List tone(int rate, int channels, double seconds) {
       final frames = (rate * seconds).round();

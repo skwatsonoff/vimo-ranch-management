@@ -1057,10 +1057,32 @@ service cloud.firestore {
           && request.resource.data.cloudId == entryId
           && request.resource.data.serverCreatedAt == request.time
           && request.resource.data.stockScope == 'vendor_v2'
-          && request.resource.data.kind in ['collection', 'purchase', 'sale', 'payment', 'clearance']
+          && request.resource.data.kind in ['collection', 'purchase', 'sale', 'payment', 'clearance', 'fridge_use']
           // Clearance moves unsold milk out of stock at no charge: to the
           // fridge or to any person. It never changes a balance.
-          && (request.resource.data.kind == 'clearance'
+          // Fridge milk later becomes curd (no money) or is sold for cash,
+          // within the two days it keeps; a walk-in buyer is not on the
+          // list and pays on the spot, so nothing is owed.
+          && (request.resource.data.kind == 'fridge_use'
+            ? (request.resource.data.personKind == 'fridge' && request.resource.data.personId == '_fridge'
+              && request.resource.data.lotId is string && request.resource.data.lotId.size() > 0 && request.resource.data.lotId.size() <= 120
+              && request.resource.data.use in ['curd', 'sold']
+              && request.resource.data.quantity is number && request.resource.data.quantity > 0
+              && (request.resource.data.use == 'curd'
+                ? (request.resource.data.price == 0 && request.resource.data.amount == 0 && request.resource.data.paid == 0)
+                : (request.resource.data.price is number && request.resource.data.price > 0
+                  && request.resource.data.amount is number && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011
+                  && request.resource.data.paid == request.resource.data.amount))
+              && request.resource.data.get('syncMode', '') == 'local_v3')
+            : request.resource.data.personKind == 'walkin'
+            ? (request.resource.data.kind == 'sale' && request.resource.data.personId == '_walkin'
+              && request.resource.data.quantity is number && request.resource.data.quantity > 0
+              && request.resource.data.price is number && request.resource.data.price > 0
+              && request.resource.data.amount is number && request.resource.data.amount > 0
+              && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011
+              && request.resource.data.paid == request.resource.data.amount
+              && request.resource.data.get('syncMode', '') == 'local_v3')
+            : request.resource.data.kind == 'clearance'
             ? (request.resource.data.personKind in ['fridge', 'supplier', 'customer']
               && (request.resource.data.personKind == 'fridge'
                 ? request.resource.data.personId == '_fridge'

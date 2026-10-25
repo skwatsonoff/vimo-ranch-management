@@ -937,6 +937,8 @@ class VendorLedger {
     double payment = 0,
     String session = 'Morning',
     String notes = '',
+    String lotId = '',
+    String use = '',
   }) async {
     if (_busy) {
       throw StateError(
@@ -956,10 +958,26 @@ class VendorLedger {
           'sale',
           'payment',
           'clearance',
+          'fridge_use',
         ].contains(kind) ||
         (['collection', 'purchase'].contains(kind) &&
             person['kind'] != 'supplier') ||
-        (kind == 'sale' && person['kind'] != 'customer') ||
+        (kind == 'sale' &&
+            person['kind'] != 'customer' &&
+            person['kind'] != 'walkin') ||
+        // Someone not on the list pays on the spot: nothing is owed.
+        (person['kind'] == 'walkin' &&
+            (kind != 'sale' ||
+                person['id'] != '_walkin' ||
+                (paid - quantity * price).abs() > 0.011)) ||
+        (kind == 'fridge_use' &&
+            (person['id'] != '_fridge' ||
+                lotId.isEmpty ||
+                quantity <= 0 ||
+                (use == 'curd' && (price != 0 || paid != 0)) ||
+                (use == 'sold' &&
+                    (price <= 0 || (paid - quantity * price).abs() > 0.011)) ||
+                !['curd', 'sold'].contains(use))) ||
         (kind == 'clearance' &&
             (!['fridge', 'supplier', 'customer'].contains(person['kind']) ||
                 quantity <= 0 ||
@@ -969,7 +987,8 @@ class VendorLedger {
         ![quantity, price, paid, payment].every((n) => n.isFinite && n >= 0) ||
         (kind != 'payment' &&
             kind != 'clearance' &&
-            (quantity <= 0 || price <= 0 || paid > quantity * price)) ||
+            kind != 'fridge_use' &&
+            (quantity <= 0 || price <= 0 || paid > quantity * price + 0.011)) ||
         (kind == 'payment' && payment <= 0)) {
       throw StateError(
         bi(
@@ -1002,6 +1021,7 @@ class VendorLedger {
         'paid': paid,
         'session': session,
         'notes': notes,
+        if (kind == 'fridge_use') ...{'lotId': lotId, 'use': use},
         'date': todayDate(),
         'time': currentTime(),
         'createdAt': now.toIso8601String(),
@@ -1023,6 +1043,17 @@ class VendorLedger {
             'பால் இருப்பு போதவில்லை. முதலில் வழங்குநரிடமிருந்து பெற்ற பாலைப் பதிவு செய்யவும்.',
           ),
         );
+      }
+      if (kind == 'fridge_use') {
+        final lot = fridgeLots(rows).where((l) => l.id == lotId).firstOrNull;
+        if (lot == null || lot.expired(now) || quantity > lot.left + 0.000001) {
+          throw StateError(
+            bi(
+              'That fridge milk is no longer there.',
+              'அந்த ஃப்ரிட்ஜ் பால் இப்போது இல்லை.',
+            ),
+          );
+        }
       }
       if (kind == 'payment' &&
           amount > vendorPersonDue(personId, rows) + 0.001) {
@@ -1344,12 +1375,21 @@ class _VendorScreenState extends State<VendorScreen> {
   );
 }
 
+/// Sale money includes fridge milk later sold for cash; its litres already
+/// left stock when it went to the fridge.
 double _vendorSum(
   Iterable<Map<String, dynamic>> rows,
   String kind,
   String field,
 ) => rows
-    .where((r) => r['kind'] == kind)
+    .where(
+      (r) =>
+          r['kind'] == kind ||
+          (kind == 'sale' &&
+              field == 'amount' &&
+              r['kind'] == 'fridge_use' &&
+              r['use'] == 'sold'),
+    )
     .fold(0.0, (s, r) => s + numv(r, field));
 
 class VendorStockScreen extends StatelessWidget {
@@ -1398,9 +1438,61 @@ class VendorStockScreen extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Glass(
+                    radius: 20,
+                    padding: const EdgeInsets.all(16),
+                    onTap: () => push(context, const FridgeScreen()),
+                    child: Row(
+                      children: [
+                        Icon(CupertinoIcons.snow, color: Ink.blue),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${bi('Fridge', 'ஃப்ரிட்ஜ்')}\n${vendorFieldNumber(fridgeMilkGood())} L',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Glass(
+                    radius: 20,
+                    padding: const EdgeInsets.all(16),
+                    onTap: canRecordEntries
+                        ? () => showWalkInSale(context)
+                        : null,
+                    child: Row(
+                      children: [
+                        Icon(
+                          CupertinoIcons.person_crop_circle_badge_plus,
+                          color: Ink.violetDeep,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            bi('Walk-in\nsale', 'திடீர்\nவிற்பனை'),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 40),
             for (final r in rows.where(
-              (r) => r['kind'] != 'payment' && r['kind'] != 'ranch',
+              (r) =>
+                  r['kind'] != 'payment' &&
+                  r['kind'] != 'ranch' &&
+                  r['kind'] != 'fridge_use',
             ))
               ListTile(
                 onTap: () => push(context, MilkOriginScreen(entry: r)),

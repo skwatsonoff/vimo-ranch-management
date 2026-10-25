@@ -63,6 +63,22 @@ const fs = require('node:fs');
     await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/clear5'), {...clearance, cloudId: 'clear5', personId: 'customer', personKind: 'supplier'})); checks++;
     await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/clear6'), {...clearance, cloudId: 'clear6', quantity: 0})); checks++;
     await assertFails(setDoc(doc(stranger, 'ranches/route/vendor_entries/clear7'), {...clearance, cloudId: 'clear7', createdByUid: 'stranger'})); checks++;
+    // Fridge milk becomes curd (no money) or is sold for cash.
+    const use = {...clearance, kind: 'fridge_use', lotId: 'clear1', use: 'curd', quantity: 1, cloudId: 'use1'};
+    await assertSucceeds(setDoc(doc(owner, 'ranches/route/vendor_entries/use1'), use)); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/use2'), {...use, cloudId: 'use2', amount: 30, price: 30})); checks++; // curd earns nothing
+    await assertSucceeds(setDoc(doc(owner, 'ranches/route/vendor_entries/use3'), {...use, cloudId: 'use3', use: 'sold', price: 40, amount: 40, paid: 40})); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/use4'), {...use, cloudId: 'use4', use: 'sold', price: 40, amount: 40, paid: 0})); checks++; // paid on the spot
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/use5'), {...use, cloudId: 'use5', use: 'thrown'})); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/use6'), {...use, cloudId: 'use6', lotId: ''})); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/use7'), {...use, cloudId: 'use7', personId: 'customer', personKind: 'customer'})); checks++;
+    // A walk-in buyer pays on the spot; nothing is owed.
+    const walk = {...clearance, kind: 'sale', personId: '_walkin', personKind: 'walkin', personName: 'Walk-in customer', quantity: 10 / 60, price: 60, amount: 10, paid: 10, cloudId: 'walk1'};
+    await assertSucceeds(setDoc(doc(owner, 'ranches/route/vendor_entries/walk1'), walk)); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/walk2'), {...walk, cloudId: 'walk2', paid: 0})); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/walk3'), {...walk, cloudId: 'walk3', kind: 'payment'})); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/walk4'), {...walk, cloudId: 'walk4', personId: 'someone'})); checks++;
+    await assertFails(setDoc(doc(owner, 'ranches/route/vendor_entries/walk5'), {...walk, cloudId: 'walk5', amount: 50})); checks++;
 
     // A home location is optional; null clears it; nonsense is refused.
     const personRef = doc(owner, 'ranches/route/vendor_people/customer');

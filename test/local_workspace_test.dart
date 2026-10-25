@@ -35,6 +35,134 @@ void main() {
   const provider = {'id': 'supplier', 'name': 'Kalai', 'kind': 'supplier'};
   const buyer = {'id': 'buyer', 'name': 'Vijay', 'kind': 'customer'};
 
+  test('A walk-in buyer pays on the spot and owes nothing', () async {
+    await VendorLedger.record(
+      id: 'in',
+      person: provider,
+      kind: 'purchase',
+      quantity: 5,
+      price: 40,
+    );
+    // Rs 20 at Rs 60 a litre.
+    final litres = walkInLitres(20, 60);
+    await VendorLedger.record(
+      id: 'walk',
+      person: vendorWalkIn,
+      kind: 'sale',
+      quantity: litres,
+      price: 60,
+      paid: 20,
+    );
+    final rows = vendorRows('vendor_entries');
+    expect(vendorMilkBalance(rows), closeTo(5 - 1 / 3, 1e-9));
+    expect(vendorPersonDue('_walkin', rows), 0);
+    expect(numv(rows.firstWhere((r) => r['cloudId'] == 'walk'), 'amount'), 20);
+    expect(walkInMl(litres), '333 ml');
+    // Credit is not possible for someone not on the list.
+    await expectLater(
+      VendorLedger.record(
+        id: 'walk2',
+        person: vendorWalkIn,
+        kind: 'sale',
+        quantity: 1,
+        price: 60,
+        paid: 0,
+      ),
+      throwsStateError,
+    );
+  });
+
+  test('Fridge milk keeps two days and becomes curd or money', () async {
+    await VendorLedger.record(
+      id: 'in',
+      person: provider,
+      kind: 'purchase',
+      quantity: 10,
+      price: 40,
+    );
+    await VendorLedger.record(
+      id: 'lot',
+      person: vendorFridge,
+      kind: 'clearance',
+      quantity: 4,
+    );
+    var lot = fridgeLots().single;
+    expect(lot.left, 4);
+    expect(lot.expired(), isFalse);
+    expect(lot.expired(lot.at.add(const Duration(hours: 49))), isTrue);
+    expect(fridgeMilkGood(), 4);
+    await VendorLedger.record(
+      id: 'curd',
+      person: vendorFridge,
+      kind: 'fridge_use',
+      quantity: 1.5,
+      lotId: 'lot',
+      use: 'curd',
+    );
+    await VendorLedger.record(
+      id: 'sold',
+      person: vendorFridge,
+      kind: 'fridge_use',
+      quantity: 2,
+      price: 30,
+      paid: 60,
+      lotId: 'lot',
+      use: 'sold',
+    );
+    lot = fridgeLots().single;
+    expect(lot.curd, 1.5);
+    expect(lot.sold, 2);
+    expect(lot.money, 60);
+    expect(lot.left, .5);
+    // Stock was reduced once, when it went to the fridge.
+    expect(vendorMilkBalance(vendorRows('vendor_entries')), 6);
+    // No more than is left; nothing from a lot that is not there.
+    await expectLater(
+      VendorLedger.record(
+        id: 'too-much',
+        person: vendorFridge,
+        kind: 'fridge_use',
+        quantity: 1,
+        lotId: 'lot',
+        use: 'curd',
+      ),
+      throwsStateError,
+    );
+    await expectLater(
+      VendorLedger.record(
+        id: 'no-lot',
+        person: vendorFridge,
+        kind: 'fridge_use',
+        quantity: .1,
+        lotId: 'nothing',
+        use: 'curd',
+      ),
+      throwsStateError,
+    );
+    // Spoiled milk cannot be used.
+    final box = Hive.box('vendor_entries');
+    final row = Map<String, dynamic>.from(box.get('lot') as Map);
+    row['createdAt'] = DateTime.now()
+        .subtract(const Duration(hours: 49))
+        .toIso8601String();
+    await box.put('lot', row);
+    expect(fridgeLots().single.expired(), isTrue);
+    expect(fridgeMilkGood(), 0);
+    await expectLater(
+      VendorLedger.record(
+        id: 'late',
+        person: vendorFridge,
+        kind: 'fridge_use',
+        quantity: .5,
+        price: 30,
+        paid: 15,
+        lotId: 'lot',
+        use: 'sold',
+      ),
+      throwsStateError,
+    );
+  });
+
   test(
     'Production entries save offline, survive reopen and retry without duplicates',
     () async {

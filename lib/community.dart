@@ -1856,6 +1856,7 @@ class _MilkMovementCard extends StatelessWidget {
         bi('Milk cleared', 'கிளியர் செய்த பால்'),
         '${bi('Moved to', 'எங்கே')}: $name',
       ),
+      'fridge_use' => (bi('Fridge milk used', 'ஃப்ரிட்ஜ் பால் பயன்பாடு'), name),
       _ when fromCows => (
         bi('Milk from ranch cows', 'பண்ணை மாடுகளின் பால்'),
         '${bi('Cow', 'மாடு')}: ${cow.isEmpty ? name : cow}',

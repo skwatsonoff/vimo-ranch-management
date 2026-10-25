@@ -86,6 +86,7 @@ part 'location_gate.dart';
 part 'vimo_team.dart';
 part 'shop_reviews.dart';
 part 'shop_social.dart';
+part 'vendor_walkin_fridge.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -9749,6 +9750,10 @@ class NotificationHistoryScreen extends StatelessWidget {
                                 );
                                 return;
                               }
+                              if (n['fridge'] == true && context.mounted) {
+                                await push(context, const FridgeScreen());
+                                return;
+                              }
                               final product = txt(n, 'productId');
                               if (product.isNotEmpty && context.mounted) {
                                 await push(context, ProductScreen(id: product));
@@ -10337,6 +10342,7 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     vendorRouteRequest.addListener(_showVendorForRoute);
     SocialActivityService.start();
+    unawaited(remindFridgeMilk());
     // Once an account exists on this phone, ask for location (Market).
     if (firebaseReady) {
       _accounts = FirebaseAuth.instance.authStateChanges().listen((user) {
