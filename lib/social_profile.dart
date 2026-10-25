@@ -242,7 +242,7 @@ class SocialActivityService {
     // Offers on my items, and answers to my offers.
     watch(
       db.collection('shop_offers').where('sellerUid', isEqualTo: uid),
-      'offerNoticesSelling',
+      accountSetting('offerNoticesSelling', uid),
       (d) => '${txt(d, 'status')}:${numv(d, 'price')}',
       (d, _) => txt(d, 'status') == 'pending'
           ? (
@@ -253,7 +253,7 @@ class SocialActivityService {
     );
     watch(
       db.collection('shop_offers').where('buyerUid', isEqualTo: uid),
-      'offerNoticesBuying',
+      accountSetting('offerNoticesBuying', uid),
       (d) => txt(d, 'status'),
       (d, _) => switch (txt(d, 'status')) {
         'accepted' => (
@@ -270,7 +270,7 @@ class SocialActivityService {
     // Questions on my items, and answers to mine.
     watch(
       db.collection('shop_questions').where('sellerUid', isEqualTo: uid),
-      'questionNoticesSelling',
+      accountSetting('questionNoticesSelling', uid),
       (d) => txt(d, 'answer').isEmpty ? 'asked' : 'answered',
       (d, before) => before.isEmpty && txt(d, 'answer').isEmpty
           ? (
@@ -281,7 +281,7 @@ class SocialActivityService {
     );
     watch(
       db.collection('shop_questions').where('uid', isEqualTo: uid),
-      'questionNoticesAsked',
+      accountSetting('questionNoticesAsked', uid),
       (d) => txt(d, 'answer').isEmpty ? 'asked' : 'answered',
       (d, _) => txt(d, 'answer').isNotEmpty
           ? (
@@ -324,7 +324,9 @@ class SocialActivityService {
     Map<String, double> likedAt,
   ) async {
     if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
-    final told = asMap(settingValue('priceDropNotices', {}));
+    final told = asMap(
+      settingValue(accountSetting('priceDropNotices', uid), {}),
+    );
     final next = {...told};
     for (final doc in snapshot.docs) {
       final p = doc.data();
@@ -346,7 +348,7 @@ class SocialActivityService {
         extra: {'productId': doc.id},
       );
     }
-    await setSetting('priceDropNotices', next);
+    await setSetting(accountSetting('priceDropNotices', uid), next);
   }
 
   /// A new message from the VIMO Team in this person's support thread.
@@ -357,10 +359,10 @@ class SocialActivityService {
     if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
     final at = thread['updatedAt'];
     if (txt(thread, 'lastFrom') != 'team' || at is! Timestamp) return;
-    final seen = toInt(settingValue('vimoSupportSeen', 0));
+    final seen = toInt(settingValue(accountSetting('vimoSupportSeen', uid), 0));
     final millis = at.millisecondsSinceEpoch;
     if (millis <= seen) return;
-    await setSetting('vimoSupportSeen', millis);
+    await setSetting(accountSetting('vimoSupportSeen', uid), millis);
     if (seen == 0 &&
         DateTime.now().millisecondsSinceEpoch - millis > 86400000) {
       return;
@@ -389,13 +391,16 @@ class SocialActivityService {
   ) async {
     if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
     final seen = {
-      for (final id in (settingValue('vimoReportsSeen', const []) as List))
+      for (final id
+          in (settingValue(accountSetting('vimoReportsSeen', uid), const [])
+              as List))
         '$id',
     };
     final ids = [for (final d in snapshot.docs) d.id];
-    await setSetting('vimoReportsSeen', ids);
-    if (seen.isEmpty && settingValue('vimoReportsPrimed', false) != true) {
-      await setSetting('vimoReportsPrimed', true);
+    await setSetting(accountSetting('vimoReportsSeen', uid), ids);
+    if (seen.isEmpty &&
+        settingValue(accountSetting('vimoReportsPrimed', uid), false) != true) {
+      await setSetting(accountSetting('vimoReportsPrimed', uid), true);
       return;
     }
     for (final d in snapshot.docs.where((d) => !seen.contains(d.id))) {
@@ -428,7 +433,9 @@ class SocialActivityService {
     Map<String, dynamic> order, {
     required bool selling,
   }) async {
-    final key = selling ? 'orderNoticesSelling' : 'orderNoticesBuying';
+    final key = accountSetting(
+      selling ? 'orderNoticesSelling' : 'orderNoticesBuying',
+    );
     await setSetting(key, {
       ...asMap(settingValue(key, {})),
       id: txt(order, 'status'),
@@ -445,7 +452,10 @@ class SocialActivityService {
     required bool selling,
   }) async {
     if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
-    final key = selling ? 'orderNoticesSelling' : 'orderNoticesBuying';
+    final key = accountSetting(
+      selling ? 'orderNoticesSelling' : 'orderNoticesBuying',
+      uid,
+    );
     final seen = asMap(settingValue(key, {}));
     final firstRun = !seen.containsKey('_primed');
     final next = {...seen, '_primed': true};

@@ -154,12 +154,16 @@ const fs = require('node:fs');
     await assertSucceeds(getDoc(doc(seller, 'shop_orders/o1/messages/m1'))); checks++;
     await assertFails(getDoc(doc(other, 'shop_orders/o1/messages/m1'))); checks++;
 
+    // An order placed before the product is deleted can still be accepted.
+    await env.withSecurityRulesDisabled(async (ctx) => updateDoc(doc(ctx.firestore(), 'shop_products/p1'), {stock: 3}));
+    await assertSucceeds(setDoc(oRef(buyer, 'o3'), order({quantity: 1, total: 490}))); checks++;
     // Owner deletes the product with its photos.
     const remove = writeBatch(seller);
     remove.delete(doc(seller, 'shop_products/p1/photos/0'));
     remove.delete(pRef(seller));
     await assertFails(deleteDoc(pRef(buyer))); checks++;
     await assertSucceeds(remove.commit()); checks++;
+    await assertSucceeds(updateDoc(oRef(seller, 'o3'), {status: 'accepted', acceptedAt: serverTimestamp(), sellerUpi: '', updatedAt: serverTimestamp()})); checks++;
     console.log(`Shop and order rules: ${checks} checks passed`);
   } catch (e) {
     console.error(e);

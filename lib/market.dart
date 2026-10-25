@@ -308,6 +308,7 @@ class MarketService {
   /// buyers whose request is accepted); the cloud gets only the grid square.
   static Future<void> saveListing({
     required String name,
+    String? kind,
     required ll.LatLng point,
     required double price,
     required (int?, int?) morning,
@@ -328,7 +329,7 @@ class MarketService {
     await myListing.set({
       'name': name.trim(),
       'nameFold': name.trim().toLowerCase(),
-      'kind': marketListingKind(),
+      'kind': kind ?? marketListingKind(),
       'gridLat': gridLat,
       'gridLng': gridLng,
       'cell': marketCell(gridLat, gridLng),
@@ -407,8 +408,12 @@ class MarketService {
   static Future<bool> listMyRanch(BuildContext context) async {
     final point = await VendorLocation.current(context);
     if (point == null) return false;
+    var name = farmName().trim();
+    if (name.isEmpty) name = await myName();
+    if (name.length > 80) name = name.substring(0, 80);
     await saveListing(
-      name: farmName(),
+      name: name,
+      kind: 'ranch',
       point: point,
       price: defaultMilkPrice(),
       morning: (6 * 60, 8 * 60),
@@ -1191,9 +1196,31 @@ class _NearbyScreenState extends State<NearbyScreen> {
 
 /// "You buy from": the sellers whose milk requests this buyer has had
 /// accepted, at the top of Market for a quick way back.
-class _PreviousSellers extends StatelessWidget {
+class _PreviousSellers extends StatefulWidget {
   final ll.LatLng? here;
   const _PreviousSellers({this.here});
+
+  @override
+  State<_PreviousSellers> createState() => _PreviousSellersState();
+}
+
+class _PreviousSellersState extends State<_PreviousSellers> {
+  String _key = '';
+  Future<List<MarketVendor>>? _future;
+
+  /// Looked up again only when the sellers or the place change, not on
+  /// every rebuild of Market.
+  Future<List<MarketVendor>> _sellers(
+    String key,
+    List<Map<String, dynamic>> requests,
+  ) {
+    final full = '$key|${widget.here}';
+    if (_future == null || full != _key) {
+      _key = full;
+      _future = MarketService.previousSellers(requests, here: widget.here);
+    }
+    return _future!;
+  }
 
   @override
   Widget build(BuildContext context) =>
@@ -1215,8 +1242,7 @@ class _PreviousSellers extends StatelessWidget {
               .toSet()
               .join(',');
           return FutureBuilder<List<MarketVendor>>(
-            key: ValueKey(key),
-            future: MarketService.previousSellers(requests, here: here),
+            future: _sellers(key, requests),
             builder: (context, sellers) {
               final list = sellers.data ?? const <MarketVendor>[];
               if (list.isEmpty) return const SizedBox.shrink();

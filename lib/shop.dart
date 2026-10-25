@@ -361,16 +361,11 @@ class ShopService {
       isEqualTo: 'active',
     );
     if (category.isNotEmpty) q = q.where('category', isEqualTo: category);
-    final snap = await q.limit(60).get();
-    final docs =
-        snap.docs.where((d) => d.data()['sellerUid'] != signedInUid).toList()
-          ..sort(
-            (a, b) => (_marketTime(b.data()['updatedAt']) ?? DateTime(2000))
-                .compareTo(
-                  _marketTime(a.data()['updatedAt']) ?? DateTime(2000),
-                ),
-          );
-    return docs;
+    // Newest first on the server, so new listings are never cut off.
+    final snap = await q.orderBy('updatedAt', descending: true).limit(60).get();
+    return snap.docs
+        .where((d) => d.data()['sellerUid'] != signedInUid)
+        .toList();
   }
 
   // --- Orders -----------------------------------------------------------------
@@ -426,7 +421,7 @@ class ShopService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await batch.commit();
-    await setSetting('shopAddress', address);
+    await setSetting(accountSetting('shopAddress'), address);
     return ref.id;
   }
 
@@ -436,19 +431,40 @@ class ShopService {
     Map<String, dynamic> order, {
     String upi = '',
   }) async {
-    final batch = _db.batch();
-    batch.update(orders.doc(id), {
-      'status': 'accepted',
-      'acceptedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'sellerUpi': upi.trim(),
-    });
-    batch.update(products.doc(txt(order, 'productId')), {
-      'stock': FieldValue.increment(-toInt(order['quantity'])),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    await batch.commit();
+    await _withStock(
+      id,
+      order,
+      -toInt(order['quantity']),
+      (_) => {
+        'status': 'accepted',
+        'acceptedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'sellerUpi': upi.trim(),
+      },
+    );
   }
+
+  /// Changes the order and, in the same step, the stock by [delta] when
+  /// the product is still listed. A deleted product keeps its orders
+  /// workable: there is simply no stock to change. [update] learns whether
+  /// the product was there.
+  static Future<bool> _withStock(
+    String id,
+    Map<String, dynamic> order,
+    int delta,
+    Map<String, dynamic> Function(bool listed) update,
+  ) => _db.runTransaction((tx) async {
+    final ref = products.doc(txt(order, 'productId'));
+    final listed = (await tx.get(ref)).exists;
+    tx.update(orders.doc(id), update(listed));
+    if (listed && delta != 0) {
+      tx.update(ref, {
+        'stock': FieldValue.increment(delta),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    return listed;
+  });
 
   static Future<void> ship(String id, String tracking) =>
       orders.doc(id).update({
@@ -540,20 +556,20 @@ class ShopService {
   }) async {
     final ask = asMap(order['cancelRequest']);
     final restock = bySeller && txt(order, 'status') == 'accepted';
-    final batch = _db.batch();
-    batch.update(orders.doc(id), {
-      'status': 'cancelled',
-      'cancelledAt': FieldValue.serverTimestamp(),
-      'cancelledBy': txt(ask, 'by'),
-      'cancelReason': txt(ask, 'reason'),
-      'cancelRequest': FieldValue.delete(),
-      if (restock) 'restocked': true,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    if (restock) {
-      batch.update(products.doc(txt(order, 'productId')), _back(order));
-    }
-    await batch.commit();
+    await _withStock(
+      id,
+      order,
+      restock ? toInt(order['quantity']) : 0,
+      (listed) => {
+        'status': 'cancelled',
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'cancelledBy': txt(ask, 'by'),
+        'cancelReason': txt(ask, 'reason'),
+        'cancelRequest': FieldValue.delete(),
+        if (restock && listed) 'restocked': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
   }
 
   /// A cancelled order the seller had accepted, where the buyer gave the
@@ -564,19 +580,28 @@ class ShopService {
       order['restocked'] != true;
 
   static Future<void> restock(String id, Map<String, dynamic> order) async {
-    final batch = _db.batch();
-    batch.update(orders.doc(id), {
-      'restocked': true,
-      'updatedAt': FieldValue.serverTimestamp(),
+    final ref = products.doc(txt(order, 'productId'));
+    final listed = await _db.runTransaction((tx) async {
+      if (!(await tx.get(ref)).exists) return false;
+      tx.update(orders.doc(id), {
+        'restocked': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      tx.update(ref, {
+        'stock': FieldValue.increment(toInt(order['quantity'])),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
     });
-    batch.update(products.doc(txt(order, 'productId')), _back(order));
-    await batch.commit();
+    if (!listed) {
+      throw StateError(
+        bi(
+          'This listing was deleted, so there is no stock to put back.',
+          'இந்தப் பட்டியல் நீக்கப்பட்டது; திரும்ப வைக்க இருப்பு இல்லை.',
+        ),
+      );
+    }
   }
-
-  static Map<String, dynamic> _back(Map<String, dynamic> order) => {
-    'stock': FieldValue.increment(toInt(order['quantity'])),
-    'updatedAt': FieldValue.serverTimestamp(),
-  };
 
   static CollectionReference<Map<String, dynamic>> messagesOf(String id) =>
       orders.doc(id).collection('messages');

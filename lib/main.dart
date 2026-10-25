@@ -5161,6 +5161,11 @@ Map<String, dynamic> localCloudData(Map<String, dynamic> value) =>
       ..remove('updatedAt')
       ..remove('settingKey');
 
+/// A setting that belongs to one signed-in account on this phone: never
+/// shared with the ranch, and separate when someone else signs in here.
+String accountSetting(String name, [String? uid]) =>
+    'acct_${uid ?? signedInUid}_$name';
+
 class CloudSyncService {
   const CloudSyncService._();
 
@@ -5207,6 +5212,8 @@ class CloudSyncService {
       ranchId().isNotEmpty;
 
   static bool isLocalSetting(String key) =>
+      key.startsWith('acct_') ||
+      key.startsWith('locationAsked_') ||
       key.startsWith('vendorRide_') ||
       key.startsWith('localImport_') ||
       localOnlySettings.contains(key);

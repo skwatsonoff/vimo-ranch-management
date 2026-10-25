@@ -181,5 +181,14 @@ void main() {
   test('The exact place and seen answers stay on this phone', () {
     expect(CloudSyncService.isLocalSetting('marketPoint'), isTrue);
     expect(CloudSyncService.isLocalSetting('marketSeen'), isTrue);
+    // Checkout address, UPI ID and notice state stay with the account.
+    expect(
+      CloudSyncService.isLocalSetting(accountSetting('shopAddress', 'u1')),
+      isTrue,
+    );
+    expect(
+      accountSetting('shopUpi', 'u1'),
+      isNot(accountSetting('shopUpi', 'u2')),
+    );
   });
 }

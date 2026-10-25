@@ -852,8 +852,8 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
             _shopSection(
               bi('Search tags', 'தேடல் குறிச்சொற்கள்'),
               note: bi(
-                'Up to 5 words that help people find this in Market. Buyers never see them.',
-                'சந்தையில் இதைக் கண்டறிய உதவும் 5 சொற்கள் வரை. வாங்குபவர்களுக்குத் தெரியாது.',
+                'Up to 5 words that help people find this in Market. They are not shown on the item page.',
+                'சந்தையில் இதைக் கண்டறிய உதவும் 5 சொற்கள் வரை. பொருள் பக்கத்தில் காட்டப்படாது.',
               ),
             ),
             Wrap(

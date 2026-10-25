@@ -121,7 +121,7 @@ class ProductScreen extends StatelessWidget {
       StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: ShopService.products.doc(id).snapshots(),
         builder: (context, snap) {
-          final p = snap.data?.data() ?? initial;
+          final p = snap.hasData ? snap.data!.data() : initial;
           if (p == null) {
             return Scaffold(
               appBar: AppBar(leading: const _BackButton()),
@@ -545,7 +545,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int _qty = 1;
   bool _busy = false;
   late final Map<String, dynamic> _saved = asMap(
-    settingValue('shopAddress', {}),
+    settingValue(accountSetting('shopAddress'), {}),
   );
   late final _name = TextEditingController(
     text: txt(_saved, 'name', accountFullName),
@@ -1155,6 +1155,8 @@ class _OrderBodyState extends State<_OrderBody> {
                   'That step is not possible now. The order may have changed.',
                   'இப்போது அந்தப் படி இயலாது. ஆர்டர் மாறியிருக்கலாம்.',
                 )
+              : error is StateError
+              ? error.message
               : accountError(error),
           tone: SnackTone.error,
         );
@@ -1310,10 +1312,7 @@ class _OrderBodyState extends State<_OrderBody> {
                   final entered = await _ask(
                     bi('Your UPI ID', 'உங்கள் UPI ID'),
                     'name@bank',
-                    initial: txt(
-                      asMap(settingValue('shopUpi', {})),
-                      signedInUid,
-                    ),
+                    initial: '${settingValue(accountSetting('shopUpi'), '')}',
                   );
                   if (entered == null) return;
                   if (!RegExp(
@@ -1332,10 +1331,7 @@ class _OrderBodyState extends State<_OrderBody> {
                     return;
                   }
                   upi = entered;
-                  await setSetting('shopUpi', {
-                    ...asMap(settingValue('shopUpi', {})),
-                    signedInUid: upi,
-                  });
+                  await setSetting(accountSetting('shopUpi'), upi);
                 }
                 await _run(
                   () => ShopService.accept(widget.id, o, upi: upi),
