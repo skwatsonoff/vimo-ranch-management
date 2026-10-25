@@ -68,8 +68,8 @@ geolocator, record, file_picker, url_launcher.
 ### Phase 1 — Audit
 - [x] Skills loaded: apple-look, apple-motion, design-taste-frontend,
       awesome-design-md (apple), web-design-guidelines (Phase 6)
-- [ ] Screens captured (preview build) and reviewed
-- [ ] `docs/UI_AUDIT.md` written (What / Why / Fix, most important first)
+- [x] Screens captured (preview build) and reviewed
+- [x] `docs/UI_AUDIT.md` written (What / Why / Fix, most important first)
 
 ### Phase 2 — Design system and UI
 - [ ] Tokens: VIMO Milk palette, spacing 4/8 scale, radii, shadows, blur
