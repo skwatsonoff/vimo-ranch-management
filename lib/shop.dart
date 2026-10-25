@@ -351,20 +351,24 @@ class ShopService {
     ];
   }
 
-  /// Recently listed active products, newest first (sorted here, so no
-  /// composite index is needed).
+  /// Recently listed active products, newest first. Sorted on the server
+  /// with the single-field index (no composite index to deploy), so new
+  /// listings are never cut off; active ones in the category are kept here.
   static Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> recent({
     String category = '',
   }) async {
-    Query<Map<String, dynamic>> q = products.where(
-      'status',
-      isEqualTo: 'active',
-    );
-    if (category.isNotEmpty) q = q.where('category', isEqualTo: category);
-    // Newest first on the server, so new listings are never cut off.
-    final snap = await q.orderBy('updatedAt', descending: true).limit(60).get();
+    final snap = await products
+        .orderBy('updatedAt', descending: true)
+        .limit(200)
+        .get();
     return snap.docs
-        .where((d) => d.data()['sellerUid'] != signedInUid)
+        .where(
+          (d) =>
+              d.data()['status'] == 'active' &&
+              d.data()['sellerUid'] != signedInUid &&
+              (category.isEmpty || d.data()['category'] == category),
+        )
+        .take(60)
         .toList();
   }
 
