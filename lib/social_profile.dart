@@ -690,6 +690,14 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                               if (!own) _FollowsYou(uid: uid),
                                             ],
                                           ),
+                                          ReviewSummary(
+                                            uid: uid,
+                                            name: txt(
+                                              data,
+                                              'displayName',
+                                              own ? currentUserName() : name,
+                                            ),
+                                          ),
                                           if (txt(data, 'place').isNotEmpty)
                                             Padding(
                                               padding: const EdgeInsets.only(

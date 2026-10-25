@@ -84,6 +84,7 @@ part 'languages.dart';
 part 'market.dart';
 part 'location_gate.dart';
 part 'vimo_team.dart';
+part 'shop_reviews.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();

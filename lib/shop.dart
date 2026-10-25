@@ -446,21 +446,51 @@ class ShopService {
         'tracking': tracking.trim(),
       });
 
-  static Future<void> received(String id, String score, String text) =>
-      orders.doc(id).update({
-        'status': 'received',
-        'receivedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'buyerRating': {'score': score, 'text': text.trim()},
-      });
+  /// The buyer confirms it arrived and rates the seller; the rating also
+  /// goes on the seller's profile as a review, in the same step.
+  static Future<void> received(
+    String id,
+    Map<String, dynamic> order,
+    int stars,
+    String text,
+  ) => _rateAndMove(id, order, stars, text, bySeller: false);
 
-  static Future<void> complete(String id, String score, String text) =>
-      orders.doc(id).update({
-        'status': 'completed',
-        'completedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'sellerRating': {'score': score, 'text': text.trim()},
-      });
+  /// The seller rates the buyer, which completes the sale.
+  static Future<void> complete(
+    String id,
+    Map<String, dynamic> order,
+    int stars,
+    String text,
+  ) => _rateAndMove(id, order, stars, text, bySeller: true);
+
+  static Future<void> _rateAndMove(
+    String id,
+    Map<String, dynamic> order,
+    int stars,
+    String text, {
+    required bool bySeller,
+  }) async {
+    final rating = {'stars': stars.clamp(1, 5), 'text': text.trim()};
+    final role = bySeller ? 'seller' : 'buyer';
+    final batch = _db.batch();
+    batch.update(orders.doc(id), {
+      'status': bySeller ? 'completed' : 'received',
+      bySeller ? 'completedAt' : 'receivedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      bySeller ? 'sellerRating' : 'buyerRating': rating,
+    });
+    batch.set(ShopReviews.reviews.doc('${id}_$role'), {
+      'orderId': id,
+      'aboutUid': txt(order, bySeller ? 'buyerUid' : 'sellerUid'),
+      'byUid': signedInUid,
+      'byName': txt(order, bySeller ? 'sellerName' : 'buyerName', 'VIMO'),
+      'role': role,
+      ...rating,
+      'title': txt(order, 'title'),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  }
 
   /// Cancels; an accepted order gives its stock back.
   /// Cancelling takes both people, Mercari style: one asks with a reason,

@@ -470,6 +470,7 @@ class _SellerCard extends StatelessWidget {
                           '@${txt(data, 'username')}',
                           style: TextStyle(color: Ink.muted, fontSize: 13),
                         ),
+                      ReviewSummary(uid: uid, name: shown),
                     ],
                   ),
                 ),
@@ -1189,9 +1190,10 @@ class _OrderBodyState extends State<_OrderBody> {
     return result;
   }
 
-  /// Rate the other side, Mercari style: good or not good, plus a comment.
-  Future<(String, String)?> _rate(String who) async {
-    var score = 'good';
+  /// Rate the other side, Mercari style: five stars already filled in,
+  /// lowered only if something went wrong, plus an optional comment.
+  Future<(int, String)?> _rate(String who) async {
+    var stars = 5;
     final text = TextEditingController();
     final ok = await showAppleSheet<bool>(
       context: context,
@@ -1217,23 +1219,26 @@ class _OrderBodyState extends State<_OrderBody> {
                 ),
               ),
               const SizedBox(height: 16),
-              LiquidSegmentBar(
-                labels: [bi('Good', 'நல்லது'), bi('Not good', 'சரியில்லை')],
-                icons: const [
-                  CupertinoIcons.hand_thumbsup_fill,
-                  CupertinoIcons.hand_thumbsdown_fill,
-                ],
-                index: score == 'good' ? 0 : 1,
-                onChanged: (v) => set(() => score = v == 0 ? 'good' : 'bad'),
-              ),
+              StarPicker(value: stars, onChanged: (v) => set(() => stars = v)),
               const SizedBox(height: 12),
               TextField(
                 controller: text,
                 maxLength: 300,
                 maxLines: 3,
                 decoration: fieldStyle(
-                  bi('Comment (optional)', 'கருத்து (விருப்பம்)'),
+                  bi(
+                    'Write a few words (optional)',
+                    'சில வார்த்தைகள் எழுதுங்கள் (விருப்பம்)',
+                  ),
                 ),
+              ),
+              Text(
+                bi(
+                  'Shown on $who’s profile. You can delete it later.',
+                  '$who-இன் ப்ரொஃபைலில் காட்டப்படும். பின்னர் நீக்கலாம்.',
+                ),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Ink.muted, fontSize: 13),
               ),
               const SizedBox(height: 8),
               LiquidButton(
@@ -1247,7 +1252,7 @@ class _OrderBodyState extends State<_OrderBody> {
     );
     final comment = text.text;
     text.dispose();
-    return ok == true ? (score, comment) : null;
+    return ok == true ? (stars, comment) : null;
   }
 
   List<Widget> _actions(String status) {
@@ -1370,7 +1375,8 @@ class _OrderBodyState extends State<_OrderBody> {
                 final rating = await _rate(buyer);
                 if (rating == null) return;
                 await _run(
-                  () => ShopService.complete(widget.id, rating.$1, rating.$2),
+                  () =>
+                      ShopService.complete(widget.id, o, rating.$1, rating.$2),
                   bi('Order completed', 'ஆர்டர் முடிந்தது'),
                 );
               },
@@ -1393,7 +1399,8 @@ class _OrderBodyState extends State<_OrderBody> {
                 final rating = await _rate(seller);
                 if (rating == null) return;
                 await _run(
-                  () => ShopService.received(widget.id, rating.$1, rating.$2),
+                  () =>
+                      ShopService.received(widget.id, o, rating.$1, rating.$2),
                   bi(
                     'Thanks! $seller will rate you next.',
                     'நன்றி! அடுத்து $seller உங்களை மதிப்பிடுவார்.',
@@ -1863,30 +1870,34 @@ class _RatingLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final good = txt(rating, 'score') == 'good';
+    final stars = ratingStars(rating);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Glass(
         radius: 18,
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              good
-                  ? CupertinoIcons.hand_thumbsup_fill
-                  : CupertinoIcons.hand_thumbsdown_fill,
-              color: good ? Ink.greenText : Ink.redText,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    who,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Semantics(
+                  label: bi('$stars of 5 stars', '5-ல் $stars நட்சத்திரம்'),
+                  child: StarRow(value: stars.toDouble()),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                [
-                  '$who: ${good ? bi('Good', 'நல்லது') : bi('Not good', 'சரியில்லை')}',
-                  if (txt(rating, 'text').isNotEmpty) txt(rating, 'text'),
-                ].join('\n'),
+            if (txt(rating, 'text').isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(txt(rating, 'text')),
               ),
-            ),
           ],
         ),
       ),

@@ -190,6 +190,39 @@ void main() {
     expect(find.widgetWithText(TextField, 'Add a tag'), findsNothing);
   });
 
+  testWidgets('Rating starts at five stars and can be lowered', (tester) async {
+    var stars = 5;
+    await tester.pumpWidget(
+      app(
+        Scaffold(
+          body: StatefulBuilder(
+            builder: (context, set) => StarPicker(
+              value: stars,
+              onChanged: (v) => set(() => stars = v),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byIcon(CupertinoIcons.star_fill), findsNWidgets(5));
+    expect(find.text('Excellent'), findsOneWidget);
+    await tester.tap(find.byIcon(CupertinoIcons.star_fill).at(2));
+    await tester.pumpAndSettle();
+    expect(stars, 3);
+    expect(find.byIcon(CupertinoIcons.star_fill), findsNWidgets(3));
+    expect(find.text('Okay'), findsOneWidget);
+    expect(ratingStars({'score': 'good'}), 5);
+    expect(ratingStars({'stars': 2, 'text': ''}), 2);
+    expect(
+      ShopReviews.summary([
+        {'stars': 5},
+        {'stars': 4},
+        {'stars': 9},
+      ]),
+      (4.5, 2),
+    );
+  });
+
   testWidgets('A report needs a reason and a few words first', (tester) async {
     tester.view.physicalSize = const Size(390, 2000);
     tester.view.devicePixelRatio = 1;

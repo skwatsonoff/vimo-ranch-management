@@ -459,8 +459,9 @@ service cloud.firestore {
           && a.pincode is string && a.pincode.matches('^[1-9][0-9]{5}$')));
       }
       function validRating(r) {
-        return r is map && r.keys().hasOnly(['score', 'text'])
-          && r.score in ['good', 'bad'] && r.text is string && r.text.size() <= 300;
+        return r is map && r.keys().hasOnly(['stars', 'text'])
+          && r.stars is int && r.stars >= 1 && r.stars <= 5
+          && r.text is string && r.text.size() <= 300;
       }
       function validOrder(d) {
         return d.keys().hasOnly(['productId', 'sellerUid', 'buyerUid', 'sellerName', 'buyerName', 'title', 'cover', 'unitPrice', 'quantity', 'deliveryMethod', 'deliveryFee', 'total', 'payment', 'address', 'note', 'status', 'createdAt', 'updatedAt'])
@@ -584,6 +585,32 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
         allow update, delete: if false;
       }
+    }
+
+    // Public reviews, written in the same step as the order's rating and
+    // matching it. Anyone signed in reads them; only the writer deletes.
+    match /shop_reviews/{reviewId} {
+      function rated() {
+        return getAfter(/databases/$(database)/documents/shop_orders/$(request.resource.data.orderId)).data;
+      }
+      function matches(d, o) {
+        return (d.role == 'buyer' && o.buyerUid == request.auth.uid && o.sellerUid == d.aboutUid
+            && o.status == 'received' && o.buyerRating.stars == d.stars && o.buyerRating.text == d.text)
+          || (d.role == 'seller' && o.sellerUid == request.auth.uid && o.buyerUid == d.aboutUid
+            && o.status == 'completed' && o.sellerRating.stars == d.stars && o.sellerRating.text == d.text);
+      }
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['orderId', 'aboutUid', 'byUid', 'byName', 'role', 'stars', 'text', 'title', 'createdAt'])
+        && request.resource.data.role in ['buyer', 'seller']
+        && reviewId == request.resource.data.orderId + '_' + request.resource.data.role
+        && request.resource.data.byUid == request.auth.uid
+        && request.resource.data.byName is string && request.resource.data.byName.size() > 0 && request.resource.data.byName.size() <= 80
+        && request.resource.data.title == rated().title
+        && request.resource.data.createdAt == request.time
+        && matches(request.resource.data, rated());
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.byUid == request.auth.uid;
     }
 
     // Nearby milk search. A vendor or shop chooses to be listed; the place is

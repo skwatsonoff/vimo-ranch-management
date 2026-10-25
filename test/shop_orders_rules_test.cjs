@@ -96,11 +96,32 @@ const fs = require('node:fs');
     // The seller says no; the order goes on.
     await assertSucceeds(updateDoc(oRef(seller), {cancelRequest: deleteField(), updatedAt: serverTimestamp()})); checks++;
     await assertSucceeds(updateDoc(oRef(seller), {status: 'shipped', shippedAt: serverTimestamp(), tracking: 'India Post EE1', updatedAt: serverTimestamp()})); checks++;
-    await assertFails(updateDoc(oRef(seller), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {score: 'good', text: ''}, updatedAt: serverTimestamp()})); checks++;
-    await assertFails(updateDoc(oRef(buyer), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {score: 'great', text: ''}, updatedAt: serverTimestamp()})); checks++;
-    await assertSucceeds(updateDoc(oRef(buyer), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {score: 'good', text: 'Lovely ghee'}, updatedAt: serverTimestamp()})); checks++;
-    await assertFails(updateDoc(oRef(buyer), {status: 'completed', completedAt: serverTimestamp(), sellerRating: {score: 'good', text: ''}, updatedAt: serverTimestamp()})); checks++;
-    await assertSucceeds(updateDoc(oRef(seller), {status: 'completed', completedAt: serverTimestamp(), sellerRating: {score: 'good', text: 'Paid on time'}, updatedAt: serverTimestamp()})); checks++;
+    await assertFails(updateDoc(oRef(seller), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {stars: 6, text: ''}, updatedAt: serverTimestamp()})); checks++;
+    await assertFails(updateDoc(oRef(buyer), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {stars: 0, text: ''}, updatedAt: serverTimestamp()})); checks++;
+    await assertFails(updateDoc(oRef(buyer), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {score: 'good', text: ''}, updatedAt: serverTimestamp()})); checks++; // stars now
+    // Rating and the public review go together and must match.
+    const review = (over = {}) => ({orderId: 'o1', aboutUid: 'seller', byUid: 'buyer', byName: 'Kumar', role: 'buyer', stars: 4, text: 'Lovely ghee', title: 'A2 Ghee 500 ml', createdAt: serverTimestamp(), ...over});
+    const lie = writeBatch(buyer);
+    lie.update(oRef(buyer), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {stars: 4, text: 'Lovely ghee'}, updatedAt: serverTimestamp()});
+    lie.set(doc(buyer, 'shop_reviews/o1_buyer'), review({stars: 5}));
+    await assertFails(lie.commit()); checks++;
+    await assertFails(setDoc(doc(other, 'shop_reviews/o1_buyer'), review({byUid: 'other'}))); checks++;
+    const rate = writeBatch(buyer);
+    rate.update(oRef(buyer), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {stars: 4, text: 'Lovely ghee'}, updatedAt: serverTimestamp()});
+    rate.set(doc(buyer, 'shop_reviews/o1_buyer'), review());
+    await assertSucceeds(rate.commit()); checks++;
+    await assertSucceeds(getDoc(doc(other, 'shop_reviews/o1_buyer'))); checks++; // public
+    await assertSucceeds(getDocs(query(collection(other, 'shop_reviews'), where('aboutUid', '==', 'seller')))); checks++;
+    await assertFails(updateDoc(doc(buyer, 'shop_reviews/o1_buyer'), {stars: 5})); checks++;
+    await assertFails(deleteDoc(doc(seller, 'shop_reviews/o1_buyer'))); checks++; // the seller cannot remove it
+    await assertFails(updateDoc(oRef(buyer), {status: 'completed', completedAt: serverTimestamp(), sellerRating: {stars: 5, text: ''}, updatedAt: serverTimestamp()})); checks++;
+    const done = writeBatch(seller);
+    done.update(oRef(seller), {status: 'completed', completedAt: serverTimestamp(), sellerRating: {stars: 5, text: 'Paid on time'}, updatedAt: serverTimestamp()});
+    done.set(doc(seller, 'shop_reviews/o1_seller'), review({aboutUid: 'buyer', byUid: 'seller', byName: 'Selvi', role: 'seller', stars: 5, text: 'Paid on time'}));
+    await assertSucceeds(done.commit()); checks++;
+    await assertFails(setDoc(doc(buyer, 'shop_reviews/o1_buyer2'), review())); checks++; // one per order and side
+    await assertSucceeds(deleteDoc(doc(buyer, 'shop_reviews/o1_buyer'))); checks++; // the writer can
+    await assertFails(setDoc(doc(buyer, 'shop_reviews/o1_buyer'), review())); checks++; // and not again once completed
     await assertFails(deleteDoc(oRef(seller))); checks++;
 
     // Too late to ask once it is sent.
