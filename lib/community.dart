@@ -1464,8 +1464,19 @@ class DirectChatScreen extends StatefulWidget {
 class _DirectChatScreenState extends State<DirectChatScreen> {
   final _text = TextEditingController();
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Messages in the open conversation need no notification.
+    SocialActivityService.openChatId = widget.chatId;
+  }
+
   @override
   void dispose() {
+    if (SocialActivityService.openChatId == widget.chatId) {
+      SocialActivityService.openChatId = '';
+    }
     _text.dispose();
     super.dispose();
   }

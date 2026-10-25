@@ -9296,7 +9296,13 @@ class RanchNotificationService {
     }
     final me = currentUserName();
     final fromSomeoneElse = txt(row, 'addedBy') != me;
-    final prompt = const {'join', 'reminder'}.contains(txt(row, 'type'));
+    final prompt = const {
+      'join',
+      'reminder',
+      'follow',
+      'unfollow',
+      'message',
+    }.contains(txt(row, 'type'));
     if ((fromSomeoneElse || prompt) &&
         notificationForMe(row, me) &&
         !notificationRead(row)) {
@@ -9634,6 +9640,20 @@ class NotificationHistoryScreen extends StatelessWidget {
                               }
                               n['readBy'] = read;
                               await box.put(e.key, n);
+                              final peer = txt(n, 'chatPeer');
+                              if (peer.isNotEmpty && context.mounted) {
+                                await push(
+                                  context,
+                                  DirectChatScreen(
+                                    chatId: DirectChatService.idFor(
+                                      signedInUid,
+                                      peer,
+                                    ),
+                                    peer: peer,
+                                  ),
+                                );
+                                return;
+                              }
                               final profile = txt(n, 'profileUid');
                               if (profile.isNotEmpty && context.mounted) {
                                 await push(

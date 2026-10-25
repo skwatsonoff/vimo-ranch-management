@@ -60,19 +60,158 @@ Widget profileAvatar(
   halo: halo,
 );
 
-/// Tells a member when someone new follows them. There is no push server, so
-/// this watches the member's own followers list while the app is open and,
-/// on the next launch, reports follows that arrived while it was closed.
+/// Tells a member when someone follows them, unfollows them or sends them a
+/// message. There is no push server, so this watches the member's own
+/// followers and chats while the app is open and, on the next launch,
+/// reports what arrived while it was closed.
 class SocialActivityService {
   const SocialActivityService._();
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _followers;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _allFollowers;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chats;
+  static final Map<
+    String,
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
+  >
+  _chatLatest = {};
   static String _uid = '';
+
+  /// The direct chat on screen right now: its messages need no alert.
+  static String openChatId = '';
+
+  static Future<String> _nameOf(String uid) async {
+    var name = bi('Someone', 'ஒருவர்');
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('profiles')
+          .doc(uid)
+          .get()
+          .timeout(CloudSyncService.networkTimeout);
+      final data = profile.data() ?? const <String, dynamic>{};
+      final username = txt(data, 'username');
+      name = txt(data, 'displayName', username.isEmpty ? name : '@$username');
+    } catch (_) {}
+    return name;
+  }
+
+  /// Someone stopped following: compares the whole followers list with the
+  /// one last seen on this device. The first run only records it.
+  static Future<void> _checkUnfollows(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    if (snapshot.metadata.isFromCache) return;
+    final known = asMap(settingValue('followerIds', {}));
+    final current = [for (final d in snapshot.docs) d.id];
+    final before = known[uid];
+    await setSetting('followerIds', {...known, uid: current});
+    if (before is! List) return;
+    final gone = before.map((e) => '$e').toSet().difference(current.toSet());
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    for (final follower in gone) {
+      final name = await _nameOf(follower);
+      await addRanchNotification(
+        title: '$name unfollowed you',
+        titleTa: '$name உங்களைப் பின்தொடர்வதை நிறுத்தினார்',
+        message: 'Tap to see their profile',
+        messageTa: 'அவர் சுயவிவரத்தைப் பார்க்க',
+        type: 'unfollow',
+        sourceId: 'unfollow-$uid-$follower-$stamp',
+        localOnly: true,
+        extra: {'profileUid': follower},
+      );
+      _browserRuntime.showNotification(
+        title: bi(
+          '$name unfollowed you',
+          '$name உங்களைப் பின்தொடர்வதை நிறுத்தினார்',
+        ),
+        body: bi('Open VIMO to see their profile', 'VIMO-வில் பார்க்கவும்'),
+        tag: 'unfollow-$follower',
+      );
+    }
+  }
+
+  /// One small listener per conversation (its newest message).
+  static void _watchChats(String uid, QuerySnapshot<Map<String, dynamic>> s) {
+    for (final chat in s.docs) {
+      if (_chatLatest.containsKey(chat.id)) continue;
+      _chatLatest[chat.id] = chat.reference
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .snapshots()
+          .listen(
+            (m) => unawaited(_messageArrived(uid, chat.id, m)),
+            onError: (_) {},
+          );
+    }
+  }
+
+  static Future<void> _messageArrived(
+    String uid,
+    String chatId,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final message = snapshot.docs.firstOrNull?.data();
+    if (message == null) return;
+    final at = message['createdAt'];
+    if (at is! Timestamp) return;
+    final millis = at.millisecondsSinceEpoch;
+    final seenByChat = asMap(settingValue('messageNotices', {}));
+    final seen = seenByChat[chatId];
+    if (seen is num && millis <= seen) return;
+    await setSetting('messageNotices', {...seenByChat, chatId: millis});
+    // The first sight of a chat only records where "new" starts.
+    if (seen is! num) return;
+    final sender = txt(message, 'senderUid');
+    if (sender.isEmpty || sender == uid || openChatId == chatId) return;
+    final name = await _nameOf(sender);
+    final text = txt(message, 'text').trim();
+    final preview = text.isEmpty
+        ? bi('Sent a voice or photo message', 'குரல் அல்லது படச் செய்தி')
+        : (text.length > 80 ? '${text.substring(0, 80)}…' : text);
+    await addRanchNotification(
+      title: '$name sent you a message',
+      titleTa: '$name உங்களுக்குச் செய்தி அனுப்பினார்',
+      message: preview,
+      type: 'message',
+      sourceId: 'message-$chatId-$millis',
+      localOnly: true,
+      extra: {'chatPeer': sender},
+    );
+    _browserRuntime.showNotification(
+      title: bi('$name sent you a message', '$name செய்தி அனுப்பினார்'),
+      body: preview,
+      tag: 'message-$chatId',
+    );
+  }
 
   static void start() {
     final uid = signedInUid;
     if (uid.isEmpty || (uid == _uid && _followers != null)) return;
     unawaited(_followers?.cancel());
+    unawaited(_allFollowers?.cancel());
+    unawaited(_chats?.cancel());
+    for (final watch in _chatLatest.values) {
+      unawaited(watch.cancel());
+    }
+    _chatLatest.clear();
     _uid = uid;
+    final profile = FirebaseFirestore.instance.collection('profiles').doc(uid);
+    _allFollowers = profile
+        .collection('followers')
+        .snapshots(includeMetadataChanges: true)
+        .listen(
+          (snapshot) => unawaited(_checkUnfollows(uid, snapshot)),
+          onError: (_) {},
+        );
+    _chats = FirebaseFirestore.instance
+        .collection('direct_chats')
+        .where('participants', arrayContains: uid)
+        .snapshots()
+        .listen((snapshot) => _watchChats(uid, snapshot), onError: (_) {});
     _followers = FirebaseFirestore.instance
         .collection('profiles')
         .doc(uid)
@@ -146,7 +285,15 @@ class SocialActivityService {
 
   static Future<void> stop() async {
     await _followers?.cancel();
+    await _allFollowers?.cancel();
+    await _chats?.cancel();
+    for (final watch in _chatLatest.values) {
+      await watch.cancel();
+    }
+    _chatLatest.clear();
     _followers = null;
+    _allFollowers = null;
+    _chats = null;
     _uid = '';
   }
 }
