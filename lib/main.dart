@@ -58,6 +58,7 @@ part 'liquid_design.dart';
 part 'design_tokens.dart';
 part 'polish.dart';
 part 'ui_sound.dart';
+part 'google_account.dart';
 part 'account.dart';
 part 'social_profile.dart';
 part 'requested_updates.dart';
@@ -221,6 +222,16 @@ Future<void> main() async {
     // Load the interface sounds once the first frame is up, so launch never
     // waits on audio.
     unawaited(UiSound.preload());
+    // Coming back from Google's page (sign-in where pop-ups are blocked):
+    // a first-time Google account continues to its VIMO details.
+    if (kIsWeb && firebaseReady) {
+      unawaited(
+        FirebaseAuth.instance
+            .getRedirectResult()
+            .then(completeGoogleProfile)
+            .catchError((Object _) {}),
+      );
+    }
   });
 }
 
@@ -8856,6 +8867,29 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
+  bool _googleBusy = false;
+
+  /// Sign in with Google. A first-time Google account continues to the
+  /// sign-up form (Google mode) for its VIMO details.
+  Future<void> _google() async {
+    if (_busy || _googleBusy) return;
+    setState(() => _googleBusy = true);
+    try {
+      final credential = await GoogleAccount.signIn();
+      unawaited(completeGoogleProfile(credential));
+    } catch (error) {
+      if (mounted) {
+        snack(
+          context,
+          GoogleAccount.friendlyError(error),
+          tone: SnackTone.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _googleBusy = false);
+    }
+  }
+
   bool _obscure = true;
   bool _remember = true;
 
@@ -9123,6 +9157,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               label: 'Sign In',
                               busy: _busy,
                               onPressed: _signIn,
+                            ),
+                            const OrDivider(),
+                            GoogleSignInButton(
+                              label: bi(
+                                'Continue with Google',
+                                'Google மூலம் தொடரவும்',
+                              ),
+                              busy: _googleBusy,
+                              onPressed: _google,
                             ),
                           ],
                         ),
@@ -19229,6 +19272,8 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => push(context, const AppSettingsScreen()),
                 ),
               ),
+              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
+                const Reveal(index: 2, child: _GoogleLinkRow()),
               // Ranch details live on the Ranch tab. Without that tab, keep a
               // way in so members can still be managed.
               if (ranchId().isNotEmpty && !workspaceEnabled('Ranch'))
@@ -19352,6 +19397,87 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Settings row that adds Google sign-in to an account made with email and
+/// password (same account, same ranch and records), or shows it is added.
+class _GoogleLinkRow extends StatefulWidget {
+  const _GoogleLinkRow();
+
+  @override
+  State<_GoogleLinkRow> createState() => _GoogleLinkRowState();
+}
+
+class _GoogleLinkRowState extends State<_GoogleLinkRow> {
+  bool _busy = false;
+
+  Future<void> _link() async {
+    if (GoogleAccount.linked) {
+      snack(
+        context,
+        bi(
+          'Google is already added. You can sign in with it any time.',
+          'Google ஏற்கனவே சேர்க்கப்பட்டது. எப்போதும் அதன் மூலம் உள்நுழையலாம்.',
+        ),
+      );
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await GoogleAccount.link();
+      if (mounted) {
+        snack(
+          context,
+          bi(
+            'Google added. Next time, Continue with Google signs you in.',
+            'Google சேர்ந்தது. அடுத்த முறை Google மூலம் உள்நுழையலாம்.',
+          ),
+          tone: SnackTone.success,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        snack(
+          context,
+          GoogleAccount.friendlyError(error),
+          tone: SnackTone.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final linked = GoogleAccount.linked;
+    return _SettingLink(
+      title: linked
+          ? bi('Google account added', 'Google கணக்கு சேர்க்கப்பட்டது')
+          : bi('Add Google account', 'Google கணக்கைச் சேர்'),
+      subtitle: _busy
+          ? bi('Opening Google…', 'Google திறக்கிறது…')
+          : linked
+          ? (FirebaseAuth.instance.currentUser?.providerData
+                    .firstWhere(
+                      (p) => p.providerId == 'google.com',
+                      orElse: () =>
+                          FirebaseAuth.instance.currentUser!.providerData.first,
+                    )
+                    .email ??
+                '')
+          : bi(
+              'Sign in with Google too, without a password',
+              'கடவுச்சொல் இல்லாமல் Google மூலமும் உள்நுழையலாம்',
+            ),
+      icon: linked
+          ? CupertinoIcons.checkmark_seal_fill
+          : CupertinoIcons.person_crop_circle_badge_plus,
+      color: linked ? Ink.green : Ink.blue,
+      onTap: _link,
     );
   }
 }
