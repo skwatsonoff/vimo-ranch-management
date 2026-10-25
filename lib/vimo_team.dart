@@ -550,6 +550,57 @@ class VimoHelpScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                // The account ID, for adding someone to the VIMO Team in
+                // the Firebase console (vimo_admins/<this ID>).
+                Glass(
+                  radius: 20,
+                  padding: const EdgeInsets.fromLTRB(16, 10, 6, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              bi('Your account ID', 'உங்கள் கணக்கு ID'),
+                              style: TextStyle(color: Ink.muted, fontSize: 13),
+                            ),
+                            SelectableText(
+                              signedInUid,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: bi('Copy', 'நகலெடு'),
+                        icon: Icon(
+                          CupertinoIcons.doc_on_doc,
+                          color: Ink.violetDeep,
+                        ),
+                        onPressed: () async {
+                          await Clipboard.setData(
+                            ClipboardData(text: signedInUid),
+                          );
+                          if (context.mounted) {
+                            snack(
+                              context,
+                              bi(
+                                'Account ID copied',
+                                'கணக்கு ID நகலெடுக்கப்பட்டது',
+                              ),
+                              tone: SnackTone.success,
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
                 _shopSection(
                   bi('My reports', 'என் அறிக்கைகள்'),
                   note: bi(
