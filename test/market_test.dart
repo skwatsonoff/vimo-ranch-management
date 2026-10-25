@@ -178,6 +178,21 @@ void main() {
     );
   });
 
+  test('Location allowed once is remembered for the phone', () async {
+    final box = Hive.box('settings');
+    await box.clear();
+    expect(MarketLocation.remembered, isFalse);
+    // Allowed under the older per-account key: still counts.
+    await box.put('acct_u1_locationOk', true);
+    expect(MarketLocation.remembered, isTrue);
+    await box.clear();
+    await MarketLocation.remember();
+    expect(MarketLocation.remembered, isTrue);
+    expect(CloudSyncService.isLocalSetting('locationOk'), isTrue);
+    expect(CloudSyncService.isLocalSetting('marketHere'), isTrue);
+    await box.clear();
+  });
+
   test('The exact place and seen answers stay on this phone', () {
     expect(CloudSyncService.isLocalSetting('marketPoint'), isTrue);
     expect(CloudSyncService.isLocalSetting('marketSeen'), isTrue);

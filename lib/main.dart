@@ -5189,6 +5189,8 @@ class CloudSyncService {
     'languageMode',
     'marketPoint',
     'marketSeen',
+    'marketHere',
+    'locationOk',
     'liveSyncError',
     'purposeProfiles',
     'usernameProfiles',
@@ -7845,11 +7847,9 @@ ThemeData appleTheme() {
   );
 }
 
-/// 'system' (follow the phone), 'light' or 'dark'. Kept on this device only.
-String appearanceMode() {
-  final mode = settingText('appearance', 'system');
-  return const {'system', 'light', 'dark'}.contains(mode) ? mode : 'system';
-}
+/// Light or dark always follows the phone's own setting; there is no
+/// separate choice in VIMO.
+String appearanceMode() => 'system';
 
 class VimoApp extends StatefulWidget {
   const VimoApp({super.key});
@@ -19942,101 +19942,6 @@ class AppSettingsScreen extends StatelessWidget {
                       await loadAppLanguage(v);
                       await setSetting('languageMode', v);
                     },
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(
-                    CupertinoIcons.circle_lefthalf_fill,
-                    color: _blue,
-                  ),
-                  title: AppText(bi('Appearance', 'தோற்றம்')),
-                  subtitle: AppText(
-                    bi(
-                      'Automatic follows your phone\'s Light / Dark setting.',
-                      'தானியங்கி: உங்கள் போனின் Light / Dark அமைப்பைப் பின்பற்றும்.',
-                    ),
-                    style: TextStyle(fontSize: 13, color: Ink.muted),
-                  ),
-                  trailing: PickerButton<String>(
-                    value: appearanceMode(),
-                    items: [
-                      DropdownMenuItem(
-                        value: 'system',
-                        child: AppText(bi('Automatic', 'தானியங்கி')),
-                      ),
-                      DropdownMenuItem(
-                        value: 'light',
-                        child: AppText(bi('Light', 'வெளிர்')),
-                      ),
-                      DropdownMenuItem(
-                        value: 'dark',
-                        child: AppText(bi('Dark', 'இருள்')),
-                      ),
-                    ],
-                    onChanged: (v) => Hive.box('settings').put('appearance', v),
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(CupertinoIcons.sparkles, color: _blue),
-                  title: AppText(bi('Effects', 'விளைவுகள்')),
-                  subtitle: AppText(
-                    DevicePerformance.mode != 'auto'
-                        ? bi(
-                            'Automatic picks the best for your phone.',
-                            'தானியங்கி உங்கள் போனுக்கு ஏற்றதைத் தேர்வு செய்யும்.',
-                          )
-                        : DevicePerformance.lowEnd
-                        ? bi(
-                            'Fast and simple on this phone.',
-                            'இந்த போனில் வேகமான எளிய முறை.',
-                          )
-                        : bi(
-                            'Full Liquid Glass on this phone.',
-                            'இந்த போனில் முழு Liquid Glass.',
-                          ),
-                    style: TextStyle(fontSize: 13, color: Ink.muted),
-                  ),
-                  trailing: PickerButton<String>(
-                    value: DevicePerformance.mode,
-                    items: [
-                      DropdownMenuItem(
-                        value: 'auto',
-                        child: AppText(bi('Automatic', 'தானியங்கி')),
-                      ),
-                      DropdownMenuItem(
-                        value: 'full',
-                        child: AppText(
-                          bi('Full Liquid Glass', 'முழு Liquid Glass'),
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'fast',
-                        child: AppText(bi('Fast & simple', 'வேகம் & எளிமை')),
-                      ),
-                    ],
-                    onChanged: (v) =>
-                        Hive.box('settings').put('performanceMode', v),
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(CupertinoIcons.speaker_2, color: _blue),
-                  title: AppText(bi('Sounds', 'ஒலிகள்')),
-                  subtitle: AppText(
-                    bi(
-                      'Soft sounds for saving, switches and alerts. '
-                          'Silent mode keeps them quiet.',
-                      'சேமித்தல், மாற்றிகள், அறிவிப்புகளுக்கு மென்மையான ஒலிகள். '
-                          'சைலண்ட் முறையில் ஒலிக்காது.',
-                    ),
-                    style: TextStyle(fontSize: 13, color: Ink.muted),
-                  ),
-                  trailing: Semantics(
-                    label: bi('Sounds', 'ஒலிகள்'),
-                    child: SoundSwitch(
-                      value: UiSound.enabled,
-                      activeTrackColor: Ink.tint,
-                      onChanged: UiSound.setEnabled,
-                    ),
                   ),
                 ),
                 _ActionRow(

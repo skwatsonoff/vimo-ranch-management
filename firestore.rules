@@ -385,7 +385,8 @@ service cloud.firestore {
           && d.title is string && d.title.size() >= 3 && d.title.size() <= 80
           && d.description is string && d.description.size() <= 2000
           && d.features is list && d.features.size() <= 5
-          && d.category in ['dairy', 'ghee', 'feed', 'animals', 'equipment', 'produce', 'grains', 'organic', 'home', 'clothing', 'electronics', 'other']
+          // Market is for cows, the farm and the ranch only.
+          && d.category in ['dairy', 'ghee', 'feed', 'animals', 'equipment', 'produce', 'grains', 'organic', 'vet', 'other']
           && d.condition in ['new', 'like_new', 'good', 'fair', 'poor']
           && d.brand is string && d.brand.size() <= 60
           && d.tags is list && d.tags.size() <= 5

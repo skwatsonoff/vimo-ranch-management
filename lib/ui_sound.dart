@@ -34,8 +34,9 @@ class UiSound {
 
   static const String settingKey = 'uiSounds';
 
-  static bool get enabled =>
-      !Hive.isBoxOpen('settings') || settingValue(settingKey, true) != false;
+  /// Sounds follow the phone: the ringer / Silent switch and its volume
+  /// decide, not a switch inside VIMO.
+  static bool get enabled => true;
 
   static final Map<UiSoundKind, AudioPool> _pools = {};
   static final Set<Object> _holds = {};

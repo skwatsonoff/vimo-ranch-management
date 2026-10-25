@@ -35,10 +35,8 @@ const List<ShopChoice> shopCategories = [
   ('produce', 'Vegetables & fruits', 'காய்கறி & பழங்கள்'),
   ('grains', 'Grains, pulses & oils', 'தானியம், பருப்பு & எண்ணெய்'),
   ('organic', 'Manure & organic', 'உரம் & இயற்கை'),
-  ('home', 'Home & kitchen', 'வீடு & சமையலறை'),
-  ('clothing', 'Clothing & accessories', 'உடை & அணிகலன்கள்'),
-  ('electronics', 'Electronics & mobiles', 'மின்னணு & மொபைல்'),
-  ('other', 'Other', 'மற்றவை'),
+  ('vet', 'Animal health & care', 'கால்நடை நலம் & பராமரிப்பு'),
+  ('other', 'Other farm items', 'மற்ற பண்ணைப் பொருட்கள்'),
 ];
 
 /// Mercari's condition scale.
