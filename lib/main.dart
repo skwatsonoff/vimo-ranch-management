@@ -2016,6 +2016,7 @@ class LiquidRoute<T> extends PageRoute<T>
 }
 
 Future<T?> push<T>(BuildContext context, Widget page) {
+  VoicePlayback.stopAll();
   UiSound.play(UiSoundKind.whoosh);
   return Navigator.of(context).push<T>(LiquidRoute<T>(builder: (_) => page));
 }
@@ -3549,6 +3550,88 @@ String chatDateLabel(String value, {DateTime? now}) {
   if (date == today) return 'Today';
   if (date == today.subtract(const Duration(days: 1))) return 'Yesterday';
   return value;
+}
+
+/// What a recorder really captured. Browsers (and some phones) ignore the
+/// requested 8 kHz mono and record at the microphone's own rate, often
+/// 48 kHz and sometimes in stereo; wrapping that as 8 kHz made notes six
+/// times too long, too big to send, and slow when played.
+class VoiceFormat {
+  int rate;
+  int channels;
+  VoiceFormat(this.rate, [this.channels = 1]);
+}
+
+/// Call before startStream: follows any change the platform makes.
+Future<VoiceFormat> watchVoiceFormat(AudioRecorder recorder, int rate) async {
+  final format = VoiceFormat(rate);
+  try {
+    await recorder.setOnConfigChanged((config) {
+      format
+        ..rate = config.sampleRate
+        ..channels = math.max(1, config.numChannels);
+    });
+  } catch (_) {}
+  return format;
+}
+
+/// 16-bit samples in [from] to mono at [rate], averaging each span of
+/// input samples (a box filter keeps speech clear without aliasing hiss).
+Uint8List pcm16ToVoiceRate(Uint8List pcm, VoiceFormat from, int rate) {
+  final channels = math.max(1, from.channels);
+  final frames = pcm.length ~/ (2 * channels);
+  if (from.rate == rate && channels == 1) {
+    return Uint8List.sublistView(pcm, 0, frames * 2);
+  }
+  final input = ByteData.sublistView(pcm);
+  final outFrames = (frames * rate / from.rate).floor();
+  final out = Uint8List(outFrames * 2);
+  final output = ByteData.sublistView(out);
+  final step = from.rate / rate;
+  for (var i = 0; i < outFrames; i++) {
+    final start = (i * step).floor();
+    final end = math.max(start + 1, math.min(frames, ((i + 1) * step).floor()));
+    var sum = 0;
+    for (var f = start; f < end; f++) {
+      for (var c = 0; c < channels; c++) {
+        sum += input.getInt16((f * channels + c) * 2, Endian.little);
+      }
+    }
+    final value = (sum / ((end - start) * channels)).round();
+    output.setInt16(i * 2, value.clamp(-32768, 32767), Endian.little);
+  }
+  return out;
+}
+
+/// Only one voice note plays at a time, and none keeps playing once its
+/// screen is left: starting one pauses the other, and leaving a screen or
+/// switching tabs stops whatever plays.
+class VoicePlayback {
+  const VoicePlayback._();
+  static AudioPlayer? _current;
+  static AppLifecycleListener? _lifecycle;
+
+  static Future<void> starting(AudioPlayer player) async {
+    // Going to the background or locking the phone stops it too.
+    _lifecycle ??= AppLifecycleListener(onHide: stopAll, onPause: stopAll);
+    final before = _current;
+    _current = player;
+    if (before != null && !identical(before, player)) {
+      try {
+        await before.pause();
+      } catch (_) {}
+    }
+  }
+
+  static void ended(AudioPlayer player) {
+    if (identical(_current, player)) _current = null;
+  }
+
+  static void stopAll() {
+    final player = _current;
+    _current = null;
+    if (player != null) unawaited(player.stop().catchError((Object _) {}));
+  }
 }
 
 Uint8List pcm16ToWave(Uint8List pcm, {int sampleRate = 16000}) {
@@ -10288,6 +10371,7 @@ class _MainShellState extends State<MainShell> {
     if (index < 0 || index == _tab) return;
     setState(() {
       _tabHistory.add(_tab);
+      VoicePlayback.stopAll();
       _tab = index;
     });
     vendorWorkspaceRevision.value++;
@@ -10382,6 +10466,7 @@ class _MainShellState extends State<MainShell> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _tabHistory.isNotEmpty) {
+          VoicePlayback.stopAll();
           setState(() => _tab = _tabHistory.removeLast());
           vendorWorkspaceRevision.value++;
         }
@@ -10540,6 +10625,7 @@ class _MainShellState extends State<MainShell> {
                   onChanged: (i) => setState(() {
                     if (i != _tab) {
                       _tabHistory.add(_tab);
+                      VoicePlayback.stopAll();
                       _tab = i;
                       _topEdge.value = _scrolledTabs.contains(i);
                       vendorWorkspaceRevision.value++;

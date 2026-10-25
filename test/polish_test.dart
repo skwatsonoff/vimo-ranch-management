@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' hide Ink;
@@ -74,6 +75,47 @@ void main() {
     ),
     home: home,
   );
+
+  group('voice notes', () {
+    Uint8List tone(int rate, int channels, double seconds) {
+      final frames = (rate * seconds).round();
+      final data = ByteData(frames * channels * 2);
+      for (var f = 0; f < frames; f++) {
+        final v = (math.sin(2 * math.pi * 300 * f / rate) * 12000).round();
+        for (var c = 0; c < channels; c++) {
+          data.setInt16((f * channels + c) * 2, v, Endian.little);
+        }
+      }
+      return data.buffer.asUint8List();
+    }
+
+    test('48 kHz stereo from a browser becomes 8 kHz mono, same length', () {
+      final out = pcm16ToVoiceRate(
+        tone(48000, 2, 2),
+        VoiceFormat(48000, 2),
+        8000,
+      );
+      // Two seconds at 8 kHz, 16-bit mono.
+      expect(out.length, 2 * 8000 * 2);
+      final view = ByteData.sublistView(out);
+      var peak = 0;
+      for (var i = 0; i < out.length; i += 2) {
+        peak = math.max(peak, view.getInt16(i, Endian.little).abs());
+      }
+      // The 300 Hz voice band survives the averaging.
+      expect(peak, greaterThan(9000));
+    });
+
+    test('8 kHz mono is left as it is', () {
+      final input = tone(8000, 1, .5);
+      expect(pcm16ToVoiceRate(input, VoiceFormat(8000), 8000), input);
+    });
+
+    test('44.1 kHz rounds to whole samples', () {
+      final out = pcm16ToVoiceRate(tone(44100, 1, 1), VoiceFormat(44100), 8000);
+      expect(out.length, 16000);
+    });
+  });
 
   group('tokens', () {
     test('spacing sits on the 4-point grid', () {

@@ -190,9 +190,7 @@ void main() {
     expect(find.widgetWithText(TextField, 'Add a tag'), findsNothing);
   });
 
-  testWidgets('A report needs a reason and a few words first', (
-    tester,
-  ) async {
+  testWidgets('A report needs a reason and a few words first', (tester) async {
     tester.view.physicalSize = const Size(390, 2000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -223,9 +221,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('One-per-order items have no quantity to choose', (
-    tester,
-  ) async {
+  testWidgets('One-per-order items have no quantity to choose', (tester) async {
     tester.view.physicalSize = const Size(390, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);

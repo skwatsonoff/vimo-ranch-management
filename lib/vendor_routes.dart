@@ -2726,6 +2726,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
   StreamSubscription<Uint8List>? _stream;
   Completer<void>? _done;
   Timer? _timer;
+  VoiceFormat _format = VoiceFormat(_rate);
 
   @override
   void dispose() {
@@ -2780,6 +2781,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
       final done = Completer<void>();
       _done = done;
       UiSound.hold(this);
+      _format = await watchVoiceFormat(_recorder, _rate);
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -2827,7 +2829,10 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
       await _stream?.cancel();
       final pcm = _audio.takeBytes();
       if (pcm.isEmpty) throw StateError('empty');
-      final wave = pcm16ToWave(pcm, sampleRate: _rate);
+      final wave = pcm16ToWave(
+        pcm16ToVoiceRate(pcm, _format, _rate),
+        sampleRate: _rate,
+      );
       if (mounted) {
         setState(() {
           _voice = base64Encode(wave);

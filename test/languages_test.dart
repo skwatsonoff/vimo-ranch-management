@@ -42,61 +42,67 @@ void main() {
     }
   });
 
-  test('English and Tamil come from the code; others from their file', () async {
-    await Hive.box('settings').put('languageMode', 'English');
-    expect(bi('Milk', 'பால்'), 'Milk');
-    await Hive.box('settings').put('languageMode', 'Tamil');
-    expect(bi('Milk', 'பால்'), 'பால்');
+  test(
+    'English and Tamil come from the code; others from their file',
+    () async {
+      await Hive.box('settings').put('languageMode', 'English');
+      expect(bi('Milk', 'பால்'), 'Milk');
+      await Hive.box('settings').put('languageMode', 'Tamil');
+      expect(bi('Milk', 'பால்'), 'பால்');
 
-    await loadAppLanguage('Hindi');
-    await Hive.box('settings').put('languageMode', 'Hindi');
-    final hindi = Map<String, String>.from(
-      jsonDecode(File('assets/l10n/hi.json').readAsStringSync()) as Map,
-    );
-    expect(bi('Settings', 'செட்டிங்ஸ்'), hindi['Settings']);
-    // Values inside a message are kept, in the translation's own order.
-    final template = hindi['{0} people want to join your ranch']!;
-    expect(
-      bi('7 people want to join your ranch', '7 பேர்'),
-      template.replaceAll('{0}', '7'),
-    );
-    // Text that is not an app message (a name, a number) stays as it is.
-    expect(tr('Selvakumar'), 'Selvakumar');
-    await Hive.box('settings').put('languageMode', 'English');
-  });
+      await loadAppLanguage('Hindi');
+      await Hive.box('settings').put('languageMode', 'Hindi');
+      final hindi = Map<String, String>.from(
+        jsonDecode(File('assets/l10n/hi.json').readAsStringSync()) as Map,
+      );
+      expect(bi('Settings', 'செட்டிங்ஸ்'), hindi['Settings']);
+      // Values inside a message are kept, in the translation's own order.
+      final template = hindi['{0} people want to join your ranch']!;
+      expect(
+        bi('7 people want to join your ranch', '7 பேர்'),
+        template.replaceAll('{0}', '7'),
+      );
+      // Text that is not an app message (a name, a number) stays as it is.
+      expect(tr('Selvakumar'), 'Selvakumar');
+      await Hive.box('settings').put('languageMode', 'English');
+    },
+  );
 
-  test('A notification shows in the language of the phone reading it', () async {
-    final settings = Hive.box('settings');
-    await settings.put('languageMode', 'Tamil');
-    await addRanchNotification(
-      title: 'New calf born',
-      titleTa: 'புதிய கன்று பிறந்தது',
-      message: 'Kutty • Mother Lakshmi • 2026-10-17',
-      messageTa: 'Kutty • தாய் Lakshmi • 2026-10-17',
-      sourceId: 'calf-test',
-    );
-    final row = Map<String, dynamic>.from(
-      Hive.box('notifications').values.last as Map,
-    );
-    // Saved in English with the Tamil wording beside it, whatever the
-    // language was when it was created.
-    expect(row['title'], 'New calf born');
-    expect(row['titleTa'], 'புதிய கன்று பிறந்தது');
-    expect(notificationText(row, 'title'), 'புதிய கன்று பிறந்தது');
+  test(
+    'A notification shows in the language of the phone reading it',
+    () async {
+      final settings = Hive.box('settings');
+      await settings.put('languageMode', 'Tamil');
+      await addRanchNotification(
+        title: 'New calf born',
+        titleTa: 'புதிய கன்று பிறந்தது',
+        message: 'Kutty • Mother Lakshmi • 2026-10-17',
+        messageTa: 'Kutty • தாய் Lakshmi • 2026-10-17',
+        sourceId: 'calf-test',
+      );
+      final row = Map<String, dynamic>.from(
+        Hive.box('notifications').values.last as Map,
+      );
+      // Saved in English with the Tamil wording beside it, whatever the
+      // language was when it was created.
+      expect(row['title'], 'New calf born');
+      expect(row['titleTa'], 'புதிய கன்று பிறந்தது');
+      expect(notificationText(row, 'title'), 'புதிய கன்று பிறந்தது');
 
-    await settings.put('languageMode', 'English');
-    expect(notificationText(row, 'title'), 'New calf born');
-    expect(
-      notificationText(row, 'message'),
-      'Kutty • Mother Lakshmi • 2026-10-17',
-    );
+      await settings.put('languageMode', 'English');
+      expect(notificationText(row, 'title'), 'New calf born');
+      expect(
+        notificationText(row, 'message'),
+        'Kutty • Mother Lakshmi • 2026-10-17',
+      );
 
-    await loadAppLanguage('Hindi');
-    await settings.put('languageMode', 'Hindi');
-    final hindi = Map<String, String>.from(
-      jsonDecode(File('assets/l10n/hi.json').readAsStringSync()) as Map,
-    );
-    expect(notificationText(row, 'title'), hindi['New calf born']);
-    await settings.put('languageMode', 'English');
-  });
+      await loadAppLanguage('Hindi');
+      await settings.put('languageMode', 'Hindi');
+      final hindi = Map<String, String>.from(
+        jsonDecode(File('assets/l10n/hi.json').readAsStringSync()) as Map,
+      );
+      expect(notificationText(row, 'title'), hindi['New calf born']);
+      await settings.put('languageMode', 'English');
+    },
+  );
 }
