@@ -252,7 +252,9 @@ class MarketVendor {
   });
 
   String get name => txt(data, 'name', 'VIMO');
-  bool get shop => data['kind'] == 'shop';
+  String get kind => txt(data, 'kind', 'vendor');
+  bool get shop => kind == 'shop';
+  bool get ranch => kind == 'ranch';
   double get price => numv(data, 'price');
 
   MarketVendor rated(double rating, int reviews) => MarketVendor(
@@ -306,6 +308,7 @@ class MarketService {
   /// buyers whose request is accepted); the cloud gets only the grid square.
   static Future<void> saveListing({
     required String name,
+    String? kind,
     required ll.LatLng point,
     required double price,
     required (int?, int?) morning,
@@ -325,7 +328,8 @@ class MarketService {
     } catch (_) {}
     await myListing.set({
       'name': name.trim(),
-      'kind': milkShopMode ? 'shop' : 'vendor',
+      'nameFold': name.trim().toLowerCase(),
+      'kind': kind ?? marketListingKind(),
       'gridLat': gridLat,
       'gridLng': gridLng,
       'cell': marketCell(gridLat, gridLng),
@@ -341,6 +345,84 @@ class MarketService {
   }
 
   static Future<void> removeListing() => myListing.delete();
+
+  /// Finds ranches, vendors and shops by the start of their name, anywhere.
+  /// Listings saved before names were searchable appear in nearby results.
+  static Future<List<MarketVendor>> searchByName(
+    String query, {
+    ll.LatLng? here,
+  }) async {
+    final q = query.trim().toLowerCase();
+    if (q.length < 2) return const [];
+    final snap = await listings
+        .where('nameFold', isGreaterThanOrEqualTo: q)
+        .where('nameFold', isLessThan: '$q\uf8ff')
+        .limit(30)
+        .get();
+    return [
+      for (final doc in snap.docs)
+        if (doc.id != signedInUid && doc.data()['active'] == true)
+          MarketVendor(
+            uid: doc.id,
+            data: doc.data(),
+            distance: here == null
+                ? -1
+                : marketDistance(here, marketAreaCenter(doc.data())),
+          ),
+    ];
+  }
+
+  /// People this buyer already gets milk from: accepted requests.
+  static Future<List<MarketVendor>> previousSellers(
+    Iterable<Map<String, dynamic>> myRequests, {
+    ll.LatLng? here,
+  }) async {
+    final uids = <String>{
+      for (final r in myRequests)
+        if (txt(r, 'status') == 'accepted' && txt(r, 'vendorUid').isNotEmpty)
+          txt(r, 'vendorUid'),
+    };
+    final found = <MarketVendor>[];
+    for (final uid in uids.take(10)) {
+      try {
+        final doc = await listings.doc(uid).get();
+        final data = doc.data();
+        if (data == null) continue;
+        found.add(
+          MarketVendor(
+            uid: uid,
+            data: data,
+            distance: here == null
+                ? -1
+                : marketDistance(here, marketAreaCenter(data)),
+          ),
+        );
+      } catch (_) {}
+    }
+    return found;
+  }
+
+  /// One tap for a ranch to appear in Market: the place comes from the
+  /// phone's location (asked for, with the reason, at that moment), the name
+  /// from the ranch, the price from its milk price, with usual hours.
+  static Future<bool> listMyRanch(BuildContext context) async {
+    final point = await VendorLocation.current(context);
+    if (point == null) return false;
+    var name = farmName().trim();
+    if (name.isEmpty) name = await myName();
+    if (name.length > 80) name = name.substring(0, 80);
+    await saveListing(
+      name: name,
+      kind: 'ranch',
+      point: point,
+      price: defaultMilkPrice(),
+      morning: (6 * 60, 8 * 60),
+      evening: (17 * 60, 19 * 60),
+      active: true,
+      holiday: false,
+    );
+    return true;
+  }
 
   /// Buyers see "On ride" while a delivery ride is running. Only for vendors
   /// who are listed; a failure never disturbs the ride itself.
@@ -695,7 +777,26 @@ class MarketStars extends StatelessWidget {
   }
 }
 
-Widget _marketIcon(bool shop, {double size = 22}) => shop
+/// What kind of seller a listing is, in words.
+String marketKindLabel(String kind) => switch (kind) {
+  'shop' => bi('Milk shop', 'பால் கடை'),
+  'ranch' => bi('Ranch', 'பண்ணை'),
+  _ => bi('Milk vendor', 'பால் வியாபாரி'),
+};
+
+/// The listing kind this account appears as in Market: a milk shop, a
+/// vendor, or a ranch for people who only run a ranch.
+String marketListingKind() => milkShopMode
+    ? 'shop'
+    : workspaceEnabled('Vendor')
+    ? 'vendor'
+    : 'ranch';
+
+Widget _marketIcon(String kind, {double size = 22}) => kind == 'ranch'
+    ? CowMark(size: size + 2, color: Ink.violetDeep)
+    : _marketMilkIcon(kind == 'shop', size: size);
+
+Widget _marketMilkIcon(bool shop, {double size = 22}) => shop
     ? Icon(Icons.storefront_rounded, color: Ink.violetDeep, size: size)
     : MilkVendorIcon(size: size + 4, color: Ink.violetDeep);
 
@@ -728,6 +829,93 @@ class _NearbyScreenState extends State<NearbyScreen> {
   /// Index into [marketSearchSteps]: starts at the nearest distance that
   /// finds someone; people can widen or narrow it.
   int _step = 0;
+
+  /// 0 everyone, 1 milk sellers (vendors and shops), 2 ranches.
+  int _kind = 0;
+
+  final _search = TextEditingController();
+  Timer? _debounce;
+  List<MarketVendor>? _found;
+  bool _searching = false;
+
+  /// Whether this ranch is already in Market (null while checking).
+  bool? _listed;
+
+  @override
+  void initState() {
+    super.initState();
+    if (MarketService.available && workspaceEnabled('Ranch')) {
+      MarketService.myListing
+          .get()
+          .then((d) {
+            if (mounted) setState(() => _listed = d.exists);
+          })
+          .catchError((Object _) {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _onSearch(String text) {
+    _debounce?.cancel();
+    if (text.trim().length < 2) {
+      setState(() {
+        _found = null;
+        _searching = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final found = await MarketService.searchByName(text, here: _here);
+        // Nearby listings saved before names were searchable still match.
+        final q = text.trim().toLowerCase();
+        final seen = {for (final v in found) v.uid};
+        final local = [
+          for (final v in _vendors ?? const <MarketVendor>[])
+            if (!seen.contains(v.uid) && v.name.toLowerCase().contains(q)) v,
+        ];
+        if (mounted && _search.text == text) {
+          setState(() {
+            _found = [...found, ...local];
+            _searching = false;
+          });
+        }
+      } catch (_) {
+        if (mounted) setState(() => _searching = false);
+      }
+    });
+  }
+
+  Future<void> _listRanch() async {
+    try {
+      final ok = await MarketService.listMyRanch(context);
+      if (!ok || !mounted) return;
+      setState(() => _listed = true);
+      snack(
+        context,
+        bi(
+          'Your ranch is in Market. Change details in Settings → App Settings → Market listing.',
+          'உங்கள் பண்ணை சந்தையில் உள்ளது. விவரங்களை Settings → App Settings → சந்தைப் பட்டியல்-ல் மாற்றலாம்.',
+        ),
+        tone: SnackTone.success,
+      );
+    } catch (error) {
+      if (mounted) _marketProblem(context, error);
+    }
+  }
+
+  bool _kindMatches(MarketVendor v) => switch (_kind) {
+    1 => !v.ranch,
+    2 => v.ranch,
+    _ => true,
+  };
 
   Future<void> _find() async {
     if (_loading) return;
@@ -787,127 +975,46 @@ class _NearbyScreenState extends State<NearbyScreen> {
         ? null
         : sortMarketVendors(
             _vendors!
-                .where((v) => v.distance <= marketSearchSteps[_step])
+                .where(
+                  (v) =>
+                      v.distance <= marketSearchSteps[_step] && _kindMatches(v),
+                )
                 .toList(),
             byRating: _sort == 1,
           );
+    final searching = _search.text.trim().length >= 2;
     final now = DateTime.now();
     return Shell(
       child: RefreshIndicator(
         onRefresh: _here == null ? () async {} : _find,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(21, 16, 21, 120),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    bi('Milk near you', 'அருகிலுள்ள பால்'),
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -1,
-                    ),
-                  ),
-                ),
-                if (_here != null)
-                  IconButton(
-                    tooltip: bi('Search again', 'மீண்டும் தேடு'),
-                    onPressed: _loading ? null : _find,
-                    icon: Icon(
-                      CupertinoIcons.location_fill,
-                      color: Ink.violetDeep,
-                    ),
-                  ),
-              ],
+            CupertinoSearchTextField(
+              controller: _search,
+              placeholder: bi(
+                'Search ranches, sellers, products',
+                'பண்ணை, விற்பவர், பொருளைத் தேடு',
+              ),
+              onChanged: _onSearch,
+              style: TextStyle(color: Ink.navy),
             ),
-            const SizedBox(height: Space.s4),
-            Text(
-              bi(
-                'Milk vendors and shops near you. Places are shown as an area of about 200 m.',
-                'உங்கள் அருகிலுள்ள பால் வியாபாரிகளும் கடைகளும். இடங்கள் சுமார் 200 மீ பகுதியாகக் காட்டப்படும்.',
-              ),
-              style: TextStyle(color: Ink.muted, fontSize: 14),
-            ),
-            const SizedBox(height: Space.s20),
-            const _MyMilkRequests(),
-            if (_here == null)
-              Glass(
-                radius: Gold.r27,
-                padding: const EdgeInsets.all(Space.s20),
-                child: Column(
-                  children: [
-                    Icon(
-                      CupertinoIcons.location_circle_fill,
-                      size: 44,
-                      color: Ink.violetDeep,
-                    ),
-                    const SizedBox(height: Space.s12),
-                    Text(
-                      bi(
-                        'Your location is used only to find vendors near you. It is not saved.',
-                        'அருகிலுள்ள வியாபாரிகளைக் கண்டறிய மட்டுமே உங்கள் இடம் பயன்படும். அது சேமிக்கப்படாது.',
-                      ),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Ink.body, fontSize: 15),
-                    ),
-                    const SizedBox(height: Space.s16),
-                    LiquidButton(
-                      label: bi('Find milk near me', 'அருகில் பால் தேடு'),
-                      icon: CupertinoIcons.search,
-                      busy: _loading,
-                      onPressed: _find,
-                    ),
-                  ],
-                ),
-              )
-            else ...[
-              LiquidSegmentBar(
-                labels: [
-                  bi('Nearest', 'அருகில்'),
-                  bi('Top rated', 'சிறந்த மதிப்பீடு'),
-                ],
-                index: _sort,
-                onChanged: (v) => setState(() => _sort = v),
-              ),
-              const SizedBox(height: Space.s12),
-              // Searched nearest first: 2 km, widening to 5 and 10 km only
-              // when nobody closer is listed.
-              Semantics(
-                label: bi('Search distance', 'தேடும் தூரம்'),
-                child: LiquidSegmentBar(
-                  labels: [
-                    for (var i = 0; i < marketSearchSteps.length; i++)
-                      marketStepLabel(i),
-                  ],
-                  index: _step,
-                  onChanged: (v) => setState(() => _step = v),
-                ),
-              ),
-              const SizedBox(height: Space.s16),
-              if (_failed)
+            const SizedBox(height: Space.s16),
+            if (searching) ...[
+              if (_searching)
+                const SkeletonList(rows: 3, padding: EdgeInsets.zero)
+              else if ((_found ?? const []).isEmpty)
                 _MarketNote(
                   bi(
-                    'Could not search. Check the internet and pull down to try again.',
-                    'தேட முடியவில்லை. இணையத்தைச் சரிபார்த்து, கீழே இழுத்து மீண்டும் முயற்சிக்கவும்.',
+                    'No one found with that name.',
+                    'அந்தப் பெயரில் யாரும் இல்லை.',
                   ),
-                )
-              else if (vendors!.isEmpty)
-                _MarketNote(
-                  _step < marketSearchSteps.length - 1
-                      ? bi(
-                          'No one within ${marketStepLabel(_step)}. Try ${marketStepLabel(_step + 1)}.',
-                          '${marketStepLabel(_step)}-க்குள் யாரும் இல்லை. ${marketStepLabel(_step + 1)} முயற்சிக்கவும்.',
-                        )
-                      : bi(
-                          'No milk vendors are listed within 10 km yet.',
-                          '10 கி.மீ-க்குள் இன்னும் பால் வியாபாரிகள் இல்லை.',
-                        ),
                 )
               else
                 _InsetGroup(
                   children: [
-                    for (final vendor in vendors)
+                    for (final vendor in _found!)
                       _NearbyVendorRow(
                         vendor: vendor,
                         status: marketStatus(vendor.data, now),
@@ -916,12 +1023,264 @@ class _NearbyScreenState extends State<NearbyScreen> {
                       ),
                   ],
                 ),
+              const SizedBox(height: Space.s24),
+              MarketProducts(query: _search.text),
+            ] else ...[
+              if (workspaceEnabled('Ranch') && _listed == false) ...[
+                Glass(
+                  radius: Gold.r27,
+                  padding: const EdgeInsets.all(Space.s16),
+                  child: Row(
+                    children: [
+                      CowMark(size: 34, color: Ink.violetDeep),
+                      const SizedBox(width: Space.s12),
+                      Expanded(
+                        child: Text(
+                          bi(
+                            'Let buyers near you find your ranch.',
+                            'அருகிலுள்ளவர்கள் உங்கள் பண்ணையைக் கண்டறியட்டும்.',
+                          ),
+                          style: TextStyle(color: Ink.body, fontSize: 15),
+                        ),
+                      ),
+                      const SizedBox(width: Space.s8),
+                      TextButton(
+                        style: liquidActionStyle(primary: true),
+                        onPressed: _listRanch,
+                        child: Text(bi('Show', 'காட்டு')),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: Space.s16),
+              ],
+              _PreviousSellers(here: _here),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      bi('Near you', 'உங்கள் அருகில்'),
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                  ),
+                  if (_here != null)
+                    IconButton(
+                      tooltip: bi('Search again', 'மீண்டும் தேடு'),
+                      onPressed: _loading ? null : _find,
+                      icon: Icon(
+                        CupertinoIcons.location_fill,
+                        color: Ink.violetDeep,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: Space.s4),
+              Text(
+                bi(
+                  'Milk vendors and shops near you. Places are shown as an area of about 200 m.',
+                  'உங்கள் அருகிலுள்ள பால் வியாபாரிகளும் கடைகளும். இடங்கள் சுமார் 200 மீ பகுதியாகக் காட்டப்படும்.',
+                ),
+                style: TextStyle(color: Ink.muted, fontSize: 14),
+              ),
+              const SizedBox(height: Space.s20),
+              const _MyMilkRequests(),
+              if (_here == null)
+                Glass(
+                  radius: Gold.r27,
+                  padding: const EdgeInsets.all(Space.s20),
+                  child: Column(
+                    children: [
+                      Icon(
+                        CupertinoIcons.location_circle_fill,
+                        size: 44,
+                        color: Ink.violetDeep,
+                      ),
+                      const SizedBox(height: Space.s12),
+                      Text(
+                        bi(
+                          'Your location is used only to find vendors near you. It is not saved.',
+                          'அருகிலுள்ள வியாபாரிகளைக் கண்டறிய மட்டுமே உங்கள் இடம் பயன்படும். அது சேமிக்கப்படாது.',
+                        ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Ink.body, fontSize: 15),
+                      ),
+                      const SizedBox(height: Space.s16),
+                      LiquidButton(
+                        label: bi('Find milk near me', 'அருகில் பால் தேடு'),
+                        icon: CupertinoIcons.search,
+                        busy: _loading,
+                        onPressed: _find,
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                LiquidSegmentBar(
+                  labels: [
+                    bi('Nearest', 'அருகில்'),
+                    bi('Top rated', 'சிறந்த மதிப்பீடு'),
+                  ],
+                  index: _sort,
+                  onChanged: (v) => setState(() => _sort = v),
+                ),
+                const SizedBox(height: Space.s12),
+                // Searched nearest first: 2 km, widening to 5 and 10 km only
+                // when nobody closer is listed.
+                Semantics(
+                  label: bi('Search distance', 'தேடும் தூரம்'),
+                  child: LiquidSegmentBar(
+                    labels: [
+                      for (var i = 0; i < marketSearchSteps.length; i++)
+                        marketStepLabel(i),
+                    ],
+                    index: _step,
+                    onChanged: (v) => setState(() => _step = v),
+                  ),
+                ),
+                const SizedBox(height: Space.s12),
+                LiquidSegmentBar(
+                  labels: [
+                    bi('All', 'அனைத்தும்'),
+                    bi('Milk sellers', 'பால் விற்பவர்'),
+                    bi('Ranches', 'பண்ணைகள்'),
+                  ],
+                  index: _kind,
+                  onChanged: (v) => setState(() => _kind = v),
+                ),
+                const SizedBox(height: Space.s16),
+                if (_failed)
+                  _MarketNote(
+                    bi(
+                      'Could not search. Check the internet and pull down to try again.',
+                      'தேட முடியவில்லை. இணையத்தைச் சரிபார்த்து, கீழே இழுத்து மீண்டும் முயற்சிக்கவும்.',
+                    ),
+                  )
+                else if (vendors!.isEmpty)
+                  _MarketNote(
+                    _step < marketSearchSteps.length - 1
+                        ? bi(
+                            'No one within ${marketStepLabel(_step)}. Try ${marketStepLabel(_step + 1)}.',
+                            '${marketStepLabel(_step)}-க்குள் யாரும் இல்லை. ${marketStepLabel(_step + 1)} முயற்சிக்கவும்.',
+                          )
+                        : bi(
+                            'No milk vendors are listed within 10 km yet.',
+                            '10 கி.மீ-க்குள் இன்னும் பால் வியாபாரிகள் இல்லை.',
+                          ),
+                  )
+                else
+                  _InsetGroup(
+                    children: [
+                      for (final vendor in vendors)
+                        _NearbyVendorRow(
+                          vendor: vendor,
+                          status: marketStatus(vendor.data, now),
+                          onTap: () =>
+                              push(context, MarketVendorScreen(vendor: vendor)),
+                        ),
+                    ],
+                  ),
+              ],
+              const SizedBox(height: Space.s32),
+              const MarketProducts(query: ''),
             ],
           ],
         ),
       ),
     );
   }
+}
+
+/// "You buy from": the sellers whose milk requests this buyer has had
+/// accepted, at the top of Market for a quick way back.
+class _PreviousSellers extends StatefulWidget {
+  final ll.LatLng? here;
+  const _PreviousSellers({this.here});
+
+  @override
+  State<_PreviousSellers> createState() => _PreviousSellersState();
+}
+
+class _PreviousSellersState extends State<_PreviousSellers> {
+  String _key = '';
+  Future<List<MarketVendor>>? _future;
+
+  /// Looked up again only when the sellers or the place change, not on
+  /// every rebuild of Market.
+  Future<List<MarketVendor>> _sellers(
+    String key,
+    List<Map<String, dynamic>> requests,
+  ) {
+    final full = '$key|${widget.here}';
+    if (_future == null || full != _key) {
+      _key = full;
+      _future = MarketService.previousSellers(requests, here: widget.here);
+    }
+    return _future!;
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: MarketService.mine(),
+        builder: (context, snap) {
+          final requests = [
+            for (final d
+                in snap.data?.docs ??
+                    const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+              d.data(),
+          ];
+          if (!requests.any((r) => txt(r, 'status') == 'accepted')) {
+            return const SizedBox.shrink();
+          }
+          final key = requests
+              .where((r) => txt(r, 'status') == 'accepted')
+              .map((r) => txt(r, 'vendorUid'))
+              .toSet()
+              .join(',');
+          return FutureBuilder<List<MarketVendor>>(
+            future: _sellers(key, requests),
+            builder: (context, sellers) {
+              final list = sellers.data ?? const <MarketVendor>[];
+              if (list.isEmpty) return const SizedBox.shrink();
+              final now = DateTime.now();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: Space.s20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      bi('You buy from', 'நீங்கள் வாங்குபவர்கள்'),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.4,
+                      ),
+                    ),
+                    const SizedBox(height: Space.s8),
+                    _InsetGroup(
+                      children: [
+                        for (final vendor in list)
+                          _NearbyVendorRow(
+                            vendor: vendor,
+                            status: marketStatus(vendor.data, now),
+                            onTap: () => push(
+                              context,
+                              MarketVendorScreen(vendor: vendor),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
 }
 
 class _MarketNote extends StatelessWidget {
@@ -959,7 +1318,7 @@ class _NearbyVendorRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          SizedBox(width: 26, child: Center(child: _marketIcon(vendor.shop))),
+          SizedBox(width: 26, child: Center(child: _marketIcon(vendor.kind))),
           const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
@@ -986,7 +1345,9 @@ class _NearbyVendorRow extends StatelessWidget {
                 const SizedBox(height: Space.s4),
                 Text(
                   [
-                    marketDistanceLabel(vendor.distance),
+                    marketKindLabel(vendor.kind),
+                    if (vendor.distance >= 0)
+                      marketDistanceLabel(vendor.distance),
                     if (vendor.price > 0)
                       '${money(vendor.price)}/${bi('L', 'லி')}',
                   ].join(' · '),
@@ -1223,7 +1584,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                           shape: const SquircleBorder(radius: Gold.r21),
                           color: Ink.violet.withValues(alpha: .13),
                         ),
-                        child: Center(child: _marketIcon(v.shop, size: 28)),
+                        child: Center(child: _marketIcon(v.kind, size: 28)),
                       ),
                       const SizedBox(width: Space.s16),
                       Expanded(
@@ -1231,9 +1592,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              v.shop
-                                  ? bi('Milk shop', 'பால் கடை')
-                                  : bi('Milk vendor', 'பால் வியாபாரி'),
+                              marketKindLabel(v.kind),
                               style: TextStyle(color: Ink.muted, fontSize: 13),
                             ),
                             const SizedBox(height: Space.s4),
@@ -1277,6 +1636,46 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                         ),
                     ],
                   ),
+                ),
+                const SizedBox(height: Space.s12),
+                // Talk to them or see who they are, before asking for milk.
+                Row(
+                  children: [
+                    Expanded(
+                      child: GhostButton(
+                        label: bi('Message', 'செய்தி'),
+                        icon: CupertinoIcons.chat_bubble_2_fill,
+                        onPressed: () async {
+                          try {
+                            final id = await DirectChatService.open(v.uid);
+                            if (context.mounted) {
+                              await push(
+                                context,
+                                DirectChatScreen(chatId: id, peer: v.uid),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              snack(
+                                context,
+                                accountError(e),
+                                tone: SnackTone.error,
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: Space.s12),
+                    Expanded(
+                      child: GhostButton(
+                        label: bi('Profile', 'ப்ரொஃபைல்'),
+                        icon: CupertinoIcons.person_crop_circle,
+                        onPressed: () =>
+                            push(context, SocialProfileScreen(uid: v.uid)),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: Space.s16),
                 ClipPath(
@@ -2001,10 +2400,18 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
         _eveningStart = marketMinutes(txt(evening, 'start')) ?? _eveningStart;
         _eveningEnd = marketMinutes(txt(evening, 'end')) ?? _eveningEnd;
       } else {
-        _name.text = await MarketService.myName();
+        _name.text = marketListingKind() == 'ranch'
+            ? farmName()
+            : await MarketService.myName();
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+    // No place yet: take it from the phone's location (permission is asked
+    // now, with the reason), instead of asking people to find it on a map.
+    if (_point == null && mounted) {
+      final here = await VendorLocation.current(context);
+      if (here != null && mounted) setState(() => _point = here);
+    }
   }
 
   Future<void> _save() async {
@@ -2066,9 +2473,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
     final sure = await showDialog<bool>(
       context: context,
       builder: (dialog) => AppleAlert(
-        title: AppText(
-          bi('Remove from nearby search?', 'அருகில் தேடலிலிருந்து நீக்கவா?'),
-        ),
+        title: AppText(bi('Remove from Market?', 'சந்தையிலிருந்து நீக்கவா?')),
         content: AppText(
           bi(
             'Buyers will no longer find you. Your reviews stay.',
@@ -2149,8 +2554,9 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
   @override
   Widget build(BuildContext context) {
     final shop = milkShopMode;
+    final ranchListing = marketListingKind() == 'ranch';
     return Scaffold(
-      appBar: AppBar(title: AppText(bi('Nearby search', 'அருகில் தேடல்'))),
+      appBar: AppBar(title: AppText(bi('Market listing', 'சந்தைப் பட்டியல்'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
           : Shell(
@@ -2171,10 +2577,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                         value: _active,
                         onChanged: (v) => setState(() => _active = v),
                         title: AppText(
-                          bi(
-                            'Show me in nearby search',
-                            'அருகில் தேடலில் என்னைக் காட்டு',
-                          ),
+                          bi('Show me in Market', 'சந்தையில் என்னைக் காட்டு'),
                         ),
                       ),
                       SoundSwitchListTile(
@@ -2198,6 +2601,8 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                     decoration: fieldStyle(
                       shop
                           ? bi('Shop name', 'கடையின் பெயர்')
+                          : ranchListing
+                          ? bi('Ranch name', 'பண்ணையின் பெயர்')
                           : bi('Name', 'பெயர்'),
                     ),
                   ),
@@ -2217,9 +2622,13 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                     value: _point,
                     name: shop
                         ? bi('Shop place', 'கடை இருக்கும் இடம்')
+                        : ranchListing
+                        ? bi('Ranch place', 'பண்ணை இருக்கும் இடம்')
                         : bi('Where you start from', 'நீங்கள் புறப்படும் இடம்'),
                     title: shop
                         ? bi('Shop place', 'கடை இருக்கும் இடம்')
+                        : ranchListing
+                        ? bi('Ranch place', 'பண்ணை இருக்கும் இடம்')
                         : bi('Where you start from', 'நீங்கள் புறப்படும் இடம்'),
                     marker: shop
                         ? Icons.storefront_rounded
@@ -2264,10 +2673,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                   if (_listed) ...[
                     const SizedBox(height: Space.s8),
                     GhostButton(
-                      label: bi(
-                        'Remove from nearby search',
-                        'அருகில் தேடலிலிருந்து நீக்கு',
-                      ),
+                      label: bi('Remove from Market', 'சந்தையிலிருந்து நீக்கு'),
                       color: Ink.redText,
                       onPressed: _remove,
                     ),

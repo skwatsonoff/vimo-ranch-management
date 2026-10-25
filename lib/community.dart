@@ -1535,6 +1535,35 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
       centerTitle: true,
       toolbarHeight: 96,
       backgroundColor: Ink.surface.withValues(alpha: .96),
+      actions: [
+        IconButton(
+          tooltip: bi('Report to VIMO Team', 'VIMO Team-க்குத் தெரிவி'),
+          icon: Icon(CupertinoIcons.flag, color: Ink.muted),
+          onPressed: () async {
+            var name = '';
+            try {
+              final p =
+                  (await FirebaseFirestore.instance
+                          .collection('profiles')
+                          .doc(widget.peer)
+                          .get())
+                      .data();
+              name = txt(
+                p ?? const {},
+                'displayName',
+                txt(p ?? const {}, 'username'),
+              );
+            } catch (_) {}
+            if (!mounted) return;
+            await openReport(
+              this.context,
+              againstUid: widget.peer,
+              againstName: name.isEmpty ? 'VIMO user' : name,
+              topic: 'chat',
+            );
+          },
+        ),
+      ],
       title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('profiles')
@@ -1827,6 +1856,7 @@ class _MilkMovementCard extends StatelessWidget {
         bi('Milk cleared', 'கிளியர் செய்த பால்'),
         '${bi('Moved to', 'எங்கே')}: $name',
       ),
+      'fridge_use' => (bi('Fridge milk used', 'ஃப்ரிட்ஜ் பால் பயன்பாடு'), name),
       _ when fromCows => (
         bi('Milk from ranch cows', 'பண்ணை மாடுகளின் பால்'),
         '${bi('Cow', 'மாடு')}: ${cow.isEmpty ? name : cow}',

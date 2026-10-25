@@ -754,6 +754,7 @@ class _ConversationViewState extends State<_ConversationView> {
   StreamSubscription<Uint8List>? _audioSubscription;
   Completer<void>? _audioComplete;
   Timer? _recordingTimer;
+  VoiceFormat _format = VoiceFormat(_voiceSampleRate);
 
   @override
   void dispose() {
@@ -777,6 +778,7 @@ class _ConversationViewState extends State<_ConversationView> {
       final complete = Completer<void>();
       _audioComplete = complete;
       UiSound.hold(this);
+      _format = await watchVoiceFormat(_recorder, _voiceSampleRate);
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -851,7 +853,10 @@ class _ConversationViewState extends State<_ConversationView> {
       final pcm = _recordedAudio.takeBytes();
       if (pcm.isEmpty) throw StateError('No audio was recorded');
       await widget.onSendVoice(
-        pcm16ToWave(pcm, sampleRate: _voiceSampleRate),
+        pcm16ToWave(
+          pcm16ToVoiceRate(pcm, _format, _voiceSampleRate),
+          sampleRate: _voiceSampleRate,
+        ),
         duration,
       );
     } catch (error) {
@@ -1438,6 +1443,7 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
         UiSound.hold(this);
       } else {
         UiSound.release(this);
+        if (value != PlayerState.paused) VoicePlayback.ended(_player);
       }
       if (mounted) setState(() => _state = value);
     });
@@ -1461,6 +1467,7 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
     if (durationSubscription != null) unawaited(durationSubscription.cancel());
     if (stateSubscription != null) unawaited(stateSubscription.cancel());
     if (completeSubscription != null) unawaited(completeSubscription.cancel());
+    VoicePlayback.ended(_player);
     unawaited(_player.dispose());
     UiSound.release(this);
     super.dispose();
@@ -1480,7 +1487,14 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
           await _player.setAudioContext(AudioContextConfig().build());
         } catch (_) {}
       }
-      await _player.play(source);
+      await VoicePlayback.starting(_player);
+      if (!mounted) return;
+      // Resume where it was paused; start over after it finished.
+      if (_state == PlayerState.paused) {
+        await _player.resume();
+      } else {
+        await _player.play(source);
+      }
     }
   }
 

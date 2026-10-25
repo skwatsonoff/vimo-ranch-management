@@ -875,7 +875,9 @@ class _VendorReportRow extends StatelessWidget {
                     color: color,
                   ),
                 ),
-                if (!payment && !clearance)
+                if (!payment &&
+                    !clearance &&
+                    !(kind == 'fridge_use' && row['use'] == 'curd'))
                   Text(
                     money(numv(row, 'amount')),
                     style: TextStyle(color: Ink.muted, fontSize: 13),
@@ -894,11 +896,18 @@ String vendorEntryLabel(String kind) => switch (kind) {
   'purchase' => bi('Purchased', 'வாங்கியது'),
   'sale' => bi('Sold', 'விற்றது'),
   'clearance' => bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
+  'fridge_use' => bi('Fridge milk used', 'ஃப்ரிட்ஜ் பால் பயன்பாடு'),
   _ => bi('Payment', 'பணம் செலுத்தியது'),
 };
 
 /// Clearance to the fridge has no person; show a localized name for it.
 String vendorEntryPersonName(Map<String, dynamic> row) =>
     row['personKind'] == 'fridge'
-    ? bi('Fridge', 'ஃப்ரிட்ஜ்')
+    ? (row['kind'] == 'fridge_use'
+          ? (row['use'] == 'curd'
+                ? bi('Fridge → curd', 'ஃப்ரிட்ஜ் → தயிர்')
+                : bi('Fridge → sold', 'ஃப்ரிட்ஜ் → விற்றது'))
+          : bi('Fridge', 'ஃப்ரிட்ஜ்'))
+    : row['personKind'] == 'walkin'
+    ? bi('Walk-in customer', 'தெரியாத வாடிக்கையாளர்')
     : txt(row, 'personName');

@@ -27,6 +27,26 @@ service cloud.firestore {
       return memberRole(ranchId) == 'Admin';
     }
 
+    // The VIMO Team: added only from the Firebase console.
+    function isVimoTeam() {
+      return signedIn() && exists(/databases/$(database)/documents/vimo_admins/$(request.auth.uid));
+    }
+
+    // The team can stop an account from buying and selling in Market.
+    function marketBlocked() {
+      let path = /databases/$(database)/documents/vimo_sanctions/$(request.auth.uid);
+      return exists(path) && get(path).data.market == 'blocked';
+    }
+
+    // The team reads a conversation or an order only after one of the two
+    // people reports it.
+    function reportedChat(chat) {
+      return isVimoTeam() && exists(/databases/$(database)/documents/vimo_reported_chats/$(chat));
+    }
+    function reportedOrder(order) {
+      return isVimoTeam() && exists(/databases/$(database)/documents/vimo_reported_orders/$(order));
+    }
+
     function canEditAnimals(ranchId) {
       return memberRole(ranchId) in ['Admin', 'Editor'];
     }
@@ -351,6 +371,353 @@ service cloud.firestore {
       allow delete: if routeOwner();
     }
 
+    // Shop products a person lists from their profile. Anyone signed in can
+    // read; only the seller writes. Photos live one per document beside it.
+    match /shop_products/{productId} {
+      function jpeg(v, max) {
+        return v is string && v.size() <= max
+          && v.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$');
+      }
+      function validProduct(d) {
+        return d.keys().hasOnly(['sellerUid', 'sellerName', 'title', 'description', 'features', 'category', 'condition', 'brand', 'tags', 'searchTerms', 'price', 'mrp', 'unit', 'unitSize', 'stock', 'maxPerOrder', 'sku', 'weightGrams', 'origin', 'manufacturer', 'gstPercent', 'hsn', 'delivery', 'returns', 'cover', 'photoCount', 'status', 'pausedByTeam', 'createdAt', 'updatedAt'])
+          && d.sellerUid == request.auth.uid
+          && d.sellerName is string && d.sellerName.size() > 0 && d.sellerName.size() <= 80
+          && d.title is string && d.title.size() >= 3 && d.title.size() <= 80
+          && d.description is string && d.description.size() <= 2000
+          && d.features is list && d.features.size() <= 5
+          && d.category in ['dairy', 'ghee', 'feed', 'animals', 'equipment', 'produce', 'grains', 'organic', 'home', 'clothing', 'electronics', 'other']
+          && d.condition in ['new', 'like_new', 'good', 'fair', 'poor']
+          && d.brand is string && d.brand.size() <= 60
+          && d.tags is list && d.tags.size() <= 5
+          && d.searchTerms is list && d.searchTerms.size() <= 60
+          && d.price is number && d.price > 0 && d.price <= 10000000
+          && d.mrp is number && (d.mrp == 0 || d.mrp >= d.price)
+          && d.unit in ['piece', 'litre', 'kg', 'pack', 'dozen']
+          && d.unitSize is string && d.unitSize.size() <= 20
+          && d.stock is int && d.stock >= 0 && d.stock <= 100000
+          // The seller decides how many one order may take (1 for a cow).
+          && d.maxPerOrder is int && d.maxPerOrder >= 1 && d.maxPerOrder <= 100000
+          && d.sku is string && d.sku.size() <= 40
+          && d.weightGrams is int && d.weightGrams >= 0 && d.weightGrams <= 1000000
+          && d.origin is string && d.origin.size() <= 40
+          && d.manufacturer is string && d.manufacturer.size() <= 120
+          && d.gstPercent in [0, 5, 12, 18, 28]
+          && d.hsn is string && d.hsn.matches('^([0-9]{4,8})?$')
+          && d.delivery is map && d.delivery.keys().hasOnly(['methods', 'payer', 'fee', 'days', 'shipsFrom'])
+          && d.delivery.methods is list && d.delivery.methods.size() >= 1 && d.delivery.methods.size() <= 3
+          && d.delivery.methods.hasOnly(['pickup', 'seller_delivery', 'courier'])
+          && d.delivery.payer in ['seller', 'buyer']
+          && d.delivery.fee is number && d.delivery.fee >= 0 && d.delivery.fee <= 100000
+          && d.delivery.days in ['1-2', '2-3', '4-7']
+          && d.delivery.shipsFrom is string && d.delivery.shipsFrom.size() <= 80
+          && d.returns in ['none', '7days']
+          && jpeg(d.cover, 80000)
+          && d.photoCount is int && d.photoCount >= 1 && d.photoCount <= 5
+          && d.status in ['active', 'paused']
+          && d.updatedAt == request.time;
+      }
+      allow read: if signedIn();
+      allow create: if signedIn() && !marketBlocked() && validProduct(request.resource.data)
+        && !('pausedByTeam' in request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if (signedIn() && resource.data.sellerUid == request.auth.uid
+        && !marketBlocked()
+        && validProduct(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        // A listing the team took down stays down until the team says so.
+        && request.resource.data.get('pausedByTeam', false) == resource.data.get('pausedByTeam', false)
+        && !(request.resource.data.get('pausedByTeam', false) == true && request.resource.data.status == 'active'))
+        // The VIMO Team takes a listing down, or allows it again.
+        || (isVimoTeam() && request.resource.data.updatedAt == request.time
+          && ((request.resource.data.status == 'paused' && request.resource.data.pausedByTeam == true
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'pausedByTeam', 'updatedAt']))
+            || (request.resource.data.pausedByTeam == false
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pausedByTeam', 'updatedAt']))));
+      allow delete: if signedIn() && resource.data.sellerUid == request.auth.uid;
+
+      match /photos/{index} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && index in ['0', '1', '2', '3', '4']
+          && getAfter(/databases/$(database)/documents/shop_products/$(productId)).data.sellerUid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['data'])
+          && jpeg(request.resource.data.data, 450000);
+        allow delete: if signedIn()
+          && get(/databases/$(database)/documents/shop_products/$(productId)).data.sellerUid == request.auth.uid;
+      }
+    }
+
+    // Orders, Mercari style. The buyer orders at the product's own price,
+    // fee and stock; then each side may take only its own next step:
+    // seller accepts and sends, buyer confirms receipt and rates, seller
+    // rates and completes. Cancelling takes both: before it is sent, one
+    // asks with a reason and the other agrees (or declines); while a request
+    // is open the order does not move. Money never passes through VIMO.
+    match /shop_orders/{orderId} {
+      function product() {
+        return get(/databases/$(database)/documents/shop_products/$(request.resource.data.productId)).data;
+      }
+      function validAddress(a) {
+        return a is map && (a.size() == 0 || (a.keys().hasOnly(['name', 'phone', 'line', 'city', 'pincode'])
+          && a.name is string && a.name.size() > 0 && a.name.size() <= 80
+          && a.phone is string && a.phone.matches('^[+]?[0-9]{10,13}$')
+          && a.line is string && a.line.size() >= 5 && a.line.size() <= 300
+          && a.city is string && a.city.size() > 0 && a.city.size() <= 80
+          && a.pincode is string && a.pincode.matches('^[1-9][0-9]{5}$')));
+      }
+      function validRating(r) {
+        return r is map && r.keys().hasOnly(['stars', 'text'])
+          && r.stars is int && r.stars >= 1 && r.stars <= 5
+          && r.text is string && r.text.size() <= 300;
+      }
+      function validOrder(d) {
+        return d.keys().hasOnly(['productId', 'sellerUid', 'buyerUid', 'sellerName', 'buyerName', 'title', 'cover', 'unitPrice', 'quantity', 'deliveryMethod', 'deliveryFee', 'total', 'payment', 'address', 'note', 'offerId', 'status', 'createdAt', 'updatedAt'])
+          && d.buyerUid == request.auth.uid
+          && d.sellerUid == product().sellerUid
+          && d.sellerUid != request.auth.uid
+          && product().status == 'active'
+          && d.quantity is int && d.quantity >= 1 && d.quantity <= product().stock
+          && d.quantity <= product().maxPerOrder
+          && (('offerId' in d) ? offerPrice(d) : d.unitPrice == product().price)
+          && d.deliveryMethod in product().delivery.methods
+          && d.deliveryFee == ((d.deliveryMethod == 'pickup' || product().delivery.payer != 'buyer') ? 0 : product().delivery.fee)
+          && d.total == d.unitPrice * d.quantity + d.deliveryFee
+          && d.payment in ['cod', 'upi']
+          && validAddress(d.address)
+          && (d.deliveryMethod == 'pickup' || d.address.size() > 0)
+          && d.title == product().title && d.cover == product().cover
+          && d.sellerName is string && d.sellerName.size() > 0 && d.sellerName.size() <= 80
+          && d.buyerName is string && d.buyerName.size() > 0 && d.buyerName.size() <= 80
+          && d.note is string && d.note.size() <= 300
+          && d.status == 'ordered'
+          && d.createdAt == request.time && d.updatedAt == request.time;
+      }
+      // Buying one at a price the seller accepted, within 24 hours; the
+      // offer is used up in the same step.
+      function offerPrice(d) {
+        let path = /databases/$(database)/documents/shop_offers/$(d.offerId);
+        let offer = get(path).data;
+        return d.offerId == d.productId + '_' + request.auth.uid
+          && offer.status == 'accepted'
+          && offer.buyerUid == request.auth.uid
+          && offer.productId == d.productId
+          && request.time < offer.acceptedAt + duration.value(24, 'h')
+          && d.unitPrice == offer.price
+          && d.quantity == 1
+          && getAfter(path).data.status == 'used'
+          && getAfter(path).data.orderId == orderId;
+      }
+      function changed(keys) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+      }
+      function moves(from, to) {
+        return resource.data.status == from && request.resource.data.status == to
+          && request.resource.data.updatedAt == request.time;
+      }
+      function isSeller() { return request.auth.uid == resource.data.sellerUid; }
+      function isBuyer() { return request.auth.uid == resource.data.buyerUid; }
+      function role() { return isSeller() ? 'seller' : 'buyer'; }
+      function isParty() { return isSeller() || isBuyer(); }
+      function asking() { return 'cancelRequest' in resource.data; }
+      function cancellable() { return resource.data.status in ['ordered', 'accepted']; }
+      function asksCancel() {
+        let r = request.resource.data.cancelRequest;
+        return cancellable() && !asking()
+          && changed(['cancelRequest', 'updatedAt'])
+          && request.resource.data.updatedAt == request.time
+          && r is map && r.keys().hasOnly(['by', 'reason', 'at'])
+          && r.by == role() && r.at == request.time
+          && r.reason is string && r.reason.size() > 0 && r.reason.size() <= 200;
+      }
+      // The asker takes it back, or the other person declines.
+      function dropsCancel() {
+        return asking() && !('cancelRequest' in request.resource.data)
+          && changed(['cancelRequest', 'updatedAt'])
+          && request.resource.data.updatedAt == request.time;
+      }
+      // Only the other person can agree; the seller then restocks at once.
+      function agreesCancel() {
+        let d = request.resource.data;
+        return asking() && resource.data.cancelRequest.by != role()
+          && cancellable() && d.status == 'cancelled' && d.updatedAt == request.time
+          && !('cancelRequest' in d)
+          && changed(['status', 'updatedAt', 'cancelledAt', 'cancelledBy', 'cancelReason', 'cancelRequest', 'restocked'])
+          && d.cancelledAt == request.time
+          && d.cancelledBy == resource.data.cancelRequest.by
+          && d.cancelReason == resource.data.cancelRequest.reason
+          && (!('restocked' in d) || (isSeller() && d.restocked == true && resource.data.status == 'accepted'));
+      }
+      // When the buyer gave the final yes, the seller may restock later.
+      function restocks() {
+        return resource.data.status == 'cancelled' && 'acceptedAt' in resource.data
+          && !('restocked' in resource.data)
+          && changed(['restocked', 'updatedAt'])
+          && request.resource.data.restocked == true
+          && request.resource.data.updatedAt == request.time;
+      }
+      allow read: if (signedIn()
+        && (resource.data.buyerUid == request.auth.uid || resource.data.sellerUid == request.auth.uid))
+        || reportedOrder(orderId);
+      allow create: if signedIn() && !marketBlocked() && validOrder(request.resource.data);
+      allow update: if signedIn() && (
+        (isSeller() && !asking() && moves('ordered', 'accepted')
+          && changed(['status', 'updatedAt', 'acceptedAt', 'sellerUpi'])
+          && request.resource.data.acceptedAt == request.time
+          && request.resource.data.sellerUpi is string && request.resource.data.sellerUpi.size() <= 60)
+        || (isSeller() && !asking() && moves('accepted', 'shipped')
+          && changed(['status', 'updatedAt', 'shippedAt', 'tracking'])
+          && request.resource.data.shippedAt == request.time
+          && request.resource.data.tracking is string && request.resource.data.tracking.size() <= 200)
+        || (isBuyer() && moves('shipped', 'received')
+          && changed(['status', 'updatedAt', 'receivedAt', 'buyerRating'])
+          && request.resource.data.receivedAt == request.time
+          && validRating(request.resource.data.buyerRating))
+        || (isSeller() && moves('received', 'completed')
+          && changed(['status', 'updatedAt', 'completedAt', 'sellerRating'])
+          && request.resource.data.completedAt == request.time
+          && validRating(request.resource.data.sellerRating))
+        || (isParty() && (asksCancel() || dropsCancel() || agreesCancel()))
+        || (isSeller() && restocks())
+        // After a report, the VIMO Team may end an order that is not done.
+        || (reportedOrder(orderId)
+          && resource.data.status in ['ordered', 'accepted', 'shipped', 'received']
+          && request.resource.data.status == 'cancelled'
+          && !('cancelRequest' in request.resource.data)
+          && changed(['status', 'updatedAt', 'cancelledAt', 'cancelledBy', 'cancelReason', 'cancelRequest'])
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.cancelledBy == 'vimo'
+          && request.resource.data.cancelReason is string && request.resource.data.cancelReason.size() <= 200)
+      );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        function order() {
+          return get(/databases/$(database)/documents/shop_orders/$(orderId)).data;
+        }
+        function party() {
+          return request.auth.uid == order().buyerUid || request.auth.uid == order().sellerUid;
+        }
+        allow read: if (signedIn() && party()) || reportedOrder(orderId);
+        allow create: if signedIn() && party()
+          && request.resource.data.keys().hasOnly(['senderUid', 'text', 'createdAt'])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // Likes: one per person and item, public so items can show a count.
+    match /shop_likes/{likeId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && !marketBlocked()
+        && likeId == request.auth.uid + '_' + request.resource.data.productId
+        && request.resource.data.keys().hasOnly(['uid', 'productId', 'title', 'price', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && exists(/databases/$(database)/documents/shop_products/$(request.resource.data.productId))
+        && request.resource.data.title is string && request.resource.data.title.size() <= 80
+        && request.resource.data.price is number
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Offers, Mercari style: the buyer offers from half the price; the
+    // seller accepts or declines; an accepted offer buys one item within
+    // 24 hours and is then used up by that order.
+    match /shop_offers/{offerId} {
+      function item() {
+        return get(/databases/$(database)/documents/shop_products/$(request.resource.data.productId)).data;
+      }
+      function step(from, to) {
+        return resource.data.status == from && request.resource.data.status == to
+          && request.resource.data.updatedAt == request.time;
+      }
+      function only(keys) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+      }
+      allow read: if signedIn()
+        && (resource.data.buyerUid == request.auth.uid || resource.data.sellerUid == request.auth.uid);
+      allow create, update: if signedIn() && !marketBlocked()
+        && (resource == null || resource.data.status in ['declined', 'withdrawn', 'used'] || request.time > resource.data.updatedAt + duration.value(24, 'h'))
+        && offerId == request.resource.data.productId + '_' + request.auth.uid
+        && request.resource.data.keys().hasOnly(['productId', 'sellerUid', 'buyerUid', 'buyerName', 'title', 'listPrice', 'price', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.buyerUid == request.auth.uid
+        && request.resource.data.sellerUid == item().sellerUid
+        && request.resource.data.sellerUid != request.auth.uid
+        && item().status == 'active' && item().stock > 0
+        && request.resource.data.listPrice == item().price
+        && request.resource.data.price is number
+        && request.resource.data.price >= item().price / 2
+        && request.resource.data.price < item().price
+        && request.resource.data.title == item().title
+        && request.resource.data.buyerName is string && request.resource.data.buyerName.size() > 0 && request.resource.data.buyerName.size() <= 80
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn() && (
+        (request.auth.uid == resource.data.buyerUid && step('pending', 'withdrawn') && only(['status', 'updatedAt']))
+        || (request.auth.uid == resource.data.sellerUid && step('pending', 'declined') && only(['status', 'updatedAt']))
+        || (request.auth.uid == resource.data.sellerUid && step('pending', 'accepted')
+          && only(['status', 'updatedAt', 'acceptedAt']) && request.resource.data.acceptedAt == request.time)
+        // Used by the order that bought it (checked from the order's side).
+        || (request.auth.uid == resource.data.buyerUid && step('accepted', 'used')
+          && only(['status', 'updatedAt', 'orderId'])
+          && existsAfter(/databases/$(database)/documents/shop_orders/$(request.resource.data.orderId))
+          && getAfter(/databases/$(database)/documents/shop_orders/$(request.resource.data.orderId)).data.offerId == offerId)
+      );
+      allow delete: if false;
+    }
+
+    // Public questions on an item; the seller answers for everyone.
+    match /shop_questions/{questionId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && !marketBlocked()
+        && request.resource.data.keys().hasOnly(['productId', 'sellerUid', 'title', 'uid', 'name', 'text', 'answer', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.sellerUid == get(/databases/$(database)/documents/shop_products/$(request.resource.data.productId)).data.sellerUid
+        && request.resource.data.sellerUid != request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() <= 80
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 300
+        && request.resource.data.answer == ''
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && request.auth.uid == resource.data.sellerUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer', 'answeredAt'])
+        && request.resource.data.answer is string
+        && request.resource.data.answer.size() > 0 && request.resource.data.answer.size() <= 500
+        && request.resource.data.answeredAt == request.time;
+      allow delete: if signedIn()
+        && (request.auth.uid == resource.data.uid || request.auth.uid == resource.data.sellerUid);
+    }
+
+    // Public reviews, written in the same step as the order's rating and
+    // matching it. Anyone signed in reads them; only the writer deletes.
+    match /shop_reviews/{reviewId} {
+      function rated() {
+        return getAfter(/databases/$(database)/documents/shop_orders/$(request.resource.data.orderId)).data;
+      }
+      function matches(d, o) {
+        return (d.role == 'buyer' && o.buyerUid == request.auth.uid && o.sellerUid == d.aboutUid
+            && o.status == 'received' && o.buyerRating.stars == d.stars && o.buyerRating.text == d.text)
+          || (d.role == 'seller' && o.sellerUid == request.auth.uid && o.buyerUid == d.aboutUid
+            && o.status == 'completed' && o.sellerRating.stars == d.stars && o.sellerRating.text == d.text);
+      }
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['orderId', 'aboutUid', 'byUid', 'byName', 'role', 'stars', 'text', 'title', 'createdAt'])
+        && request.resource.data.role in ['buyer', 'seller']
+        && reviewId == request.resource.data.orderId + '_' + request.resource.data.role
+        && request.resource.data.byUid == request.auth.uid
+        && request.resource.data.byName is string && request.resource.data.byName.size() > 0 && request.resource.data.byName.size() <= 80
+        && request.resource.data.title == rated().title
+        && request.resource.data.createdAt == request.time
+        && matches(request.resource.data, rated());
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.byUid == request.auth.uid;
+    }
+
     // Nearby milk search. A vendor or shop chooses to be listed; the place is
     // stored only as a ~220 m grid square (gridLat/gridLng = degrees x 500),
     // never the exact spot. "cell" is the ~5.5 km square used to find
@@ -368,9 +735,11 @@ service cloud.firestore {
         return cell * 25 <= grid && grid < cell * 25 + 25;
       }
       function validListing(d) {
-        return d.keys().hasOnly(['name', 'kind', 'gridLat', 'gridLng', 'cell', 'price', 'morning', 'evening', 'active', 'holiday', 'onRide', 'rideAt', 'updatedAt'])
+        return d.keys().hasOnly(['name', 'nameFold', 'kind', 'gridLat', 'gridLng', 'cell', 'price', 'morning', 'evening', 'active', 'holiday', 'onRide', 'rideAt', 'updatedAt'])
           && d.name is string && d.name.size() > 0 && d.name.size() <= 80
-          && d.kind in ['vendor', 'shop']
+          // Lower-case name for searching Market by name.
+          && (!('nameFold' in d) || d.nameFold == d.name.lower())
+          && d.kind in ['vendor', 'shop', 'ranch']
           && d.gridLat is int && d.gridLat >= -45000 && d.gridLat <= 45000
           && d.gridLng is int && d.gridLng >= -90000 && d.gridLng <= 90000
           && d.cell is string && d.cell.matches('^-?[0-9]{1,4}:-?[0-9]{1,4}$')
@@ -384,6 +753,7 @@ service cloud.firestore {
       }
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid
+        && !marketBlocked()
         && validListing(request.resource.data);
       allow delete: if signedIn() && request.auth.uid == uid;
 
@@ -495,7 +865,7 @@ service cloud.firestore {
 
     match /direct_chats/{chat} {
       function participant() { return signedIn() && request.auth.uid in resource.data.participants; }
-      allow read: if participant();
+      allow read: if participant() || reportedChat(chat);
       allow create: if signedIn() && request.resource.data.keys().hasOnly(['participants'])
         && request.resource.data.participants is list && request.resource.data.participants.size() == 2
         && request.resource.data.participants[0] is string && request.resource.data.participants[1] is string
@@ -506,7 +876,7 @@ service cloud.firestore {
       allow delete: if false;
       match /messages/{message} {
         function member() { return signedIn() && request.auth.uid in get(/databases/$(database)/documents/direct_chats/$(chat)).data.participants; }
-        allow read: if member();
+        allow read: if member() || reportedChat(chat);
         allow create: if member() && request.resource.data.keys().hasOnly(['senderUid', 'text', 'createdAt'])
           && request.resource.data.senderUid == request.auth.uid
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
@@ -693,10 +1063,32 @@ service cloud.firestore {
           && request.resource.data.cloudId == entryId
           && request.resource.data.serverCreatedAt == request.time
           && request.resource.data.stockScope == 'vendor_v2'
-          && request.resource.data.kind in ['collection', 'purchase', 'sale', 'payment', 'clearance']
+          && request.resource.data.kind in ['collection', 'purchase', 'sale', 'payment', 'clearance', 'fridge_use']
           // Clearance moves unsold milk out of stock at no charge: to the
           // fridge or to any person. It never changes a balance.
-          && (request.resource.data.kind == 'clearance'
+          // Fridge milk later becomes curd (no money) or is sold for cash,
+          // within the two days it keeps; a walk-in buyer is not on the
+          // list and pays on the spot, so nothing is owed.
+          && (request.resource.data.kind == 'fridge_use'
+            ? (request.resource.data.personKind == 'fridge' && request.resource.data.personId == '_fridge'
+              && request.resource.data.lotId is string && request.resource.data.lotId.size() > 0 && request.resource.data.lotId.size() <= 120
+              && request.resource.data.use in ['curd', 'sold']
+              && request.resource.data.quantity is number && request.resource.data.quantity > 0
+              && (request.resource.data.use == 'curd'
+                ? (request.resource.data.price == 0 && request.resource.data.amount == 0 && request.resource.data.paid == 0)
+                : (request.resource.data.price is number && request.resource.data.price > 0
+                  && request.resource.data.amount is number && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011
+                  && request.resource.data.paid == request.resource.data.amount))
+              && request.resource.data.get('syncMode', '') == 'local_v3')
+            : request.resource.data.personKind == 'walkin'
+            ? (request.resource.data.kind == 'sale' && request.resource.data.personId == '_walkin'
+              && request.resource.data.quantity is number && request.resource.data.quantity > 0
+              && request.resource.data.price is number && request.resource.data.price > 0
+              && request.resource.data.amount is number && request.resource.data.amount > 0
+              && math.abs(request.resource.data.amount - request.resource.data.quantity * request.resource.data.price) < 0.011
+              && request.resource.data.paid == request.resource.data.amount
+              && request.resource.data.get('syncMode', '') == 'local_v3')
+            : request.resource.data.kind == 'clearance'
             ? (request.resource.data.personKind in ['fridge', 'supplier', 'customer']
               && (request.resource.data.personKind == 'fridge'
                 ? request.resource.data.personId == '_fridge'
@@ -857,6 +1249,102 @@ service cloud.firestore {
       match /{document=**} {
         allow read, write: if false;
       }
+    }
+      // ---- VIMO Team: reports, support messages and Market blocks ----
+    match /vimo_admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // A report: what happened, between whom, and which conversation and
+    // orders the team may now read. Only the reporter and the team see it.
+    match /vimo_reports/{reportId} {
+      function validReport(d) {
+        return d.keys().hasOnly(['reporterUid', 'reporterName', 'againstUid', 'againstName', 'topic', 'reason', 'text', 'orderId', 'chatId', 'orderIds', 'status', 'createdAt', 'updatedAt'])
+          && d.reporterUid == request.auth.uid
+          && d.reporterName is string && d.reporterName.size() > 0 && d.reporterName.size() <= 80
+          && d.againstUid is string && d.againstUid.size() > 0 && d.againstUid != request.auth.uid
+          && d.againstName is string && d.againstName.size() <= 80
+          && d.topic in ['order', 'chat', 'profile']
+          && d.reason in ['not_received', 'not_as_described', 'payment', 'cancel', 'abuse', 'fraud', 'other']
+          && d.text is string && d.text.size() >= 10 && d.text.size() <= 1000
+          && d.orderId is string && d.orderId.size() <= 60
+          && d.chatId in ['', d.reporterUid + '_' + d.againstUid, d.againstUid + '_' + d.reporterUid]
+          && d.orderIds is list && d.orderIds.size() <= 20
+          && d.status == 'open'
+          && d.createdAt == request.time && d.updatedAt == request.time;
+      }
+      allow create: if signedIn() && validReport(request.resource.data);
+      allow read: if (signedIn() && resource.data.reporterUid == request.auth.uid) || isVimoTeam();
+      allow update: if isVimoTeam()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'outcome', 'handledBy', 'updatedAt'])
+        && request.resource.data.status in ['open', 'reviewing', 'resolved']
+        && request.resource.data.get('outcome', '') is string && request.resource.data.get('outcome', '').size() <= 1000
+        && request.resource.data.get('handledBy', request.auth.uid) == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Opening a reported conversation or order to the team, written by one
+    // of its own two people in the same step as the report.
+    match /vimo_reported_chats/{chat} {
+      allow create, update: if signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/direct_chats/$(chat)).data.participants
+        && request.resource.data.keys().hasOnly(['reportId', 'at'])
+        && existsAfter(/databases/$(database)/documents/vimo_reports/$(request.resource.data.reportId))
+        && request.resource.data.at == request.time;
+      allow read: if isVimoTeam();
+      allow delete: if false;
+    }
+    match /vimo_reported_orders/{order} {
+      function party() {
+        let o = get(/databases/$(database)/documents/shop_orders/$(order)).data;
+        return request.auth.uid == o.buyerUid || request.auth.uid == o.sellerUid;
+      }
+      allow create, update: if signedIn() && party()
+        && request.resource.data.keys().hasOnly(['reportId', 'at'])
+        && existsAfter(/databases/$(database)/documents/vimo_reports/$(request.resource.data.reportId))
+        && request.resource.data.at == request.time;
+      allow read: if isVimoTeam();
+      allow delete: if false;
+    }
+
+    // One thread per person with the VIMO Team.
+    match /vimo_support/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isVimoTeam();
+      allow create, update: if ((signedIn() && request.auth.uid == uid) || isVimoTeam())
+        && request.resource.data.keys().hasOnly(['name', 'lastText', 'lastFrom', 'updatedAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 80
+        && request.resource.data.lastText is string && request.resource.data.lastText.size() <= 2000
+        && request.resource.data.lastFrom == (request.auth.uid == uid ? 'user' : 'team')
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+      match /messages/{messageId} {
+        allow read: if (signedIn() && request.auth.uid == uid) || isVimoTeam();
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['from', 'senderUid', 'text', 'reportId', 'createdAt'])
+          && request.resource.data.senderUid == request.auth.uid
+          && ((request.auth.uid == uid && request.resource.data.from == 'user')
+            || (isVimoTeam() && request.resource.data.from == 'team'))
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && request.resource.data.reportId is string && request.resource.data.reportId.size() <= 60
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // What the team decided about an account. Its owner can read it.
+    match /vimo_sanctions/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isVimoTeam();
+      allow create, update: if isVimoTeam()
+        && request.resource.data.keys().hasOnly(['market', 'warnings', 'reason', 'by', 'updatedAt'])
+        && request.resource.data.market in ['ok', 'blocked']
+        && request.resource.data.warnings is int && request.resource.data.warnings >= 0
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 500
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
     }
   }
 }

@@ -59,6 +59,9 @@ part 'design_tokens.dart';
 part 'polish.dart';
 part 'ui_sound.dart';
 part 'google_account.dart';
+part 'shop.dart';
+part 'shop_screens.dart';
+part 'shop_orders.dart';
 part 'account.dart';
 part 'social_profile.dart';
 part 'requested_updates.dart';
@@ -79,6 +82,11 @@ part 'milk_shop.dart';
 part 'performance.dart';
 part 'languages.dart';
 part 'market.dart';
+part 'location_gate.dart';
+part 'vimo_team.dart';
+part 'shop_reviews.dart';
+part 'shop_social.dart';
+part 'vendor_walkin_fridge.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -2011,6 +2019,7 @@ class LiquidRoute<T> extends PageRoute<T>
 }
 
 Future<T?> push<T>(BuildContext context, Widget page) {
+  VoicePlayback.stopAll();
   UiSound.play(UiSoundKind.whoosh);
   return Navigator.of(context).push<T>(LiquidRoute<T>(builder: (_) => page));
 }
@@ -3546,6 +3555,88 @@ String chatDateLabel(String value, {DateTime? now}) {
   return value;
 }
 
+/// What a recorder really captured. Browsers (and some phones) ignore the
+/// requested 8 kHz mono and record at the microphone's own rate, often
+/// 48 kHz and sometimes in stereo; wrapping that as 8 kHz made notes six
+/// times too long, too big to send, and slow when played.
+class VoiceFormat {
+  int rate;
+  int channels;
+  VoiceFormat(this.rate, [this.channels = 1]);
+}
+
+/// Call before startStream: follows any change the platform makes.
+Future<VoiceFormat> watchVoiceFormat(AudioRecorder recorder, int rate) async {
+  final format = VoiceFormat(rate);
+  try {
+    await recorder.setOnConfigChanged((config) {
+      format
+        ..rate = config.sampleRate
+        ..channels = math.max(1, config.numChannels);
+    });
+  } catch (_) {}
+  return format;
+}
+
+/// 16-bit samples in [from] to mono at [rate], averaging each span of
+/// input samples (a box filter keeps speech clear without aliasing hiss).
+Uint8List pcm16ToVoiceRate(Uint8List pcm, VoiceFormat from, int rate) {
+  final channels = math.max(1, from.channels);
+  final frames = pcm.length ~/ (2 * channels);
+  if (from.rate == rate && channels == 1) {
+    return Uint8List.sublistView(pcm, 0, frames * 2);
+  }
+  final input = ByteData.sublistView(pcm);
+  final outFrames = (frames * rate / from.rate).floor();
+  final out = Uint8List(outFrames * 2);
+  final output = ByteData.sublistView(out);
+  final step = from.rate / rate;
+  for (var i = 0; i < outFrames; i++) {
+    final start = (i * step).floor();
+    final end = math.max(start + 1, math.min(frames, ((i + 1) * step).floor()));
+    var sum = 0;
+    for (var f = start; f < end; f++) {
+      for (var c = 0; c < channels; c++) {
+        sum += input.getInt16((f * channels + c) * 2, Endian.little);
+      }
+    }
+    final value = (sum / ((end - start) * channels)).round();
+    output.setInt16(i * 2, value.clamp(-32768, 32767), Endian.little);
+  }
+  return out;
+}
+
+/// Only one voice note plays at a time, and none keeps playing once its
+/// screen is left: starting one pauses the other, and leaving a screen or
+/// switching tabs stops whatever plays.
+class VoicePlayback {
+  const VoicePlayback._();
+  static AudioPlayer? _current;
+  static AppLifecycleListener? _lifecycle;
+
+  static Future<void> starting(AudioPlayer player) async {
+    // Going to the background or locking the phone stops it too.
+    _lifecycle ??= AppLifecycleListener(onHide: stopAll, onPause: stopAll);
+    final before = _current;
+    _current = player;
+    if (before != null && !identical(before, player)) {
+      try {
+        await before.pause();
+      } catch (_) {}
+    }
+  }
+
+  static void ended(AudioPlayer player) {
+    if (identical(_current, player)) _current = null;
+  }
+
+  static void stopAll() {
+    final player = _current;
+    _current = null;
+    if (player != null) unawaited(player.stop().catchError((Object _) {}));
+  }
+}
+
 Uint8List pcm16ToWave(Uint8List pcm, {int sampleRate = 16000}) {
   final output = Uint8List(44 + pcm.length);
   final header = ByteData.sublistView(output);
@@ -5070,6 +5161,11 @@ Map<String, dynamic> localCloudData(Map<String, dynamic> value) =>
       ..remove('updatedAt')
       ..remove('settingKey');
 
+/// A setting that belongs to one signed-in account on this phone: never
+/// shared with the ranch, and separate when someone else signs in here.
+String accountSetting(String name, [String? uid]) =>
+    'acct_${uid ?? signedInUid}_$name';
+
 class CloudSyncService {
   const CloudSyncService._();
 
@@ -5116,6 +5212,8 @@ class CloudSyncService {
       ranchId().isNotEmpty;
 
   static bool isLocalSetting(String key) =>
+      key.startsWith('acct_') ||
+      key.startsWith('locationAsked_') ||
       key.startsWith('vendorRide_') ||
       key.startsWith('localImport_') ||
       localOnlySettings.contains(key);
@@ -9640,6 +9738,11 @@ class NotificationHistoryScreen extends StatelessWidget {
                               }
                               n['readBy'] = read;
                               await box.put(e.key, n);
+                              final order = txt(n, 'orderId');
+                              if (order.isNotEmpty && context.mounted) {
+                                await push(context, OrderScreen(id: order));
+                                return;
+                              }
                               final peer = txt(n, 'chatPeer');
                               if (peer.isNotEmpty && context.mounted) {
                                 await push(
@@ -9652,6 +9755,27 @@ class NotificationHistoryScreen extends StatelessWidget {
                                     peer: peer,
                                   ),
                                 );
+                                return;
+                              }
+                              if (n['fridge'] == true && context.mounted) {
+                                await push(context, const FridgeScreen());
+                                return;
+                              }
+                              final product = txt(n, 'productId');
+                              if (product.isNotEmpty && context.mounted) {
+                                await push(context, ProductScreen(id: product));
+                                return;
+                              }
+                              final report = txt(n, 'reportId');
+                              if (report.isNotEmpty && context.mounted) {
+                                await push(
+                                  context,
+                                  ReportCaseScreen(id: report),
+                                );
+                                return;
+                              }
+                              if (n['vimoSupport'] == true && context.mounted) {
+                                await push(context, const VimoHelpScreen());
                                 return;
                               }
                               final profile = txt(n, 'profileUid');
@@ -10219,11 +10343,22 @@ class _MainShellState extends State<MainShell> {
   final Set<int> _scrolledTabs = {};
   final ValueNotifier<bool> _topEdge = ValueNotifier<bool>(false);
   StreamSubscription<BoxEvent>? _languageChanges;
+  StreamSubscription<User?>? _accounts;
   @override
   void initState() {
     super.initState();
     vendorRouteRequest.addListener(_showVendorForRoute);
     SocialActivityService.start();
+    unawaited(remindFridgeMilk());
+    // Once an account exists on this phone, ask for location (Market).
+    if (firebaseReady) {
+      _accounts = FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user == null || !mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(MarketLocation.askAfterSignIn(context));
+        });
+      });
+    }
     _languageChanges = Hive.box('settings').watch().listen((event) {
       // Sync writes status and queue metadata frequently. Rebuilding the whole
       // shell for those writes tears down/recreates Firestore UI listeners and
@@ -10256,6 +10391,7 @@ class _MainShellState extends State<MainShell> {
     if (index < 0 || index == _tab) return;
     setState(() {
       _tabHistory.add(_tab);
+      VoicePlayback.stopAll();
       _tab = index;
     });
     vendorWorkspaceRevision.value++;
@@ -10265,6 +10401,7 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     vendorRouteRequest.removeListener(_showVendorForRoute);
     _languageChanges?.cancel();
+    _accounts?.cancel();
     _topEdge.dispose();
     super.dispose();
   }
@@ -10326,7 +10463,7 @@ class _MainShellState extends State<MainShell> {
       'Chat': const CommunityChatsScreen(),
       'Reports': const VendorOnlyReports(),
       'Profile': const SocialProfileScreen(),
-      'Nearby': const NearbyScreen(),
+      'Nearby': const MarketLocationGate(child: NearbyScreen()),
     };
     final items = <String, _NavItem>{
       for (final id in businessTabs)
@@ -10334,7 +10471,7 @@ class _MainShellState extends State<MainShell> {
           'Ranch' => CupertinoIcons.house,
           'Vendor' =>
             milkShopMode ? Icons.storefront_outlined : CupertinoIcons.drop,
-          'Nearby' => CupertinoIcons.location,
+          'Nearby' => CupertinoIcons.bag,
           'Reports' => CupertinoIcons.chart_bar,
           'Social' => CupertinoIcons.globe,
           'Chat' => CupertinoIcons.chat_bubble_2,
@@ -10349,6 +10486,7 @@ class _MainShellState extends State<MainShell> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _tabHistory.isNotEmpty) {
+          VoicePlayback.stopAll();
           setState(() => _tab = _tabHistory.removeLast());
           vendorWorkspaceRevision.value++;
         }
@@ -10507,6 +10645,7 @@ class _MainShellState extends State<MainShell> {
                   onChanged: (i) => setState(() {
                     if (i != _tab) {
                       _tabHistory.add(_tab);
+                      VoicePlayback.stopAll();
                       _tab = i;
                       _topEdge.value = _scrolledTabs.contains(i);
                       vendorWorkspaceRevision.value++;
@@ -19197,6 +19336,38 @@ class _ExportTile extends StatelessWidget {
 //  PART 15 — SETTINGS, FAMILY, SYNC
 // =============================================================================
 
+/// Settings row for VIMO Team members. Membership is looked up once, not on
+/// every settings write while a sync runs.
+class _TeamConsoleLink extends StatefulWidget {
+  const _TeamConsoleLink();
+  @override
+  State<_TeamConsoleLink> createState() => _TeamConsoleLinkState();
+}
+
+class _TeamConsoleLinkState extends State<_TeamConsoleLink> {
+  late final Future<bool> _member = VimoTeam.isMember();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _member,
+    builder: (context, team) => team.data == true
+        ? Reveal(
+            index: 3,
+            child: _SettingLink(
+              title: 'VIMO Team console',
+              subtitle: bi(
+                'Reports and messages from people',
+                'மக்களின் அறிக்கைகளும் செய்திகளும்',
+              ),
+              icon: CupertinoIcons.shield_lefthalf_fill,
+              color: Ink.orange,
+              onTap: () => push(context, const VimoTeamConsole()),
+            ),
+          )
+        : const SizedBox.shrink(),
+  );
+}
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -19300,6 +19471,22 @@ class SettingsScreen extends StatelessWidget {
               ),
               if (firebaseReady && FirebaseAuth.instance.currentUser != null)
                 const Reveal(index: 2, child: _GoogleLinkRow()),
+              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
+                Reveal(
+                  index: 3,
+                  child: _SettingLink(
+                    title: 'Help · VIMO Team',
+                    subtitle: bi(
+                      'Message the team, see your reports',
+                      'குழுவுக்குச் செய்தி, உங்கள் அறிக்கைகள்',
+                    ),
+                    icon: CupertinoIcons.question_circle_fill,
+                    color: Ink.violetDeep,
+                    onTap: () => push(context, const VimoHelpScreen()),
+                  ),
+                ),
+              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
+                const _TeamConsoleLink(),
               // Ranch details live on the Ranch tab. Without that tab, keep a
               // way in so members can still be managed.
               if (ranchId().isNotEmpty && !workspaceEnabled('Ranch'))
@@ -19845,10 +20032,11 @@ class AppSettingsScreen extends StatelessWidget {
                   label: 'Preferences',
                   onTap: () => push(context, const PreferencesScreen()),
                 ),
-                if (workspaceEnabled('Vendor') && MarketService.available)
+                if ((workspaceEnabled('Vendor') || workspaceEnabled('Ranch')) &&
+                    MarketService.available)
                   _ActionRow(
-                    icon: CupertinoIcons.location_circle,
-                    label: bi('Nearby search', 'அருகில் தேடல்'),
+                    icon: CupertinoIcons.bag,
+                    label: bi('Market listing', 'சந்தைப் பட்டியல்'),
                     onTap: () => push(context, const MarketListingScreen()),
                   ),
               ],

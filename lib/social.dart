@@ -723,6 +723,7 @@ class _SocialComposerState extends State<SocialComposer> {
   StreamSubscription<Uint8List>? _audio;
   Completer<void>? _audioDone;
   Timer? _timer;
+  VoiceFormat _format = VoiceFormat(8000);
   bool _pickingPhoto = false;
   bool _recording = false, _busy = false, _stopping = false;
   String _photo = '', _voice = '';
@@ -790,7 +791,10 @@ class _SocialComposerState extends State<SocialComposer> {
         await _audio?.cancel();
         final data = _pcm.takeBytes();
         if (data.isEmpty) throw StateError('Empty recording');
-        final wave = pcm16ToWave(data, sampleRate: 8000);
+        final wave = pcm16ToWave(
+          pcm16ToVoiceRate(data, _format, 8000),
+          sampleRate: 8000,
+        );
         if (mounted) {
           setState(() {
             _voice = base64Encode(wave);
@@ -806,6 +810,7 @@ class _SocialComposerState extends State<SocialComposer> {
         _pcm = BytesBuilder(copy: false);
         _audioDone = Completer<void>();
         UiSound.hold(this);
+        _format = await watchVoiceFormat(_recorder, 8000);
         final stream = await _recorder.startStream(
           const RecordConfig(
             encoder: AudioEncoder.pcm16bits,

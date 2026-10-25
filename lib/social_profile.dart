@@ -69,6 +69,12 @@ class SocialActivityService {
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _followers;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _allFollowers;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chats;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _selling;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _buying;
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _support;
+  static final List<StreamSubscription<Object?>> _marketWatches = [];
+  static final List<StreamSubscription<Object?>> _likedPrices = [];
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _teamReports;
   static final Map<
     String,
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
@@ -188,12 +194,355 @@ class SocialActivityService {
     );
   }
 
+  /// Offers, questions and liked items: each notice fires when the other
+  /// person changes something, never on first sight.
+  static void _watchMarket(String uid) {
+    final db = FirebaseFirestore.instance;
+    void watch(
+      Query<Map<String, dynamic>> query,
+      String key,
+      String Function(Map<String, dynamic>) state,
+      (String, String)? Function(Map<String, dynamic> d, String before) notice,
+    ) {
+      _marketWatches.add(
+        query.snapshots().listen((snapshot) async {
+          if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+          final seen = asMap(settingValue(key, {}));
+          final first = !seen.containsKey('_primed');
+          final next = {...seen, '_primed': true};
+          for (final doc in snapshot.docs) {
+            final d = doc.data();
+            final now = state(d);
+            final before = txt(seen, doc.id);
+            next[doc.id] = now;
+            if (first || before == now) continue;
+            final n = notice(d, before);
+            if (n == null) continue;
+            await addRanchNotification(
+              title: n.$1,
+              titleTa: n.$2,
+              message: txt(d, 'title'),
+              type: 'message',
+              sourceId: '$key-${doc.id}-$now',
+              localOnly: true,
+              extra: {'productId': txt(d, 'productId')},
+            );
+            _browserRuntime.showNotification(
+              title: bi(n.$1, n.$2),
+              body: txt(d, 'title'),
+              tag: '$key-${doc.id}',
+            );
+          }
+          await setSetting(key, next);
+        }, onError: (_) {}),
+      );
+    }
+
+    String price(Map<String, dynamic> d) => money(numv(d, 'price'));
+    // Offers on my items, and answers to my offers.
+    watch(
+      db.collection('shop_offers').where('sellerUid', isEqualTo: uid),
+      accountSetting('offerNoticesSelling', uid),
+      (d) => '${txt(d, 'status')}:${numv(d, 'price')}',
+      (d, _) => txt(d, 'status') == 'pending'
+          ? (
+              '${txt(d, 'buyerName')} offered ${price(d)}',
+              '${txt(d, 'buyerName')} ${price(d)} கேட்கிறார்',
+            )
+          : null,
+    );
+    watch(
+      db.collection('shop_offers').where('buyerUid', isEqualTo: uid),
+      accountSetting('offerNoticesBuying', uid),
+      (d) => txt(d, 'status'),
+      (d, _) => switch (txt(d, 'status')) {
+        'accepted' => (
+          'Offer accepted: buy at ${price(d)} within $shopOfferHours hours',
+          'ஏற்கப்பட்டது: $shopOfferHours மணி நேரத்தில் ${price(d)}-க்கு வாங்கலாம்',
+        ),
+        'declined' => (
+          'Your offer of ${price(d)} was declined',
+          'உங்கள் ${price(d)} ஏற்கப்படவில்லை',
+        ),
+        _ => null,
+      },
+    );
+    // Questions on my items, and answers to mine.
+    watch(
+      db.collection('shop_questions').where('sellerUid', isEqualTo: uid),
+      accountSetting('questionNoticesSelling', uid),
+      (d) => txt(d, 'answer').isEmpty ? 'asked' : 'answered',
+      (d, before) => before.isEmpty && txt(d, 'answer').isEmpty
+          ? (
+              '${txt(d, 'name')} asked: ${txt(d, 'text')}',
+              '${txt(d, 'name')} கேட்டார்: ${txt(d, 'text')}',
+            )
+          : null,
+    );
+    watch(
+      db.collection('shop_questions').where('uid', isEqualTo: uid),
+      accountSetting('questionNoticesAsked', uid),
+      (d) => txt(d, 'answer').isEmpty ? 'asked' : 'answered',
+      (d, _) => txt(d, 'answer').isNotEmpty
+          ? (
+              'The seller answered: ${txt(d, 'answer')}',
+              'விற்பவர் பதில்: ${txt(d, 'answer')}',
+            )
+          : null,
+    );
+    // Liked items that got cheaper.
+    _marketWatches.add(
+      ShopLikes.likes.where('uid', isEqualTo: uid).snapshots().listen((likes) {
+        for (final w in _likedPrices) {
+          unawaited(w.cancel());
+        }
+        _likedPrices.clear();
+        final likedAt = {
+          for (final l in likes.docs)
+            txt(l.data(), 'productId'): numv(l.data(), 'price'),
+        };
+        final ids = likedAt.keys.toList();
+        for (var i = 0; i < ids.length; i += 30) {
+          final chunk = ids.sublist(i, math.min(ids.length, i + 30));
+          _likedPrices.add(
+            ShopService.products
+                .where(FieldPath.documentId, whereIn: chunk)
+                .snapshots()
+                .listen(
+                  (s) => unawaited(_priceDrops(uid, s, likedAt)),
+                  onError: (_) {},
+                ),
+          );
+        }
+      }, onError: (_) {}),
+    );
+  }
+
+  static Future<void> _priceDrops(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+    Map<String, double> likedAt,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final told = asMap(
+      settingValue(accountSetting('priceDropNotices', uid), {}),
+    );
+    final next = {...told};
+    for (final doc in snapshot.docs) {
+      final p = doc.data();
+      final now = numv(p, 'price');
+      final was = likedAt[doc.id] ?? 0;
+      final lastTold = told[doc.id] is num
+          ? (told[doc.id] as num).toDouble()
+          : was;
+      if (now <= 0 || now >= was || now >= lastTold) continue;
+      if (txt(p, 'status') != 'active' || toInt(p['stock']) <= 0) continue;
+      next[doc.id] = now;
+      await addRanchNotification(
+        title: 'Price dropped to ${money(now)}',
+        titleTa: 'விலை ${money(now)}-ஆகக் குறைந்தது',
+        message: txt(p, 'title'),
+        type: 'message',
+        sourceId: 'price-drop-${doc.id}-$now',
+        localOnly: true,
+        extra: {'productId': doc.id},
+      );
+    }
+    await setSetting(accountSetting('priceDropNotices', uid), next);
+  }
+
+  /// A new message from the VIMO Team in this person's support thread.
+  static Future<void> _supportChanged(
+    String uid,
+    Map<String, dynamic> thread,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final at = thread['updatedAt'];
+    if (txt(thread, 'lastFrom') != 'team' || at is! Timestamp) return;
+    final seen = toInt(settingValue(accountSetting('vimoSupportSeen', uid), 0));
+    final millis = at.millisecondsSinceEpoch;
+    if (millis <= seen) return;
+    await setSetting(accountSetting('vimoSupportSeen', uid), millis);
+    if (seen == 0 &&
+        DateTime.now().millisecondsSinceEpoch - millis > 86400000) {
+      return;
+    }
+    if (openChatId == 'vimo-support') return;
+    await addRanchNotification(
+      title: 'VIMO Team sent you a message',
+      titleTa: 'VIMO Team உங்களுக்குச் செய்தி அனுப்பியது',
+      message: txt(thread, 'lastText'),
+      type: 'message',
+      sourceId: 'vimo-support-$millis',
+      localOnly: true,
+      extra: const {'vimoSupport': true},
+    );
+    _browserRuntime.showNotification(
+      title: bi('VIMO Team', 'VIMO Team'),
+      body: txt(thread, 'lastText'),
+      tag: 'vimo-support',
+    );
+  }
+
+  /// For team members: a report that was not there before.
+  static Future<void> _reportsChanged(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final seen = {
+      for (final id
+          in (settingValue(accountSetting('vimoReportsSeen', uid), const [])
+              as List))
+        '$id',
+    };
+    final ids = [for (final d in snapshot.docs) d.id];
+    await setSetting(accountSetting('vimoReportsSeen', uid), ids);
+    if (seen.isEmpty &&
+        settingValue(accountSetting('vimoReportsPrimed', uid), false) != true) {
+      await setSetting(accountSetting('vimoReportsPrimed', uid), true);
+      return;
+    }
+    for (final d in snapshot.docs.where((d) => !seen.contains(d.id))) {
+      await addRanchNotification(
+        title:
+            'New report: ${shopLabel(vimoReportReasons, txt(d.data(), 'reason'))}',
+        titleTa:
+            'புதிய அறிக்கை: ${shopLabel(vimoReportReasons, txt(d.data(), 'reason'))}',
+        message:
+            '${txt(d.data(), 'reporterName')} → ${txt(d.data(), 'againstName')}',
+        type: 'message',
+        sourceId: 'vimo-report-${d.id}',
+        localOnly: true,
+        extra: {'reportId': d.id},
+      );
+    }
+  }
+
+  /// What a notice compares for an order: its step, plus who has an open
+  /// request to cancel ("ordered:buyer").
+  static String orderNoticeState(Map<String, dynamic> o) {
+    final asked = txt(asMap(o['cancelRequest']), 'by');
+    return asked.isEmpty ? txt(o, 'status') : '${txt(o, 'status')}:$asked';
+  }
+
+  /// Taking back your own cancel request is not news to you: record the
+  /// new state first so it raises no "said no" notice.
+  static Future<void> noteOwnOrderChange(
+    String id,
+    Map<String, dynamic> order, {
+    required bool selling,
+  }) async {
+    final key = accountSetting(
+      selling ? 'orderNoticesSelling' : 'orderNoticesBuying',
+    );
+    await setSetting(key, {
+      ...asMap(settingValue(key, {})),
+      id: txt(order, 'status'),
+    });
+  }
+
+  /// Order steps the other person took: a new order or a received / cancel
+  /// for the seller; accepted, sent, completed or cancelled for the buyer.
+  /// Each order's last seen status is kept on this device, so the first
+  /// sight of an order only records it.
+  static Future<void> _ordersChanged(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required bool selling,
+  }) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final key = accountSetting(
+      selling ? 'orderNoticesSelling' : 'orderNoticesBuying',
+      uid,
+    );
+    final seen = asMap(settingValue(key, {}));
+    final firstRun = !seen.containsKey('_primed');
+    final next = {...seen, '_primed': true};
+    final me = selling ? 'seller' : 'buyer';
+    for (final doc in snapshot.docs) {
+      final o = doc.data();
+      final status = orderNoticeState(o);
+      final before = txt(seen, doc.id);
+      next[doc.id] = status;
+      if (firstRun || before == status) continue;
+      final title = txt(o, 'title');
+      final who = selling ? txt(o, 'buyerName') : txt(o, 'sellerName');
+      final asked = asMap(o['cancelRequest']);
+      final (String en, String ta)? notice = switch ((selling, status)) {
+        // Cancelling takes both: the other side asked, agreed or said no.
+        (_, 'cancelled') when txt(o, 'cancelledBy') == me => (
+          '$who agreed. The order for $title is cancelled.',
+          '$who ஒப்புக்கொண்டார். $title ஆர்டர் ரத்தானது.',
+        ),
+        _ when asked.isNotEmpty && txt(asked, 'by') != me => (
+          '$who asks to cancel $title. Talk it over and answer.',
+          '$who $title ரத்து செய்யக் கேட்கிறார். பேசிப் பதில் சொல்லவும்.',
+        ),
+        _ when before.endsWith(':$me') && asked.isEmpty => (
+          '$who said no to cancelling $title. The order goes on.',
+          '$who $title ரத்தை ஏற்கவில்லை. ஆர்டர் தொடர்கிறது.',
+        ),
+
+        (true, 'ordered') => (
+          '$who ordered $title',
+          '$who $title ஆர்டர் செய்தார்',
+        ),
+        (true, 'received') => (
+          '$who received $title. Rate them to finish.',
+          '$who $title பெற்றார். முடிக்க மதிப்பிடவும்.',
+        ),
+        (false, 'accepted') => (
+          '$who accepted your order for $title',
+          '$who உங்கள் $title ஆர்டரை ஏற்றார்',
+        ),
+        (false, 'shipped') => ('$title is on the way', '$title வழியில் உள்ளது'),
+        (false, 'completed') => (
+          '$who rated you. Order complete.',
+          '$who உங்களை மதிப்பிட்டார். ஆர்டர் முடிந்தது.',
+        ),
+        _ => null,
+      };
+      if (notice == null) continue;
+      await addRanchNotification(
+        title: notice.$1,
+        titleTa: notice.$2,
+        message: 'Tap to open the order',
+        messageTa: 'ஆர்டரைத் திறக்கத் தொடவும்',
+        type: 'message',
+        sourceId:
+            'order-${doc.id}-$status-${(o['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0}',
+        localOnly: true,
+        extra: {'orderId': doc.id},
+      );
+      _browserRuntime.showNotification(
+        title: bi(notice.$1, notice.$2),
+        body: bi(
+          'Open VIMO to see the order',
+          'VIMO-வில் ஆர்டரைப் பார்க்கவும்',
+        ),
+        tag: 'order-${doc.id}',
+      );
+    }
+    await setSetting(key, next);
+  }
+
   static void start() {
     final uid = signedInUid;
     if (uid.isEmpty || (uid == _uid && _followers != null)) return;
     unawaited(_followers?.cancel());
     unawaited(_allFollowers?.cancel());
     unawaited(_chats?.cancel());
+    unawaited(_selling?.cancel());
+    unawaited(_buying?.cancel());
+    unawaited(_support?.cancel());
+    for (final w in [..._marketWatches, ..._likedPrices]) {
+      unawaited(w.cancel());
+    }
+    _marketWatches.clear();
+    _likedPrices.clear();
+    unawaited(_teamReports?.cancel());
+    _teamReports = null;
     for (final watch in _chatLatest.values) {
       unawaited(watch.cancel());
     }
@@ -207,6 +556,28 @@ class SocialActivityService {
           (snapshot) => unawaited(_checkUnfollows(uid, snapshot)),
           onError: (_) {},
         );
+    _selling = ShopService.selling().listen(
+      (s) => unawaited(_ordersChanged(uid, s, selling: true)),
+      onError: (_) {},
+    );
+    _watchMarket(uid);
+    _support = VimoTeam.support(uid).snapshots().listen(
+      (d) => unawaited(_supportChanged(uid, d.data() ?? const {})),
+      onError: (_) {},
+    );
+    unawaited(
+      VimoTeam.isMember().then((team) {
+        if (!team || uid != _uid) return;
+        _teamReports = VimoTeam.reports
+            .where('status', isEqualTo: 'open')
+            .snapshots()
+            .listen((s) => unawaited(_reportsChanged(uid, s)), onError: (_) {});
+      }),
+    );
+    _buying = ShopService.buying().listen(
+      (s) => unawaited(_ordersChanged(uid, s, selling: false)),
+      onError: (_) {},
+    );
     _chats = FirebaseFirestore.instance
         .collection('direct_chats')
         .where('participants', arrayContains: uid)
@@ -287,10 +658,23 @@ class SocialActivityService {
     await _followers?.cancel();
     await _allFollowers?.cancel();
     await _chats?.cancel();
+    await _selling?.cancel();
+    await _buying?.cancel();
+    _selling = null;
+    _buying = null;
     for (final watch in _chatLatest.values) {
       await watch.cancel();
     }
     _chatLatest.clear();
+    await _support?.cancel();
+    await _teamReports?.cancel();
+    _support = null;
+    _teamReports = null;
+    for (final watch in [..._marketWatches, ..._likedPrices]) {
+      await watch.cancel();
+    }
+    _marketWatches.clear();
+    _likedPrices.clear();
     _followers = null;
     _allFollowers = null;
     _chats = null;
@@ -331,6 +715,34 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
               return ShareCard.profile(uid, snap.data() ?? const {});
             }),
           ),
+        if (uid.isNotEmpty && !own && signedInUid.isNotEmpty)
+          IconButton(
+            tooltip: bi('Report to VIMO Team', 'VIMO Team-க்குத் தெரிவி'),
+            icon: const Icon(CupertinoIcons.flag),
+            onPressed: () async {
+              var name = '';
+              try {
+                final p =
+                    (await FirebaseFirestore.instance
+                            .collection('profiles')
+                            .doc(uid)
+                            .get())
+                        .data();
+                name = txt(
+                  p ?? const {},
+                  'displayName',
+                  txt(p ?? const {}, 'username'),
+                );
+              } catch (_) {}
+              if (!context.mounted) return;
+              await openReport(
+                context,
+                againstUid: uid,
+                againstName: name.isEmpty ? 'VIMO user' : name,
+                topic: 'profile',
+              );
+            },
+          ),
         // As the Profile tab, the app bar above already has Settings.
         if (own && !(ModalRoute.of(context)?.isFirst ?? false))
           IconButton(
@@ -360,14 +772,20 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                 final showRanch = own
                     ? workspaceEnabled('Ranch')
                     : data['shareRanch'] == true;
+                final shop = data['shareShop'] == true;
                 final showVendor = own
-                    ? workspaceEnabled('Vendor')
-                    : data['shareShop'] == true;
+                    ? workspaceEnabled('Vendor') || shop
+                    : shop;
                 final sections = [
                   (0, bi('Post', 'பதிவுகள்'), CupertinoIcons.doc_text),
                   if (showRanch)
                     (1, bi('Ranch', 'பண்ணை'), CupertinoIcons.house),
-                  if (showVendor) (2, bi('Vendor', 'கடை'), CupertinoIcons.bag),
+                  if (showVendor)
+                    (
+                      2,
+                      shop ? bi('Shop', 'கடை') : bi('Vendor', 'கடை'),
+                      CupertinoIcons.bag,
+                    ),
                 ];
                 // A hidden section falls back to the posts.
                 final tab = sections.any((s) => s.$1 == _tab) ? _tab : 0;
@@ -453,6 +871,14 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                               ),
                                               if (!own) _FollowsYou(uid: uid),
                                             ],
+                                          ),
+                                          ReviewSummary(
+                                            uid: uid,
+                                            name: txt(
+                                              data,
+                                              'displayName',
+                                              own ? currentUserName() : name,
+                                            ),
                                           ),
                                           if (txt(data, 'place').isNotEmpty)
                                             Padding(
@@ -764,30 +1190,24 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                     if (sections.length > 1) const SizedBox(height: 20),
                     if (tab == 0) ProfilePostList(uid: uid, own: own),
                     if (tab == 1) PublicRanchView(uid: uid, profile: data),
+                    // The shop: products to buy, and for the owner a
+                    // pencil to list more (once Show my shop is on).
                     if (tab == 2)
-                      Glass(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              data['shareShop'] == true
-                                  ? txt(data, 'shopName')
-                                  : bi(
-                                      'This shop is private.',
-                                      'இந்தக் கடை தனிப்பட்டது.',
-                                    ),
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
+                      shop
+                          ? ProfileShop(uid: uid, own: own, profile: data)
+                          : Glass(
+                              child: Text(
+                                own
+                                    ? bi(
+                                        'Turn on Show my shop in Edit profile to list products.',
+                                        'பொருட்களைப் பட்டியலிட, Edit profile-ல் என் கடையைக் காட்டு என்பதை இயக்கவும்.',
+                                      )
+                                    : bi(
+                                        'This shop is private.',
+                                        'இந்தக் கடை தனிப்பட்டது.',
+                                      ),
                               ),
                             ),
-                            if (data['shareShop'] == true) ...[
-                              const SizedBox(height: 12),
-                              Text(txt(data, 'shopDetails')),
-                            ],
-                          ],
-                        ),
-                      ),
                   ],
                 );
               },
@@ -1284,12 +1704,11 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
               ? (v) => setState(() => _shareRanch = v)
               : null,
         ),
-      if (workspaceEnabled('Vendor') || _shareShop)
-        SoundSwitchListTile(
-          value: _shareShop,
-          title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
-          onChanged: (v) => setState(() => _shareShop = v),
-        ),
+      SoundSwitchListTile(
+        value: _shareShop,
+        title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
+        onChanged: (v) => setState(() => _shareShop = v),
+      ),
       if (_shareShop) ...[
         TextField(
           controller: _shop,
