@@ -1335,13 +1335,11 @@ class _NearbyScreenState extends State<NearbyScreen> {
                 children: [
                   Expanded(
                     child: LiquidSegmentBar(
+                      // Text only: HIG segmented-controls.md, "Prefer using
+                      // either text or images — not a mix of both".
                       labels: [
                         bi('Sellers', 'விற்பவர்கள்'),
                         bi('Products', 'பொருட்கள்'),
-                      ],
-                      icons: const [
-                        CupertinoIcons.person_2_fill,
-                        CupertinoIcons.bag_fill,
                       ],
                       index: _tab,
                       onChanged: (v) => setState(() => _tab = v),
@@ -1359,8 +1357,27 @@ class _NearbyScreenState extends State<NearbyScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: Space.s12),
-              if (sellers) ..._sellerList(vendors, now) else ..._productList(),
+              const SizedBox(height: Space.s4),
+              // A short cross-fade between the two lists (none with Reduce
+              // Motion), so the switch reads as one view changing.
+              AnimatedSwitcher(
+                duration: Motion.reduced(context)
+                    ? Duration.zero
+                    : Motion.short,
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.topCenter,
+                  children: [...previous, ?current],
+                ),
+                child: Column(
+                  key: ValueKey(_tab),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: sellers
+                      ? _sellerList(vendors, now)
+                      : _productList(),
+                ),
+              ),
             ],
           ],
         ),
@@ -1368,17 +1385,32 @@ class _NearbyScreenState extends State<NearbyScreen> {
     );
   }
 
-  /// One tappable line saying what the filters are set to.
+  /// One tappable line saying what the filters are set to. A full 44 pt
+  /// tall row, so it is as easy to hit as any button.
   Widget _summary(String text) => Semantics(
     button: true,
-    child: GestureDetector(
+    label: bi('Filters: $text', 'வடிகட்டிகள்: $text'),
+    excludeSemantics: true,
+    child: InkWell(
       onTap: _filters,
-      child: Text(
-        text,
-        style: TextStyle(
-          color: Ink.violetDeep,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
+      borderRadius: BorderRadius.circular(12),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Row(
+          children: [
+            Flexible(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: Ink.violetDeep,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(CupertinoIcons.chevron_down, size: 14, color: Ink.violetDeep),
+          ],
         ),
       ),
     ),
@@ -1447,7 +1479,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
       )
     else ...[
       _summary(_filterSummary),
-      const SizedBox(height: Space.s12),
+      const SizedBox(height: Space.s4),
       if (_loading || vendors == null)
         const SkeletonList(rows: 2, padding: EdgeInsets.zero)
       else if (_failed)
@@ -1518,7 +1550,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
         if (_onSale) bi('On sale only', 'விற்பனையில் மட்டும்'),
       ].join(' · '),
     ),
-    const SizedBox(height: Space.s12),
+    const SizedBox(height: Space.s4),
     MarketProducts(
       key: ValueKey('products-$_productsKey'),
       query: '',
