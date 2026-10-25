@@ -330,6 +330,8 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
       snack(context, problem, tone: SnackTone.error);
       return;
     }
+    // Market is local: selling needs location allowed.
+    if (!await MarketLocation.require(context) || !mounted) return;
     setState(() => _saving = true);
     final features = [
       for (final f in _features)

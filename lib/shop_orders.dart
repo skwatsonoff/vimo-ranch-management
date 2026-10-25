@@ -587,6 +587,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       snack(context, problem, tone: SnackTone.error);
       return;
     }
+    // Market is local: buying needs location allowed.
+    if (!await MarketLocation.require(context) || !mounted) return;
     setState(() => _busy = true);
     try {
       final id = await ShopService.placeOrder(

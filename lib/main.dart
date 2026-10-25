@@ -82,6 +82,7 @@ part 'milk_shop.dart';
 part 'performance.dart';
 part 'languages.dart';
 part 'market.dart';
+part 'location_gate.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -10227,11 +10228,21 @@ class _MainShellState extends State<MainShell> {
   final Set<int> _scrolledTabs = {};
   final ValueNotifier<bool> _topEdge = ValueNotifier<bool>(false);
   StreamSubscription<BoxEvent>? _languageChanges;
+  StreamSubscription<User?>? _accounts;
   @override
   void initState() {
     super.initState();
     vendorRouteRequest.addListener(_showVendorForRoute);
     SocialActivityService.start();
+    // Once an account exists on this phone, ask for location (Market).
+    if (firebaseReady) {
+      _accounts = FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user == null || !mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(MarketLocation.askAfterSignIn(context));
+        });
+      });
+    }
     _languageChanges = Hive.box('settings').watch().listen((event) {
       // Sync writes status and queue metadata frequently. Rebuilding the whole
       // shell for those writes tears down/recreates Firestore UI listeners and
@@ -10273,6 +10284,7 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     vendorRouteRequest.removeListener(_showVendorForRoute);
     _languageChanges?.cancel();
+    _accounts?.cancel();
     _topEdge.dispose();
     super.dispose();
   }
@@ -10334,7 +10346,7 @@ class _MainShellState extends State<MainShell> {
       'Chat': const CommunityChatsScreen(),
       'Reports': const VendorOnlyReports(),
       'Profile': const SocialProfileScreen(),
-      'Nearby': const NearbyScreen(),
+      'Nearby': const MarketLocationGate(child: NearbyScreen()),
     };
     final items = <String, _NavItem>{
       for (final id in businessTabs)
