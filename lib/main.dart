@@ -15040,18 +15040,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           blur: Space.s12,
           padding: const EdgeInsets.all(Space.s4),
           elevation: 0.62,
+          // The ranch milks twice a day: morning and evening.
           child: LiquidSegmentBar(
             labels: tamilUi
-                ? const ['காலை', 'மதியம்', 'மாலை']
-                : const ['Morning', 'Afternoon', 'Evening'],
-            index: const [
-              'Morning',
-              'Afternoon',
-              'Evening',
-            ].indexOf(_session).clamp(0, 2),
-            onChanged: (value) => setState(
-              () => _session = const ['Morning', 'Afternoon', 'Evening'][value],
-            ),
+                ? const ['காலை', 'மாலை']
+                : const ['Morning', 'Evening'],
+            index: _session == 'Evening' ? 1 : 0,
+            onChanged: (value) =>
+                setState(() => _session = const ['Morning', 'Evening'][value]),
           ),
         ),
         const SizedBox(height: Space.s12),

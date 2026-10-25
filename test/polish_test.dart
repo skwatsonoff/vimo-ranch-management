@@ -126,9 +126,8 @@ void main() {
   group('milk helpers', () {
     test('session follows the clock', () {
       expect(milkSessionForTime(DateTime(2026, 1, 1, 5, 30)), 'Morning');
-      expect(milkSessionForTime(DateTime(2026, 1, 1, 10, 59)), 'Morning');
-      expect(milkSessionForTime(DateTime(2026, 1, 1, 11)), 'Afternoon');
-      expect(milkSessionForTime(DateTime(2026, 1, 1, 15, 59)), 'Afternoon');
+      expect(milkSessionForTime(DateTime(2026, 1, 1, 11, 59)), 'Morning');
+      expect(milkSessionForTime(DateTime(2026, 1, 1, 12)), 'Evening');
       expect(milkSessionForTime(DateTime(2026, 1, 1, 16)), 'Evening');
       expect(milkSessionForTime(DateTime(2026, 1, 1, 23)), 'Evening');
     });
@@ -148,7 +147,7 @@ void main() {
       await addMilk('Ganga', 'Morning', 9);
       expect(lastMilkQuantityFor('Lakshmi', 'Morning'), 7);
       expect(lastMilkQuantityFor('Lakshmi', 'Evening'), 4);
-      expect(lastMilkQuantityFor('Lakshmi', 'Afternoon'), isNull);
+      expect(lastMilkQuantityFor('Ganga', 'Evening'), isNull);
       expect(milkRecordedFor('Lakshmi', 'Morning', todayDate()), 7);
       expect(milkRecordedFor('Lakshmi', 'Evening', todayDate()), 0);
     });
@@ -194,6 +193,8 @@ void main() {
     expect(find.text('6 L'), findsOneWidget);
     expect(find.text('4.5 L'), findsOneWidget);
     expect(find.text('+2.5 L vs yesterday'), findsOneWidget);
+    // Twice-a-day milking: no afternoon session unless old data has one.
+    expect(find.text('Afternoon'), findsNothing);
     await tester.tap(find.text('Milk'));
     await tester.pump();
     expect(added, 1);
@@ -320,6 +321,9 @@ void main() {
     expect(find.text('பால்'), findsWidgets);
     expect(find.text('தீவனம்'), findsOneWidget);
     expect(find.text('இதர செலவு'), findsOneWidget);
+    expect(find.text('காலை'), findsOneWidget);
+    expect(find.text('மாலை'), findsOneWidget);
+    expect(find.text('மதியம்'), findsNothing);
     await tester.tap(find.text('இதர செலவு'));
     await tester.pumpAndSettle();
     expect(find.text('செலவின் பெயர்'), findsOneWidget);

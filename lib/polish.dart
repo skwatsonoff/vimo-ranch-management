@@ -316,13 +316,10 @@ String formatLitres(double value) {
 
 String _litres(double value) => formatLitres(value);
 
-/// The milking session a new entry most likely belongs to, from the clock:
-/// before 11:00 morning, before 16:00 afternoon, otherwise evening.
-String milkSessionForTime(DateTime time) => time.hour < 11
-    ? 'Morning'
-    : time.hour < 16
-    ? 'Afternoon'
-    : 'Evening';
+/// The milking session a new entry most likely belongs to, from the clock.
+/// The ranch milks twice a day, so before noon is morning, after is evening.
+String milkSessionForTime(DateTime time) =>
+    time.hour < 12 ? 'Morning' : 'Evening';
 
 double _milkFor(String date, {String? session}) {
   double total = 0;
@@ -397,9 +394,12 @@ class TodayMilkCard extends StatelessWidget {
     final previous = _milkFor(yesterday);
     final sold = milkSold('Today') + milkOwnUse('Today');
     final available = availableMilk('Today');
+    // Morning and evening milking. Afternoon entries saved by an older
+    // version still count in the total and show only when they exist.
+    final afternoon = _milkFor(today, session: 'Afternoon');
     final sessions = [
       (bi('Morning', 'காலை'), _milkFor(today, session: 'Morning')),
-      (bi('Afternoon', 'மதியம்'), _milkFor(today, session: 'Afternoon')),
+      if (afternoon > 0) (bi('Afternoon', 'மதியம்'), afternoon),
       (bi('Evening', 'மாலை'), _milkFor(today, session: 'Evening')),
     ];
     final delta = total - previous;
