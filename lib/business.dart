@@ -805,6 +805,35 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   }
 }
 
+/// A customer or supplier the vendor deleted from their lists. Nothing is
+/// erased: past deliveries, payments and reports keep their name, and the
+/// person can be restored (Undo, or adding them again).
+bool vendorPersonRemoved(Map<String, dynamic> person) =>
+    person['removed'] == true;
+
+/// The vendor's people, without the ones they deleted.
+List<Map<String, dynamic>> activeVendorPeople() =>
+    vendorRows('vendor_people').where((p) => !vendorPersonRemoved(p)).toList();
+
+/// Deletes [person] from the vendor's lists (or restores them). Sync picks
+/// the change up like any other edit; the cloud copy is kept, as the
+/// security rules never allow erasing a person entries point to.
+Future<void> setVendorPersonRemoved(
+  Map<String, dynamic> person,
+  bool removed,
+) async {
+  final box = Hive.box('vendor_people');
+  final key = person['_key'] ?? person['id'];
+  final raw = box.get(key);
+  if (raw is! Map) return;
+  await box.put(key, {
+    ...asMap(raw),
+    'removed': removed,
+    'removedAt': removed ? DateTime.now().toIso8601String() : '',
+  });
+  AutoSyncService.markDirty(reason: 'vendor person');
+}
+
 List<Map<String, dynamic>> vendorRows(String box) => Hive.box(box)
     .toMap()
     .entries
@@ -1008,7 +1037,7 @@ class _VendorScreenState extends State<VendorScreen> {
     builder: (_, _, _) => ValueListenableBuilder(
       valueListenable: Hive.box('vendor_entries').listenable(),
       builder: (_, _, _) {
-        final all = vendorRows('vendor_people');
+        final all = activeVendorPeople();
         final rows = vendorRows('vendor_entries');
         final today = rows.where((r) => r['date'] == todayDate()).toList();
         final people =
@@ -1482,6 +1511,48 @@ class VendorPersonScreen extends StatefulWidget {
 }
 
 class _VendorPersonScreenState extends State<VendorPersonScreen> {
+  /// Deletes this person from the lists, with Undo. Their deliveries and
+  /// payments stay in reports.
+  Future<void> _delete(Map<String, dynamic> person) async {
+    final name = txt(person, 'name');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AppleAlert(
+        title: Text(bi('Delete $name?', '$name-ஐ நீக்கவா?')),
+        content: Text(
+          bi(
+            'They leave your lists and rides. Past deliveries and payments stay in your reports.',
+            'உங்கள் பட்டியல்களிலிருந்தும் சவாரியிலிருந்தும் நீங்குவார். பழைய வழங்கல்களும் கட்டணங்களும் அறிக்கைகளில் இருக்கும்.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(ui('Cancel')),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Ink.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(bi('Delete', 'நீக்கு')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    await setVendorPersonRemoved(person, true);
+    if (!mounted) return;
+    Navigator.of(context).maybePop();
+    snack(
+      context,
+      bi('$name deleted', '$name நீக்கப்பட்டார்'),
+      tone: SnackTone.success,
+      messenger: messenger,
+      actionLabel: bi('Undo', 'திரும்பப் பெறு'),
+      onAction: () => unawaited(setVendorPersonRemoved(person, false)),
+    );
+  }
+
   final _qty = TextEditingController(),
       _price = TextEditingController(),
       _paid = TextEditingController(text: '0');
@@ -1651,16 +1722,34 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                           PositionedDirectional(
                             top: 0,
                             end: -8,
-                            child: IconButton(
-                              tooltip: ui('Edit person'),
-                              icon: const Icon(CupertinoIcons.pencil),
-                              onPressed: () => push(
-                                context,
-                                VendorPersonForm(
-                                  kind: txt(p, 'kind'),
-                                  person: p,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: p['kind'] == 'supplier'
+                                      ? bi('Delete supplier', 'சப்ளையரை நீக்கு')
+                                      : bi(
+                                          'Delete customer',
+                                          'வாடிக்கையாளரை நீக்கு',
+                                        ),
+                                  icon: Icon(
+                                    CupertinoIcons.trash,
+                                    color: Ink.redText,
+                                  ),
+                                  onPressed: () => _delete(p),
                                 ),
-                              ),
+                                IconButton(
+                                  tooltip: ui('Edit person'),
+                                  icon: const Icon(CupertinoIcons.pencil),
+                                  onPressed: () => push(
+                                    context,
+                                    VendorPersonForm(
+                                      kind: txt(p, 'kind'),
+                                      person: p,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                       ],

@@ -171,6 +171,35 @@ void main() {
     });
   });
 
+  test('A deleted vendor customer leaves lists but keeps history', () async {
+    final box = Hive.box('vendor_people');
+    await box.put('p1', {
+      'id': 'p1',
+      'kind': 'customer',
+      'name': 'Selvi',
+      'place': 'Chennai',
+      'days': <int>[],
+      'sessions': ['Morning', 'Evening'],
+    });
+    expect(activeVendorPeople().length, 1);
+    final person = vendorRows('vendor_people').first;
+    await setVendorPersonRemoved(person, true);
+    expect(activeVendorPeople(), isEmpty);
+    // Still stored for reports and Undo.
+    expect(vendorRows('vendor_people').single['name'], 'Selvi');
+    expect(
+      vendorRoutePeople(
+        vendorRows('vendor_people'),
+        const [],
+        DateTime.now(),
+        'Morning',
+      ),
+      isEmpty,
+    );
+    await setVendorPersonRemoved(person, false);
+    expect(activeVendorPeople().length, 1);
+  });
+
   testWidgets('Today\'s milk card totals the day against yesterday', (
     tester,
   ) async {

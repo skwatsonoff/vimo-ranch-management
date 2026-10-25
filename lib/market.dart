@@ -557,10 +557,16 @@ class MarketService {
   /// A regular buyer joins the vendor's customers on this phone, with the
   /// litres, session, days and home pin they asked for.
   static Future<void> addCustomer(Map<String, dynamic> request) async {
-    final already = Hive.box('vendor_people').values.whereType<Map>().any(
-      (p) => txt(asMap(p), 'vimoUid') == txt(request, 'buyerUid'),
-    );
-    if (already) return;
+    final same = vendorRows(
+      'vendor_people',
+    ).where((p) => txt(p, 'vimoUid') == txt(request, 'buyerUid'));
+    // A customer the vendor deleted earlier comes back with their history.
+    final removed = same.where(vendorPersonRemoved).firstOrNull;
+    if (same.isNotEmpty && same.every(vendorPersonRemoved)) {
+      await setVendorPersonRemoved(removed!, false);
+      return;
+    }
+    if (same.isNotEmpty) return;
     final person = await vendorQuickPerson(
       name: txt(request, 'buyerName', 'VIMO'),
       place: '',

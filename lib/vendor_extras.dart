@@ -61,7 +61,7 @@ String _mostUsed(Map<String, int> counts) {
 /// Every place already entered, most used first, for typing suggestions.
 List<String> vendorKnownPlaces() {
   if (!Hive.isBoxOpen('vendor_people')) return const [];
-  final groups = vendorPlaceGroups(vendorRows('vendor_people'))
+  final groups = vendorPlaceGroups(activeVendorPeople())
     ..removeWhere((g) => g.key.isEmpty)
     ..sort((a, b) => b.people.length.compareTo(a.people.length));
   return [for (final g in groups) g.label];
@@ -462,7 +462,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
   Widget build(BuildContext context) {
     final query = _search.text.trim().toLowerCase();
     final people =
-        vendorRows('vendor_people')
+        activeVendorPeople()
             .where(
               (p) =>
                   query.isEmpty ||
