@@ -202,6 +202,69 @@ void main() {
     expect(opened, 1);
   });
 
+  testWidgets('Today\'s milk card fits Tamil at 320 pt with large text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      await Hive.box('settings').put('languageMode', 'Tamil');
+      await addMilk('Lakshmi', 'Morning', 1234.5);
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.6)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [TodayMilkCard(onOpen: () {}, onAdd: () {})],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('இன்றைய பால்'), findsOneWidget);
+    expect(find.text('காலை'), findsOneWidget);
+  });
+
+  testWidgets('Home fits Tamil on a small phone with large text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      await Hive.box('settings').put('languageMode', 'Tamil');
+      await addCow('Lakshmi');
+      await addMilk('Lakshmi', 'Evening', 12, time: '18:00');
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.4)),
+          child: child!,
+        ),
+        home: Scaffold(body: DashboardScreen(onOpenCard: (_) {})),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Numbers count up to the new value, or jump with Reduce Motion', (
     tester,
   ) async {

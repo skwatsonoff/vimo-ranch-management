@@ -250,7 +250,7 @@ class _SkeletonListState extends State<SkeletonList>
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: bi('Loading', 'ஏற்றுகிறது'),
+      label: bi('Loading…', 'ஏற்றுகிறது…'),
       child: ExcludeSemantics(
         child: RepaintBoundary(
           child: AnimatedBuilder(
@@ -510,22 +510,21 @@ class TodayMilkCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: Space.s12),
-            Row(
+            // Wraps to two lines when large text or Tamil needs the room.
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: Space.s12,
+              runSpacing: Space.s4,
               children: [
-                Expanded(
-                  child: AppText(
-                    bi('Sold ${_litres(sold)}', 'விற்றது ${_litres(sold)}'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: Ink.muted),
-                  ),
+                AppText(
+                  bi('Sold ${_litres(sold)}', 'விற்றது ${_litres(sold)}'),
+                  style: TextStyle(fontSize: 13, color: Ink.muted),
                 ),
                 AppText(
                   bi(
                     'Available ${_litres(available)}',
                     'இருப்பு ${_litres(available)}',
                   ),
-                  maxLines: 1,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -572,13 +571,17 @@ class _SessionCell extends StatelessWidget {
             ),
           ),
           const SizedBox(height: Space.s2),
-          CountUpText(
-            value: value,
-            format: (v) => recorded || v > 0 ? _litres(v) : '—',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: recorded ? Ink.deepPurple : Ink.faint,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: CountUpText(
+              value: value,
+              format: (v) => recorded || v > 0 ? _litres(v) : '—',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: recorded ? Ink.deepPurple : Ink.faint,
+              ),
             ),
           ),
         ],

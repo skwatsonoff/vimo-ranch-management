@@ -11460,34 +11460,42 @@ class _RanchHero extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.all(Space.s20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AppText(
-                        farmName(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          height: 1.1,
-                          letterSpacing: -0.5,
+                  // With very large text (or long Tamil lines) on a small
+                  // phone the words shrink to fit the card instead of being
+                  // cut off.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AppText(
+                          farmName(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                            letterSpacing: -0.5,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: Space.s4),
-                      const AppText(
-                        'Manage. Care. Grow.',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
+                        const SizedBox(height: Space.s4),
+                        const AppText(
+                          'Manage. Care. Grow.',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: Gold.t13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: Space.s12),
-                      const SyncChip(light: true),
-                    ],
+                        const SizedBox(height: Space.s12),
+                        const SyncChip(light: true),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -11600,84 +11608,92 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                 ),
                 Padding(
                   padding: const EdgeInsets.all(Space.s20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Space.s12,
-                          vertical: Space.s4,
-                        ),
-                        decoration: ShapeDecoration(
-                          shape: const SquircleBorder(radius: Gold.r13),
-                          gradient: const LinearGradient(
-                            colors: [Ink.goldLight, Ink.goldBase],
+                  // With very large text (or long Tamil lines) on a small
+                  // phone the words shrink to fit the card instead of being
+                  // cut off.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: Space.s12,
+                            vertical: Space.s4,
+                          ),
+                          decoration: ShapeDecoration(
+                            shape: const SquircleBorder(radius: Gold.r13),
+                            gradient: const LinearGradient(
+                              colors: [Ink.goldLight, Ink.goldBase],
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.cake_rounded,
+                                size: Gold.t13,
+                                color: Ink.brandDeep,
+                              ),
+                              const SizedBox(width: Space.s4),
+                              const AppText(
+                                'Happy Birthday!',
+                                style: TextStyle(
+                                  color: Ink.brandDeep,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.cake_rounded,
-                              size: Gold.t13,
-                              color: Ink.brandDeep,
-                            ),
-                            const SizedBox(width: Space.s4),
-                            const AppText(
-                              'Happy Birthday!',
-                              style: TextStyle(
-                                color: Ink.brandDeep,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: Space.s8),
-                      AppText(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          height: 1.1,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      AppText(
-                        years > 0
-                            ? bi(
-                                'Turns $years today',
-                                'இன்று $years வயது ஆகிறது',
-                              )
-                            : bi(
-                                'Born today \u2022 welcome',
-                                'இன்று பிறந்தது \u2022 வரவேற்கிறோம்',
-                              ),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (others > 0) ...[
                         const SizedBox(height: Space.s8),
                         AppText(
-                          others == 1
-                              ? '+1 more birthday today'
-                              : '+$others more birthdays today',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.86),
-                            fontSize: Gold.t11,
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
                             fontWeight: FontWeight.w700,
+                            height: 1.1,
+                            letterSpacing: -0.5,
                           ),
                         ),
+                        AppText(
+                          years > 0
+                              ? bi(
+                                  'Turns $years today',
+                                  'இன்று $years வயது ஆகிறது',
+                                )
+                              : bi(
+                                  'Born today \u2022 welcome',
+                                  'இன்று பிறந்தது \u2022 வரவேற்கிறோம்',
+                                ),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: Gold.t13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (others > 0) ...[
+                          const SizedBox(height: Space.s8),
+                          AppText(
+                            others == 1
+                                ? '+1 more birthday today'
+                                : '+$others more birthdays today',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.86),
+                              fontSize: Gold.t11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ],
