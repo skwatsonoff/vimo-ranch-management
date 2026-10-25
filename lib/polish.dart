@@ -305,13 +305,24 @@ class _SkeletonListState extends State<SkeletonList>
   }
 }
 
-String _litres(double value) {
+/// Litres for display: whole numbers without a decimal, otherwise one place.
+String formatLitres(double value) {
   final rounded = (value * 10).round() / 10;
   final text = rounded == rounded.roundToDouble()
       ? rounded.toStringAsFixed(0)
       : rounded.toStringAsFixed(1);
   return '$text L';
 }
+
+String _litres(double value) => formatLitres(value);
+
+/// The milking session a new entry most likely belongs to, from the clock:
+/// before 11:00 morning, before 16:00 afternoon, otherwise evening.
+String milkSessionForTime(DateTime time) => time.hour < 11
+    ? 'Morning'
+    : time.hour < 16
+    ? 'Afternoon'
+    : 'Evening';
 
 double _milkFor(String date, {String? session}) {
   double total = 0;
@@ -321,6 +332,50 @@ double _milkFor(String date, {String? session}) {
     total += numv(r, 'quantity');
   }
   return total;
+}
+
+/// Litres already recorded for [cow] in [session] on [date].
+double milkRecordedFor(String cow, String session, String date) {
+  double total = 0;
+  for (final r in milkRows()) {
+    if (txt(r, 'cow') == cow &&
+        txt(r, 'date') == date &&
+        txt(r, 'session', 'Morning') == session) {
+      total += numv(r, 'quantity');
+    }
+  }
+  return total;
+}
+
+/// The amount of the most recent "Others" expense called [name].
+double? lastExpenseAmountFor(String name) {
+  final wanted = name.trim().toLowerCase();
+  Map<String, dynamic>? latest;
+  for (final r in expenseRows()) {
+    if (txt(r, 'name').trim().toLowerCase() != wanted) continue;
+    if (latest == null || activityDate(r).isAfter(activityDate(latest))) {
+      latest = r;
+    }
+  }
+  if (latest == null) return null;
+  final amount = numv(latest, 'amount');
+  return amount > 0 ? amount : null;
+}
+
+/// The quantity of [cow]'s most recent entry for [session], if any.
+double? lastMilkQuantityFor(String cow, String session) {
+  Map<String, dynamic>? latest;
+  for (final r in milkRows()) {
+    if (txt(r, 'cow') != cow || txt(r, 'session', 'Morning') != session) {
+      continue;
+    }
+    if (latest == null || activityDate(r).isAfter(activityDate(latest))) {
+      latest = r;
+    }
+  }
+  if (latest == null) return null;
+  final quantity = numv(latest, 'quantity');
+  return quantity > 0 ? quantity : null;
 }
 
 /// Home's answer to a dairy's first question: how much milk today. Litres

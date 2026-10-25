@@ -2488,8 +2488,11 @@ void snack(
   SnackTone tone = SnackTone.info,
   String? actionLabel,
   VoidCallback? onAction,
+  ScaffoldMessengerState? messenger,
 }) {
-  final messenger = ScaffoldMessenger.maybeOf(context);
+  // [messenger] lets a page that is closing hand the message to the screen
+  // underneath (its own context is gone by the time the bar shows).
+  messenger ??= ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return;
   messenger.clearSnackBars();
   final symbol = switch (tone) {
@@ -8831,7 +8834,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      if (mounted)
+      if (mounted) {
         snack(
           context,
           bi(
@@ -8839,6 +8842,7 @@ class _LoginScreenState extends State<LoginScreen> {
             '$email-க்கு பாஸ்வேர்டு மாற்றும் இணைப்பு அனுப்பப்பட்டது',
           ),
         );
+      }
     } on FirebaseAuthException catch (e) {
       if (mounted) snack(context, _friendlyError(e));
     }
@@ -13504,6 +13508,8 @@ class FormPage extends StatelessWidget {
       appBar: AppBar(title: AppText(title), leading: const _BackButton()),
       body: Shell(
         child: ListView(
+          // Scrolling the form puts the keyboard away, as in system forms.
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(
             Space.s20,
             Space.s56,
@@ -13608,7 +13614,7 @@ class _SuggestionFieldState extends State<SuggestionField> {
                       choices[index],
                       style: TextStyle(
                         color: Ink.navy,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     onTap: () => onSelected(choices[index]),
@@ -13914,12 +13920,20 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
   Future<void> _save() async {
     if (_saving) return;
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can save animal details');
+      snack(
+        context,
+        'Only admins and editors can save animal details',
+        tone: SnackTone.error,
+      );
       return;
     }
     final typed = _name.text.trim();
     if (typed.isEmpty) {
-      snack(context, bi('Please enter a name', 'பெயரை எழுதவும்'));
+      snack(
+        context,
+        bi('Please enter a name', 'பெயரை எழுதவும்'),
+        tone: SnackTone.error,
+      );
       return;
     }
     if (_isCow && _male && _maleUse.isEmpty) {
@@ -13929,6 +13943,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           'Choose what this bull is used for',
           'காளையின் பயன்பாட்டைத் தேர்வு செய்யவும்',
         ),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -13945,6 +13960,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           'An animal named "$typed" already exists',
           '"$typed" என்ற பெயரில் ஏற்கெனவே ஒரு கால்நடை உள்ளது',
         ),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -14022,7 +14038,13 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
       AutoSyncService.scheduleSync(reason: 'animal saved');
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
-      if (mounted) snack(context, 'Could not save animal. Please try again');
+      if (mounted) {
+        snack(
+          context,
+          'Could not save animal. Please try again',
+          tone: SnackTone.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -14038,6 +14060,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         snack(
           context,
           'No photo selected. Please allow Photos access and try again',
+          tone: SnackTone.error,
         );
         return;
       }
@@ -14046,7 +14069,13 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         _imageUrl = '';
       });
     } catch (_) {
-      if (mounted) snack(context, 'Could not open Photos. Please try again');
+      if (mounted) {
+        snack(
+          context,
+          'Could not open Photos. Please try again',
+          tone: SnackTone.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _pickingPhoto = false);
     }
@@ -14517,11 +14546,12 @@ class AddEntryScreen extends StatefulWidget {
 class _AddEntryScreenState extends State<AddEntryScreen> {
   int _mode = 0;
   int _stockItem = 0;
-  String _session = 'Morning';
+  String _session = milkSessionForTime(DateTime.now());
   String _cow = '';
   bool _saving = false;
 
   final _milk = TextEditingController();
+  final _milkFocus = FocusNode();
   final _qty = TextEditingController();
   final _expenseName = TextEditingController();
   final _amount = TextEditingController();
@@ -14540,6 +14570,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   @override
   void dispose() {
     _milk.dispose();
+    _milkFocus.dispose();
     _qty.dispose();
     _expenseName.dispose();
     _amount.dispose();
@@ -14547,11 +14578,31 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  /// The next cow to milk after [_cow]: the first one, in list order after
+  /// it, that has no entry for this session today (or simply the next one).
+  String _nextCow() {
+    final cows = cowNames();
+    if (cows.length < 2) return _cow;
+    final start = cows.indexOf(_cow);
+    for (int step = 1; step < cows.length; step++) {
+      final candidate = cows[(start + step) % cows.length];
+      if (milkRecordedFor(candidate, _session, todayDate()) <= 0) {
+        return candidate;
+      }
+    }
+    return cows[(start + 1) % cows.length];
+  }
+
+  Future<void> _save({bool next = false}) async {
     if (_saving) return;
+    String? saved;
     try {
       if (!canRecordEntries) {
-        snack(context, 'Your ranch role does not allow adding entries');
+        snack(
+          context,
+          'Your ranch role does not allow adding entries',
+          tone: SnackTone.error,
+        );
         return;
       }
       if (_mode == 0) {
@@ -14560,6 +14611,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           snack(
             context,
             tamilUi ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14567,6 +14619,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           snack(
             context,
             tamilUi ? 'பால் அளவை உள்ளிடவும்' : 'Please enter the milk quantity',
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14581,12 +14634,29 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           'addedBy': currentUserName(),
           'createdAt': DateTime.now().toIso8601String(),
         });
+        saved = bi(
+          'Saved ${formatLitres(quantity)} · $_cow · ${ui(_session)}',
+          '${formatLitres(quantity)} சேமிக்கப்பட்டது · $_cow · ${ui(_session)}',
+        );
+        if (next && mounted) {
+          final following = _nextCow();
+          setState(() {
+            _cow = following;
+            _milk.clear();
+            _notes.clear();
+            _saving = false;
+          });
+          snack(context, saved, tone: SnackTone.success);
+          _milkFocus.requestFocus();
+          return;
+        }
       } else if (_mode == 1) {
         final quantity = toDouble(_qty.text);
         if (quantity <= 0) {
           snack(
             context,
             tamilUi ? 'அளவை உள்ளிடவும்' : 'Please enter the quantity',
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14599,6 +14669,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
               'Only ${available.toStringAsFixed(1)} ${stockUnit(item)} of $item is available',
               '${ui(item)} ${available.toStringAsFixed(1)} ${stockUnit(item)} மட்டுமே உள்ளது',
             ),
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14616,15 +14687,27 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           'addedBy': currentUserName(),
           'createdAt': DateTime.now().toIso8601String(),
         });
+        saved = bi(
+          'Used ${quantity.toStringAsFixed(1)} ${stockUnit(item)} of $item',
+          '${ui(item)} ${quantity.toStringAsFixed(1)} ${stockUnit(item)} பயன்படுத்தப்பட்டது',
+        );
       } else {
         final name = _expenseName.text.trim();
         final amount = toDouble(_amount.text);
         if (name.isEmpty) {
-          snack(context, 'Please enter the expense name');
+          snack(
+            context,
+            'Please enter the expense name',
+            tone: SnackTone.error,
+          );
           return;
         }
         if (amount <= 0) {
-          snack(context, 'Please enter the expense amount');
+          snack(
+            context,
+            'Please enter the expense amount',
+            tone: SnackTone.error,
+          );
           return;
         }
         setState(() => _saving = true);
@@ -14638,9 +14721,21 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           'addedBy': currentUserName(),
           'createdAt': DateTime.now().toIso8601String(),
         });
+        saved = bi(
+          'Saved $name · ${money(amount)}',
+          '$name · ${money(amount)} சேமிக்கப்பட்டது',
+        );
       }
 
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        Navigator.of(context).pop();
+        // The snack bar lives on the app's messenger, so it stays visible on
+        // the screen people return to.
+        if (messenger != null) {
+          snack(context, saved, tone: SnackTone.success, messenger: messenger);
+        }
+      }
     } catch (_) {
       if (mounted) {
         snack(
@@ -14648,6 +14743,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           tamilUi
               ? 'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
               : 'Could not save. Please try again.',
+          tone: SnackTone.error,
         );
       }
     } finally {
@@ -14708,13 +14804,82 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
         const SizedBox(height: Space.s12),
         TextField(
           controller: _milk,
+          focusNode: _milkFocus,
+          autofocus: cows.isNotEmpty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _save(next: cows.length > 1),
           decoration: fieldStyle(
             tamilUi ? 'பால் அளவு (லிட்டர்)' : 'Milk Quantity (Liter)',
             icon: CupertinoIcons.drop,
           ),
         ),
+        if (cows.isNotEmpty) _milkHints(),
       ],
+    );
+  }
+
+  /// One-tap help under the quantity: this cow's last quantity for the
+  /// session (most cows give a steady amount), and a note when this session
+  /// is already recorded today so it is not entered twice by mistake.
+  Widget _milkHints() {
+    final last = lastMilkQuantityFor(_cow, _session);
+    final already = milkRecordedFor(_cow, _session, todayDate());
+    if (last == null && already <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.s8),
+      child: Wrap(
+        spacing: Space.s8,
+        runSpacing: Space.s8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (last != null)
+            ActionChip(
+              avatar: Icon(
+                CupertinoIcons.arrow_counterclockwise,
+                size: 16,
+                color: Ink.violetDeep,
+              ),
+              label: Text(
+                bi(
+                  'Last: ${formatLitres(last)}',
+                  'கடைசியாக: ${formatLitres(last)}',
+                ),
+              ),
+              labelStyle: TextStyle(
+                color: Ink.violetDeep,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+              backgroundColor: Ink.lavender,
+              side: BorderSide.none,
+              shape: const StadiumBorder(),
+              materialTapTargetSize: MaterialTapTargetSize.padded,
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                final text = last == last.roundToDouble()
+                    ? last.toStringAsFixed(0)
+                    : last.toString();
+                _milk.value = TextEditingValue(
+                  text: text,
+                  selection: TextSelection.collapsed(offset: text.length),
+                );
+              },
+            ),
+          if (already > 0)
+            Text(
+              bi(
+                'Already recorded ${formatLitres(already)} this session today',
+                'இன்று இந்த நேரத்தில் ${formatLitres(already)} ஏற்கனவே பதிவாகியுள்ளது',
+              ),
+              style: TextStyle(
+                color: Ink.amberText,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -14825,6 +14990,12 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           suggestions: frequentNameSuggestions(expenseRows(), 'name'),
           label: 'Expense Name',
           icon: CupertinoIcons.doc_text,
+          // Picking a usual expense offers its last amount, still editable.
+          onSelected: (name) {
+            if (_amount.text.trim().isNotEmpty) return;
+            final last = lastExpenseAmountFor(name);
+            if (last != null) _amount.text = last.toStringAsFixed(0);
+          },
         ),
         const SizedBox(height: Space.s12),
         TextField(
@@ -14893,6 +15064,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           busy: _saving,
           onPressed: _save,
         ),
+        if (_mode == 0 && cowNames().length > 1) ...[
+          const SizedBox(height: Space.s12),
+          GhostButton(
+            label: bi('Save & Next Cow', 'சேமித்து அடுத்த மாடு'),
+            icon: CupertinoIcons.arrow_right,
+            onPressed: _saving ? null : () => _save(next: true),
+          ),
+        ],
       ],
     );
   }
@@ -14936,12 +15115,13 @@ class _DoctorScreenState extends State<DoctorScreen> {
         tamilUi
             ? 'இந்த பதிவு செய்ய அனுமதி இல்லை'
             : 'Your ranch role does not allow doctor entries',
+        tone: SnackTone.error,
       );
       return;
     }
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
-      snack(context, 'Animal not found');
+      snack(context, 'Animal not found', tone: SnackTone.error);
       return;
     }
     if (_visit == 0 && _problem.text.trim().isEmpty) {
@@ -14950,12 +15130,17 @@ class _DoctorScreenState extends State<DoctorScreen> {
         tamilUi
             ? 'உடல்நிலை பிரச்சனையை எழுதவும்'
             : 'Please describe the problem',
+        tone: SnackTone.error,
       );
       return;
     }
     final animal = withKey(widget.animalKey, raw);
     if (_visit == 1 && txt(animal, 'gender', 'Female') != 'Female') {
-      snack(context, 'Pregnancy can only be recorded for a female animal');
+      snack(
+        context,
+        'Pregnancy can only be recorded for a female animal',
+        tone: SnackTone.error,
+      );
       return;
     }
 
@@ -14991,11 +15176,13 @@ class _DoctorScreenState extends State<DoctorScreen> {
       AutoSyncService.scheduleSync(reason: 'doctor visit saved');
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         snack(
           context,
           '${bi('Could not save', 'சேமிக்க முடியவில்லை')}: $error',
+          tone: SnackTone.error,
         );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -15175,18 +15362,26 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
 
   Future<void> _save() async {
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can register a calf birth');
+      snack(
+        context,
+        'Only admins and editors can register a calf birth',
+        tone: SnackTone.error,
+      );
       return;
     }
     final raw = Hive.box('animals').get(widget.motherKey);
     if (raw == null) {
-      snack(context, 'Mother not found');
+      snack(context, 'Mother not found', tone: SnackTone.error);
       return;
     }
 
     final mother = withKey(widget.motherKey, raw);
     if (txt(mother, 'pregnancyStartDate').isEmpty) {
-      snack(context, 'No active pregnancy is recorded for this animal');
+      snack(
+        context,
+        'No active pregnancy is recorded for this animal',
+        tone: SnackTone.error,
+      );
       return;
     }
     // Compute the id once; calling nextId twice would allocate two numbers and
@@ -15204,6 +15399,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           'An animal named "$calfName" already exists',
           '"$calfName" என்ற பெயரில் ஏற்கெனவே ஒரு கால்நடை உள்ளது',
         ),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -15290,6 +15486,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
         wasCalf
             ? '${txt(mother, 'name')} moved to Cows and milking started'
             : 'Newborn calf saved and milking restarted',
+        tone: SnackTone.success,
       );
       Navigator.of(context).pop();
       Navigator.of(context).maybePop();
@@ -15298,7 +15495,13 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
       if (calvingKey != null) await calvingBox.delete(calvingKey);
       if (calfKey != null) await animalsBox.delete(calfKey);
       await animalsBox.put(widget.motherKey, asMap(raw));
-      if (mounted) snack(context, 'Birth was not saved. Please try again');
+      if (mounted) {
+        snack(
+          context,
+          'Birth was not saved. Please try again',
+          tone: SnackTone.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -15980,12 +16183,16 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
     // Guard before any await: a double tap must never record two sales.
     if (_saving) return;
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can sell animals');
+      snack(
+        context,
+        'Only admins and editors can sell animals',
+        tone: SnackTone.error,
+      );
       return;
     }
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
-      snack(context, 'Animal not found');
+      snack(context, 'Animal not found', tone: SnackTone.error);
       return;
     }
 
@@ -15994,16 +16201,17 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       snack(
         context,
         bi('This animal is already sold', 'இது ஏற்கனவே விற்கப்பட்டது'),
+        tone: SnackTone.error,
       );
       return;
     }
     final price = toDouble(_amount.text);
     if (price <= 0) {
-      snack(context, 'Please enter the sale amount');
+      snack(context, 'Please enter the sale amount', tone: SnackTone.error);
       return;
     }
     if (_customer.text.trim().isEmpty) {
-      snack(context, 'Please select a customer');
+      snack(context, 'Please select a customer', tone: SnackTone.error);
       return;
     }
 
@@ -16053,6 +16261,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
             'Could not save the sale. Try again.',
             'விற்பனையைச் சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
           ),
+          tone: SnackTone.error,
         );
       }
       return;
@@ -16205,18 +16414,23 @@ class _DeathScreenState extends State<DeathScreen> {
     // One confirmation at a time: repeated taps must not open two dialogs.
     if (_saving) return;
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can update animal status');
+      snack(
+        context,
+        'Only admins and editors can update animal status',
+        tone: SnackTone.error,
+      );
       return;
     }
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
-      snack(context, 'Animal not found');
+      snack(context, 'Animal not found', tone: SnackTone.error);
       return;
     }
     if (txt(withKey(widget.animalKey, raw), 'status') == 'Died') {
       snack(
         context,
         bi('Death already recorded', 'இறப்பு ஏற்கனவே பதிவு செய்யப்பட்டது'),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -16281,6 +16495,7 @@ class _DeathScreenState extends State<DeathScreen> {
             'Could not save. Try again.',
             'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
           ),
+          tone: SnackTone.error,
         );
       }
       return;
@@ -16486,16 +16701,24 @@ class _SellScreenState extends State<SellScreen> {
     if (_saving) return;
     try {
       if (_isAnimalSale && !canEditAnimals) {
-        snack(context, 'Only admins and editors can sell cows or calves');
+        snack(
+          context,
+          'Only admins and editors can sell cows or calves',
+          tone: SnackTone.error,
+        );
         return;
       }
       if (!_isAnimalSale && !canRecordEntries) {
-        snack(context, 'Your ranch role does not allow recording sales');
+        snack(
+          context,
+          'Your ranch role does not allow recording sales',
+          tone: SnackTone.error,
+        );
         return;
       }
       final amount = _amount;
       if (!amount.isFinite || (!_ownUse && amount <= 0)) {
-        snack(context, 'Please enter an amount');
+        snack(context, 'Please enter an amount', tone: SnackTone.error);
         return;
       }
 
@@ -16503,23 +16726,39 @@ class _SellScreenState extends State<SellScreen> {
       double quantity = toDouble(_qty.text);
       double perUnit = _ownUse ? 0.0 : toDouble(_price.text);
       if (!_isAnimalSale && (quantity <= 0 || (!_ownUse && perUnit <= 0))) {
-        snack(context, 'Please enter a valid quantity and price');
+        snack(
+          context,
+          'Please enter a valid quantity and price',
+          tone: SnackTone.error,
+        );
         return;
       }
 
       if (!_ownUse) {
         if (_customer.text.trim().isEmpty) {
-          snack(context, 'Please enter the customer name');
+          snack(
+            context,
+            'Please enter the customer name',
+            tone: SnackTone.error,
+          );
           return;
         }
       }
       if (_type == 0) {
         if (!quantity.isFinite || quantity <= 0) {
-          snack(context, 'Please enter the milk quantity');
+          snack(
+            context,
+            'Please enter the milk quantity',
+            tone: SnackTone.error,
+          );
           return;
         }
         if (quantity > availableMilk('Today')) {
-          snack(context, 'Cannot sell more than the milk available today');
+          snack(
+            context,
+            'Cannot sell more than the milk available today',
+            tone: SnackTone.error,
+          );
           return;
         }
       }
@@ -16528,13 +16767,13 @@ class _SellScreenState extends State<SellScreen> {
       if (_isAnimalSale) {
         final list = _sellable;
         if (list.isEmpty) {
-          snack(context, 'No animals available to sell');
+          snack(context, 'No animals available to sell', tone: SnackTone.error);
           return;
         }
         final selected = _animal.isEmpty ? '${list.first['key']}' : _animal;
         final matches = list.where((a) => '${a['key']}' == selected).toList();
         if (matches.isEmpty) {
-          snack(context, 'Please choose an animal');
+          snack(context, 'Please choose an animal', tone: SnackTone.error);
           return;
         }
         animal = matches.first;
@@ -16586,6 +16825,7 @@ class _SellScreenState extends State<SellScreen> {
                 'சொந்த பயன்பாட்டுப் பால் சேமிக்கப்பட்டது',
               )
             : bi('Sale saved', 'விற்பனை சேமிக்கப்பட்டது'),
+        tone: SnackTone.success,
       );
       setState(() {
         _saving = false;
@@ -16604,6 +16844,7 @@ class _SellScreenState extends State<SellScreen> {
           tamilUi
               ? 'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
               : 'Could not save. Please try again.',
+          tone: SnackTone.error,
         );
       }
     } finally {
@@ -16693,21 +16934,33 @@ class _SellScreenState extends State<SellScreen> {
 
   Future<void> _saveStockPurchase() async {
     if (!canRecordEntries) {
-      snack(context, 'Your ranch role does not allow adding stock');
+      snack(
+        context,
+        'Your ranch role does not allow adding stock',
+        tone: SnackTone.error,
+      );
       return;
     }
     final quantity = toDouble(_stockQty.text);
     final amount = toDouble(_stockAmount.text);
     if (_stockSupplier.text.trim().isEmpty) {
-      snack(context, 'Please select a customer or supplier');
+      snack(
+        context,
+        'Please select a customer or supplier',
+        tone: SnackTone.error,
+      );
       return;
     }
     if (quantity <= 0) {
-      snack(context, 'Please enter the purchased quantity');
+      snack(
+        context,
+        'Please enter the purchased quantity',
+        tone: SnackTone.error,
+      );
       return;
     }
     if (amount <= 0) {
-      snack(context, 'Please enter the purchase amount');
+      snack(context, 'Please enter the purchase amount', tone: SnackTone.error);
       return;
     }
     setState(() => _saving = true);
@@ -16733,7 +16986,11 @@ class _SellScreenState extends State<SellScreen> {
       'createdAt': DateTime.now().toIso8601String(),
     });
     if (!mounted) return;
-    snack(context, '${_stockItems[_stockItem]} stock added');
+    snack(
+      context,
+      '${_stockItems[_stockItem]} stock added',
+      tone: SnackTone.success,
+    );
     setState(() {
       _saving = false;
       _stockQty.clear();
@@ -17006,6 +17263,7 @@ class _SellScreenState extends State<SellScreen> {
                             snack(
                               context,
                               'Only admins and editors can sell cows or calves',
+                              tone: SnackTone.error,
                             );
                             return;
                           }
@@ -19323,7 +19581,7 @@ class FamilyUsersScreen extends StatelessWidget {
     try {
       if (action == 'save') {
         await RanchAccessService.updateMemberRole(ranchId(), memberUid, role);
-        if (context.mounted)
+        if (context.mounted) {
           snack(
             context,
             bi(
@@ -19331,6 +19589,7 @@ class FamilyUsersScreen extends StatelessWidget {
               'அனுமதி ${ui(role)} ஆக மாற்றப்பட்டது',
             ),
           );
+        }
       } else {
         final confirm = await showDialog<bool>(
           context: context,
