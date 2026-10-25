@@ -20,13 +20,33 @@ int marketCellIndex(int grid) => (grid / marketCellSize).floor();
 String marketCell(int gridLat, int gridLng) =>
     '${marketCellIndex(gridLat)}:${marketCellIndex(gridLng)}';
 
-List<String> marketNearbyCells(ll.LatLng point) {
+/// Search distances, nearest first: 2 km, then 5 km, then 10 km at most.
+const marketSearchSteps = <double>[2000, 5000, 10000];
+
+/// The cells around [point], [ring] cells out on each side. The default ring
+/// of 2 (5 x 5 cells, 25 values within Firestore's limit of 30 for `in`)
+/// reaches at least 11 km in every direction, covering the 10 km maximum.
+List<String> marketNearbyCells(ll.LatLng point, {int ring = 2}) {
   final lat = marketCellIndex(marketGrid(point.latitude));
   final lng = marketCellIndex(marketGrid(point.longitude));
   return [
-    for (var a = -1; a <= 1; a++)
-      for (var b = -1; b <= 1; b++) '${lat + a}:${lng + b}',
+    for (var a = -ring; a <= ring; a++)
+      for (var b = -ring; b <= ring; b++) '${lat + a}:${lng + b}',
   ];
+}
+
+/// The first search distance that finds anyone: 2 km, else 5 km, else
+/// 10 km (index into [marketSearchSteps]).
+int marketSearchStep(Iterable<double> distances) {
+  for (var i = 0; i < marketSearchSteps.length; i++) {
+    if (distances.any((d) => d <= marketSearchSteps[i])) return i;
+  }
+  return marketSearchSteps.length - 1;
+}
+
+String marketStepLabel(int step) {
+  final km = (marketSearchSteps[step] / 1000).round();
+  return bi('$km km', '$km கி.மீ');
 }
 
 /// The middle of a listing's grid square: where its area is drawn.
@@ -351,7 +371,7 @@ class MarketService {
             data: doc.data(),
             distance: marketDistance(here, marketAreaCenter(doc.data())),
           ),
-    ];
+    ].where((v) => v.distance <= marketSearchSteps.last).toList();
   }
 
   /// Average stars and number of reviews, counted by the server.
@@ -699,6 +719,10 @@ class _NearbyScreenState extends State<NearbyScreen> {
   bool _failed = false;
   int _sort = 0;
 
+  /// Index into [marketSearchSteps]: starts at the nearest distance that
+  /// finds someone; people can widen or narrow it.
+  int _step = 0;
+
   Future<void> _find() async {
     if (_loading) return;
     setState(() => _loading = true);
@@ -720,6 +744,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
       setState(() {
         _here = here;
         _vendors = rated;
+        _step = marketSearchStep(rated.map((v) => v.distance));
         _failed = false;
         _loading = false;
       });
@@ -754,7 +779,12 @@ class _NearbyScreenState extends State<NearbyScreen> {
     }
     final vendors = _vendors == null
         ? null
-        : sortMarketVendors(_vendors!, byRating: _sort == 1);
+        : sortMarketVendors(
+            _vendors!
+                .where((v) => v.distance <= marketSearchSteps[_step])
+                .toList(),
+            byRating: _sort == 1,
+          );
     final now = DateTime.now();
     return Shell(
       child: RefreshIndicator(
@@ -834,6 +864,20 @@ class _NearbyScreenState extends State<NearbyScreen> {
                 index: _sort,
                 onChanged: (v) => setState(() => _sort = v),
               ),
+              const SizedBox(height: Space.s12),
+              // Searched nearest first: 2 km, widening to 5 and 10 km only
+              // when nobody closer is listed.
+              Semantics(
+                label: bi('Search distance', 'தேடும் தூரம்'),
+                child: LiquidSegmentBar(
+                  labels: [
+                    for (var i = 0; i < marketSearchSteps.length; i++)
+                      marketStepLabel(i),
+                  ],
+                  index: _step,
+                  onChanged: (v) => setState(() => _step = v),
+                ),
+              ),
               const SizedBox(height: Space.s16),
               if (_failed)
                 _MarketNote(
@@ -844,10 +888,15 @@ class _NearbyScreenState extends State<NearbyScreen> {
                 )
               else if (vendors!.isEmpty)
                 _MarketNote(
-                  bi(
-                    'No milk vendors are listed near you yet.',
-                    'உங்கள் அருகில் இன்னும் பால் வியாபாரிகள் இல்லை.',
-                  ),
+                  _step < marketSearchSteps.length - 1
+                      ? bi(
+                          'No one within ${marketStepLabel(_step)}. Try ${marketStepLabel(_step + 1)}.',
+                          '${marketStepLabel(_step)}-க்குள் யாரும் இல்லை. ${marketStepLabel(_step + 1)} முயற்சிக்கவும்.',
+                        )
+                      : bi(
+                          'No milk vendors are listed within 10 km yet.',
+                          '10 கி.மீ-க்குள் இன்னும் பால் வியாபாரிகள் இல்லை.',
+                        ),
                 )
               else
                 _InsetGroup(
