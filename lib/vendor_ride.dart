@@ -798,6 +798,25 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
   );
 }
 
+/// Where the ride and its Customize choices are kept for this ranch and
+/// purpose (Settings opens Customize with the same key).
+String vendorRideStorageKey() =>
+    'vendorRide_${settingText('ranchId', '')}_$_profileKey';
+
+/// Settings → Customize for the vendor's customer list.
+Future<void> openVendorCustomize(BuildContext context) {
+  final key = vendorRideStorageKey();
+  final settings = Hive.box('settings');
+  return push(
+    context,
+    VendorCustomizeScreen(
+      volume: settings.get('${key}_volume', defaultValue: false) == true,
+      groups: settings.get('${key}_groups', defaultValue: false) == true,
+      storageKey: key,
+    ),
+  );
+}
+
 class VendorRideScreen extends StatefulWidget {
   const VendorRideScreen({super.key});
   @override
@@ -827,8 +846,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
       _paid = TextEditingController();
   final _scroll = ScrollController();
   final Map<String, GlobalKey> _keys = {};
-  String get _storageKey =>
-      'vendorRide_${settingText('ranchId', '')}_$_profileKey';
+  String get _storageKey => vendorRideStorageKey();
   bool get _active => _rideId.isNotEmpty;
   @override
   void initState() {
@@ -938,7 +956,24 @@ class _VendorRideScreenState extends State<VendorRideScreen>
   @override
   void didPushNext() => unawaited(_syncVolume(enabled: false));
   @override
-  void didPopNext() => unawaited(_syncVolume());
+  void didPopNext() {
+    // Back from Settings → Customize: pick up what changed there.
+    _reloadCustomize();
+    unawaited(_syncVolume());
+  }
+
+  void _reloadCustomize() {
+    if (!mounted) return;
+    final settings = Hive.box('settings');
+    setState(() {
+      _volume =
+          settings.get('${_storageKey}_volume', defaultValue: false) == true;
+      _groups =
+          settings.get('${_storageKey}_groups', defaultValue: false) == true;
+      if (!_groups) _place = null;
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) =>
       unawaited(_syncVolume(enabled: state == AppLifecycleState.resumed));
@@ -1472,14 +1507,20 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                             ),
                           ),
                         )
-                      else if (!_active)
+                      // Someone not on the list buys a little milk; Customize
+                      // lives in Settings.
+                      else
                         TextButton.icon(
-                          onPressed: _busy ? null : _customize,
+                          onPressed: _busy || !canRecordEntries
+                              ? null
+                              : () => showWalkInSale(context),
                           icon: const Icon(
-                            CupertinoIcons.slider_horizontal_3,
+                            CupertinoIcons.person_crop_circle_badge_plus,
                             size: 19,
                           ),
-                          label: Text(bi('Customize', 'மாற்று')),
+                          label: Text(
+                            bi('Walk-in customer', 'திடீர் வாடிக்கையாளர்'),
+                          ),
                         ),
                     ],
                   ),
@@ -1623,26 +1664,6 @@ class _VendorRideScreenState extends State<VendorRideScreen>
     ...groups.where((g) => g.key != _place),
   ];
 
-  Future<void> _customize() async {
-    await _open(
-      VendorCustomizeScreen(
-        volume: _volume,
-        groups: _groups,
-        storageKey: _storageKey,
-      ),
-    );
-    if (mounted) {
-      final settings = Hive.box('settings');
-      setState(() {
-        _volume =
-            settings.get('${_storageKey}_volume', defaultValue: false) == true;
-        _groups =
-            settings.get('${_storageKey}_groups', defaultValue: false) == true;
-        if (!_groups) _place = null;
-      });
-    }
-  }
-
   Widget _providersRow(List<Map<String, dynamic>> suppliers) =>
       VendorProvidersStrip(
         suppliers: suppliers,
@@ -1737,15 +1758,6 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                 onTap: _busy || !canRecordEntries
                     ? null
                     : () => showMilkClearance(context),
-              ),
-              const SizedBox(height: 6),
-              _ClearanceChip(
-                label: bi('Walk-in', 'திடீர் வாடிக்கையாளர்'),
-                icon: CupertinoIcons.person_crop_circle_badge_plus,
-                color: Ink.violetDeep,
-                onTap: _busy || !canRecordEntries
-                    ? null
-                    : () => showWalkInSale(context),
               ),
             ],
           ),
@@ -2214,19 +2226,11 @@ class _MilkFlow extends StatelessWidget {
 /// The small "Clearance" capsule on the milk balance card.
 class _ClearanceChip extends StatelessWidget {
   final VoidCallback? onTap;
-  final String? label;
-  final IconData icon;
-  final Color? color;
-  const _ClearanceChip({
-    required this.onTap,
-    this.label,
-    this.icon = CupertinoIcons.tray_arrow_down_fill,
-    this.color,
-  });
+  const _ClearanceChip({required this.onTap});
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
-    label: label ?? bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
+    label: bi('Milk clearance', 'பால் கிளியரன்ஸ்'),
     child: Pressable(
       radius: 14,
       onTap: onTap,
@@ -2234,7 +2238,7 @@ class _ClearanceChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: ShapeDecoration(
           shape: StadiumBorder(
-            side: BorderSide(color: (color ?? Ink.blue).withValues(alpha: .28)),
+            side: BorderSide(color: Ink.blue.withValues(alpha: .28)),
           ),
           color: Ink.surface.withValues(alpha: .7),
         ),
@@ -2242,15 +2246,15 @@ class _ClearanceChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              icon,
+              CupertinoIcons.tray_arrow_down_fill,
               size: 12,
-              color: onTap == null ? Ink.faint : (color ?? Ink.blue),
+              color: onTap == null ? Ink.faint : Ink.blue,
             ),
             const SizedBox(width: 4),
             Text(
-              label ?? bi('Clearance', 'கிளியரன்ஸ்'),
+              bi('Clearance', 'கிளியரன்ஸ்'),
               style: TextStyle(
-                color: onTap == null ? Ink.faint : (color ?? Ink.blue),
+                color: onTap == null ? Ink.faint : Ink.blue,
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),

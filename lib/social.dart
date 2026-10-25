@@ -1076,7 +1076,6 @@ class _SocialPostState extends State<_SocialPost> {
 
   bool _busy = false;
   bool _hidden = false;
-  bool _commentsVisible = false;
   late final _likes = widget.post.reference.collection('likes').snapshots();
   late final Future<DocumentSnapshot<Map<String, dynamic>>> _author =
       FirebaseFirestore.instance
@@ -1084,7 +1083,9 @@ class _SocialPostState extends State<_SocialPost> {
           .doc(txt(widget.post.data(), 'authorUid'))
           .get();
 
-  late final Future<int?> _commentCount = widget.post.reference
+  late Future<int?> _commentCount = _countComments();
+
+  Future<int?> _countComments() => widget.post.reference
       .collection('comments')
       .count()
       .get()
@@ -1466,9 +1467,16 @@ class _SocialPostState extends State<_SocialPost> {
                       FutureBuilder<int?>(
                         future: _commentCount,
                         builder: (context, count) => TextButton.icon(
-                          onPressed: () => setState(
-                            () => _commentsVisible = !_commentsVisible,
-                          ),
+                          onPressed: () async {
+                            await showSocialComments(
+                              context,
+                              widget.post.reference,
+                            );
+                            // New comments show in the count on return.
+                            if (mounted) {
+                              setState(() => _commentCount = _countComments());
+                            }
+                          },
                           icon: const Icon(CupertinoIcons.chat_bubble),
                           label: Text(
                             count.data == null
@@ -1494,8 +1502,6 @@ class _SocialPostState extends State<_SocialPost> {
                   );
                 },
               ),
-              if (_commentsVisible)
-                _SocialComments(post: widget.post.reference),
             ],
           ),
         ),
@@ -1550,6 +1556,32 @@ commentThreads(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
   }
   return [for (final root in roots) (root, replies[root.id] ?? const [])];
 }
+
+/// Comments open in a sheet, as on Instagram and YouTube: the list scrolls
+/// and the box to write in stays just above the keyboard, never under it.
+Future<void> showSocialComments(
+  BuildContext context,
+  DocumentReference<Map<String, dynamic>> post,
+) => showAppleSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  builder: (sheet) {
+    final media = MediaQuery.of(sheet);
+    final keyboard = media.viewInsets.bottom;
+    // The sheet keeps its place; the keyboard takes room from the list.
+    final height = math.max(
+      220.0,
+      media.size.height * .86 - keyboard - media.padding.top,
+    );
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: SizedBox(
+        height: height,
+        child: _SocialComments(post: post),
+      ),
+    );
+  },
+);
 
 class _SocialComments extends StatefulWidget {
   final DocumentReference<Map<String, dynamic>> post;
@@ -1690,16 +1722,17 @@ class _SocialCommentsState extends State<_SocialComments> {
   }
 
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(top: 8),
-    padding: const EdgeInsets.only(top: 12),
-    decoration: const BoxDecoration(
-      border: Border(top: BorderSide(color: Color(0x167B61D1))),
-    ),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
     child: Column(
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 440),
+        Text(
+          bi('Comments', 'கருத்துகள்'),
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Divider(height: 1, color: Ink.violetDeep.withValues(alpha: .10)),
+        Expanded(
           child: StreamBuilder(
             stream: _stream,
             builder: (context, snapshot) {
@@ -1734,8 +1767,9 @@ class _SocialCommentsState extends State<_SocialComments> {
                 );
               }
               return ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
+                padding: const EdgeInsets.only(top: 12),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 children: [
                   for (final (root, replies) in commentThreads(
                     snapshot.data!.docs,

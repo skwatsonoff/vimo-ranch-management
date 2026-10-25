@@ -13,6 +13,9 @@ const Map<String, dynamic> vendorWalkIn = {
 
 const walkInAmounts = [10, 20, 30, 50, 100];
 
+/// Quick litre buttons, in millilitres.
+const walkInMillilitres = [50, 100, 200, 500, 1000];
+
 /// The litre price for walk-ins: the one set last, else the last sale's.
 double walkInPrice([Iterable<Map<String, dynamic>>? rows]) {
   final saved = settingValue('vendorWalkInPrice', 0);
@@ -55,8 +58,10 @@ class _WalkInSheet extends StatefulWidget {
 
 class _WalkInSheetState extends State<_WalkInSheet> {
   late double _price = walkInPrice();
-  late final _amount = TextEditingController(text: '20');
-  late final _litres = TextEditingController(text: '0.5');
+  // Empty until a button or the field gives a value; after that each
+  // button adds to it (+₹10, +100 ml) and ✕ clears it.
+  late final _amount = TextEditingController();
+  late final _litres = TextEditingController();
 
   /// 0 by rupees, 1 by litres.
   int _by = 0;
@@ -248,18 +253,26 @@ class _WalkInSheetState extends State<_WalkInSheet> {
                   ? [
                       for (final a in walkInAmounts)
                         _chip(
-                          money(a),
-                          toDouble(_amount.text) == a,
-                          () => setState(() => _amount.text = '$a'),
+                          '${toDouble(_amount.text) > 0 ? '+' : ''}${money(a)}',
+                          false,
+                          () => setState(
+                            () => _amount.text = vendorFieldNumber(
+                              toDouble(_amount.text) + a,
+                            ),
+                          ),
                         ),
                     ]
                   : [
-                      for (final l in const [.25, .5, 1.0, 2.0])
+                      for (final ml in walkInMillilitres)
                         _chip(
-                          walkInMl(l),
-                          toDouble(_litres.text) == l,
+                          '${toDouble(_litres.text) > 0 ? '+' : ''}${walkInMl(ml / 1000)}',
+                          false,
                           () => setState(
-                            () => _litres.text = vendorFieldNumber(l),
+                            // Counted in whole millilitres: no 0.30000004.
+                            () => _litres.text = vendorFieldNumber(
+                              ((toDouble(_litres.text) * 1000).round() + ml) /
+                                  1000,
+                            ),
                           ),
                         ),
                     ],
@@ -272,8 +285,20 @@ class _WalkInSheetState extends State<_WalkInSheet> {
               onChanged: (_) => setState(() {}),
               decoration: fieldStyle(
                 _by == 0
-                    ? bi('Other amount', 'வேறு தொகை')
-                    : bi('Other litres', 'வேறு அளவு'),
+                    ? bi('Amount (₹)', 'தொகை (₹)')
+                    : bi('Litres', 'லிட்டர்'),
+                suffix: (_by == 0 ? _amount : _litres).text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: bi('Clear', 'அழி'),
+                        icon: Icon(
+                          CupertinoIcons.xmark_circle_fill,
+                          color: Ink.faint,
+                        ),
+                        onPressed: () => setState(
+                          () => (_by == 0 ? _amount : _litres).clear(),
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 8),

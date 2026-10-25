@@ -10355,7 +10355,9 @@ class _MainShellState extends State<MainShell> {
       _accounts = FirebaseAuth.instance.authStateChanges().listen((user) {
         if (user == null || !mounted) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(MarketLocation.askAfterSignIn(context));
+          if (mounted) {
+            unawaited(MarketLocation.askAfterSignUp(context, user));
+          }
         });
       });
     }
@@ -19469,22 +19471,30 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => push(context, const AppSettingsScreen()),
                 ),
               ),
-              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
-                const Reveal(index: 2, child: _GoogleLinkRow()),
-              if (firebaseReady && FirebaseAuth.instance.currentUser != null)
+              if (workspaceEnabled('Vendor'))
                 Reveal(
-                  index: 3,
+                  index: 2,
                   child: _SettingLink(
-                    title: 'Help · VIMO Team',
-                    subtitle: bi(
-                      'Message the team, see your reports',
-                      'குழுவுக்குச் செய்தி, உங்கள் அறிக்கைகள்',
+                    title: bi(
+                      'Customize customers',
+                      'வாடிக்கையாளர் பட்டியலை மாற்று',
                     ),
-                    icon: CupertinoIcons.question_circle_fill,
+                    subtitle: bi(
+                      'Group by place, volume buttons for the ride',
+                      'இடவாரியாகக் குழு, சவாரிக்கு volume பொத்தான்கள்',
+                    ),
+                    icon: CupertinoIcons.slider_horizontal_3,
                     color: Ink.violetDeep,
-                    onTap: () => push(context, const VimoHelpScreen()),
+                    onTap: () => openVendorCustomize(context),
                   ),
                 ),
+              // Once Google is on the account there is nothing left to add.
+              if (firebaseReady &&
+                  FirebaseAuth.instance.currentUser != null &&
+                  !GoogleAccount.linked)
+                const Reveal(index: 2, child: _GoogleLinkRow()),
+              // Help lives where buying and selling happen (My orders, an
+              // order, an item), not in everyday Settings.
               if (firebaseReady && FirebaseAuth.instance.currentUser != null)
                 const _TeamConsoleLink(),
               // Ranch details live on the Ranch tab. Without that tab, keep a
@@ -19667,6 +19677,8 @@ class _GoogleLinkRowState extends State<_GoogleLinkRow> {
   @override
   Widget build(BuildContext context) {
     final linked = GoogleAccount.linked;
+    // Added just now: the row goes away, as there is nothing left to do.
+    if (linked && !_busy) return const SizedBox.shrink();
     return _SettingLink(
       title: linked
           ? bi('Google account added', 'Google கணக்கு சேர்க்கப்பட்டது')

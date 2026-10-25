@@ -833,6 +833,131 @@ class _NearbyScreenState extends State<NearbyScreen> {
   /// 0 everyone, 1 milk sellers (vendors and shops), 2 ranches.
   int _kind = 0;
 
+  /// The person picked a distance; otherwise the nearest that finds someone.
+  bool _distanceChosen = false;
+
+  int get _filtersOn =>
+      (_sort != 0 ? 1 : 0) + (_kind != 0 ? 1 : 0) + (_distanceChosen ? 1 : 0);
+
+  String get _filterSummary => [
+    bi('Within ${marketStepLabel(_step)}', '${marketStepLabel(_step)}-க்குள்'),
+    _sort == 1 ? bi('Top rated', 'சிறந்த மதிப்பீடு') : bi('Nearest', 'அருகில்'),
+    switch (_kind) {
+      1 => bi('Milk sellers', 'பால் விற்பவர்'),
+      2 => bi('Ranches', 'பண்ணைகள்'),
+      _ => bi('All', 'அனைத்தும்'),
+    },
+  ].join(' · ');
+
+  /// Sort, distance and kind in one sheet, like a store's filter button.
+  Future<void> _filters() async {
+    var sort = _sort, step = _step, kind = _kind, chosen = _distanceChosen;
+    final apply = await showAppleSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Ink.canvasTop,
+      builder: (sheet) => StatefulBuilder(
+        builder: (sheet, set) {
+          Widget title(String text) => Padding(
+            padding: const EdgeInsets.only(top: Space.s16, bottom: Space.s8),
+            child: Text(
+              text,
+              style: TextStyle(
+                color: Ink.muted,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(21, 0, 21, 21),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          bi('Filters', 'வடிகட்டிகள்'),
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => set(() {
+                          sort = 0;
+                          kind = 0;
+                          chosen = false;
+                          step = marketSearchStep(
+                            (_vendors ?? const <MarketVendor>[]).map(
+                              (v) => v.distance,
+                            ),
+                          );
+                        }),
+                        child: Text(bi('Reset', 'மீட்டமை')),
+                      ),
+                    ],
+                  ),
+                  title(bi('Sort by', 'வரிசை')),
+                  LiquidSegmentBar(
+                    labels: [
+                      bi('Nearest', 'அருகில்'),
+                      bi('Top rated', 'சிறந்த மதிப்பீடு'),
+                    ],
+                    index: sort,
+                    onChanged: (v) => set(() => sort = v),
+                  ),
+                  title(bi('Distance', 'தூரம்')),
+                  Semantics(
+                    label: bi('Search distance', 'தேடும் தூரம்'),
+                    child: LiquidSegmentBar(
+                      labels: [
+                        for (var i = 0; i < marketSearchSteps.length; i++)
+                          marketStepLabel(i),
+                      ],
+                      index: step,
+                      onChanged: (v) => set(() {
+                        step = v;
+                        chosen = true;
+                      }),
+                    ),
+                  ),
+                  title(bi('Show', 'காட்டு')),
+                  LiquidSegmentBar(
+                    labels: [
+                      bi('All', 'அனைத்தும்'),
+                      bi('Milk sellers', 'பால் விற்பவர்'),
+                      bi('Ranches', 'பண்ணைகள்'),
+                    ],
+                    index: kind,
+                    onChanged: (v) => set(() => kind = v),
+                  ),
+                  const SizedBox(height: Space.s24),
+                  LiquidButton(
+                    label: bi('Show results', 'முடிவுகளைக் காட்டு'),
+                    onPressed: () => Navigator.pop(sheet, true),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (apply != true || !mounted) return;
+    setState(() {
+      _sort = sort;
+      _step = step;
+      _kind = kind;
+      _distanceChosen = chosen;
+    });
+  }
+
   final _search = TextEditingController();
   Timer? _debounce;
   List<MarketVendor>? _found;
@@ -844,6 +969,18 @@ class _NearbyScreenState extends State<NearbyScreen> {
   @override
   void initState() {
     super.initState();
+    // The last place searched from, kept on this phone: Market opens with
+    // results at once and never asks for location by itself.
+    final saved = asMap(settingValue(accountSetting('marketHere'), {}));
+    if (MarketService.available && saved['lat'] is num && saved['lng'] is num) {
+      _here = ll.LatLng(
+        (saved['lat'] as num).toDouble(),
+        (saved['lng'] as num).toDouble(),
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_find(fresh: false));
+      });
+    }
     if (MarketService.available && workspaceEnabled('Ranch')) {
       MarketService.myListing
           .get()
@@ -917,14 +1054,23 @@ class _NearbyScreenState extends State<NearbyScreen> {
     _ => true,
   };
 
-  Future<void> _find() async {
+  /// Finds who is near. [fresh] asks the phone where it is now (only when
+  /// the person taps for it); otherwise the last place is used.
+  Future<void> _find({bool fresh = true}) async {
     if (_loading) return;
     setState(() => _loading = true);
-    final here = await VendorLocation.current(context);
+    final here = fresh ? await VendorLocation.current(context) : _here;
     if (!mounted) return;
     if (here == null) {
       setState(() => _loading = false);
       return;
+    }
+    if (fresh) {
+      await MarketLocation.remember();
+      await setSetting(accountSetting('marketHere'), {
+        'lat': here.latitude,
+        'lng': here.longitude,
+      });
     }
     try {
       final found = await MarketService.nearby(here);
@@ -938,7 +1084,9 @@ class _NearbyScreenState extends State<NearbyScreen> {
       setState(() {
         _here = here;
         _vendors = rated;
-        _step = marketSearchStep(rated.map((v) => v.distance));
+        if (!_distanceChosen) {
+          _step = marketSearchStep(rated.map((v) => v.distance));
+        }
         _failed = false;
         _loading = false;
       });
@@ -1067,15 +1215,32 @@ class _NearbyScreenState extends State<NearbyScreen> {
                       ),
                     ),
                   ),
-                  if (_here != null)
+                  if (_here != null) ...[
                     IconButton(
-                      tooltip: bi('Search again', 'மீண்டும் தேடு'),
+                      tooltip: bi('Filters', 'வடிகட்டிகள்'),
+                      onPressed: _filters,
+                      icon: Badge(
+                        isLabelVisible: _filtersOn > 0,
+                        label: Text('$_filtersOn'),
+                        backgroundColor: Ink.violetDeep,
+                        child: Icon(
+                          CupertinoIcons.slider_horizontal_3,
+                          color: Ink.violetDeep,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: bi(
+                        'Search from where I am now',
+                        'இப்போது இருக்கும் இடத்திலிருந்து தேடு',
+                      ),
                       onPressed: _loading ? null : _find,
                       icon: Icon(
                         CupertinoIcons.location_fill,
                         color: Ink.violetDeep,
                       ),
                     ),
+                  ],
                 ],
               ),
               const SizedBox(height: Space.s4),
@@ -1102,8 +1267,8 @@ class _NearbyScreenState extends State<NearbyScreen> {
                       const SizedBox(height: Space.s12),
                       Text(
                         bi(
-                          'Your location is used only to find vendors near you. It is not saved.',
-                          'அருகிலுள்ள வியாபாரிகளைக் கண்டறிய மட்டுமே உங்கள் இடம் பயன்படும். அது சேமிக்கப்படாது.',
+                          'Your location is used only to find vendors near you, and kept on this phone only.',
+                          'அருகிலுள்ள வியாபாரிகளைக் கண்டறிய மட்டுமே உங்கள் இடம் பயன்படும்; இந்த phone-ல் மட்டும் வைக்கப்படும்.',
                         ),
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Ink.body, fontSize: 15),
@@ -1119,47 +1284,30 @@ class _NearbyScreenState extends State<NearbyScreen> {
                   ),
                 )
               else ...[
-                LiquidSegmentBar(
-                  labels: [
-                    bi('Nearest', 'அருகில்'),
-                    bi('Top rated', 'சிறந்த மதிப்பீடு'),
-                  ],
-                  index: _sort,
-                  onChanged: (v) => setState(() => _sort = v),
-                ),
-                const SizedBox(height: Space.s12),
                 // Searched nearest first: 2 km, widening to 5 and 10 km only
-                // when nobody closer is listed.
-                Semantics(
-                  label: bi('Search distance', 'தேடும் தூரம்'),
-                  child: LiquidSegmentBar(
-                    labels: [
-                      for (var i = 0; i < marketSearchSteps.length; i++)
-                        marketStepLabel(i),
-                    ],
-                    index: _step,
-                    onChanged: (v) => setState(() => _step = v),
+                // when nobody closer is listed. Changes live in Filters.
+                GestureDetector(
+                  onTap: _filters,
+                  child: Text(
+                    _filterSummary,
+                    style: TextStyle(
+                      color: Ink.violetDeep,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(height: Space.s12),
-                LiquidSegmentBar(
-                  labels: [
-                    bi('All', 'அனைத்தும்'),
-                    bi('Milk sellers', 'பால் விற்பவர்'),
-                    bi('Ranches', 'பண்ணைகள்'),
-                  ],
-                  index: _kind,
-                  onChanged: (v) => setState(() => _kind = v),
-                ),
-                const SizedBox(height: Space.s16),
-                if (_failed)
+                if (_loading || vendors == null)
+                  const SkeletonList(rows: 2, padding: EdgeInsets.zero)
+                else if (_failed)
                   _MarketNote(
                     bi(
                       'Could not search. Check the internet and pull down to try again.',
                       'தேட முடியவில்லை. இணையத்தைச் சரிபார்த்து, கீழே இழுத்து மீண்டும் முயற்சிக்கவும்.',
                     ),
                   )
-                else if (vendors!.isEmpty)
+                else if (vendors.isEmpty)
                   _MarketNote(
                     _step < marketSearchSteps.length - 1
                         ? bi(
