@@ -259,7 +259,7 @@ class _SocialScreenState extends State<SocialScreen> {
     }
     final posts = _posts;
     if (posts == null) {
-      return const Center(child: CupertinoActivityIndicator(radius: 13));
+      return const SkeletonList();
     }
     if (posts.isEmpty) {
       return _message(
@@ -304,12 +304,10 @@ class _SocialScreenState extends State<SocialScreen> {
   Widget build(BuildContext context) {
     if (!_signedIn) {
       return Shell(
-        child: Center(
-          child: Text(
-            bi(
-              'Sign in to connect with the community.',
-              'சமூகத்துடன் இணைய உள்நுழையவும்.',
-            ),
+        child: SignInStatePanel(
+          message: bi(
+            'Sign in to connect with the community.',
+            'சமூகத்துடன் இணைய உள்நுழையவும்.',
           ),
         ),
       );
@@ -776,6 +774,7 @@ class _SocialComposerState extends State<SocialComposer> {
     _timer?.cancel();
     unawaited(_audio?.cancel());
     unawaited(_recorder.dispose());
+    UiSound.release(this);
     super.dispose();
   }
 
@@ -786,6 +785,7 @@ class _SocialComposerState extends State<SocialComposer> {
         _timer?.cancel();
         setState(() => _stopping = true);
         await _recorder.stop();
+        UiSound.release(this);
         await _audioDone?.future.timeout(const Duration(seconds: 3));
         await _audio?.cancel();
         final data = _pcm.takeBytes();
@@ -805,6 +805,7 @@ class _SocialComposerState extends State<SocialComposer> {
         }
         _pcm = BytesBuilder(copy: false);
         _audioDone = Completer<void>();
+        UiSound.hold(this);
         final stream = await _recorder.startStream(
           const RecordConfig(
             encoder: AudioEncoder.pcm16bits,
@@ -838,6 +839,7 @@ class _SocialComposerState extends State<SocialComposer> {
       }
     } catch (_) {
       _timer?.cancel();
+      UiSound.release(this);
       await _recorder.cancel();
       await _audio?.cancel();
       if (mounted) {

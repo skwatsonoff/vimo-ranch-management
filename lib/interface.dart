@@ -762,6 +762,7 @@ class _ConversationViewState extends State<_ConversationView> {
     if (subscription != null) unawaited(subscription.cancel());
     unawaited(_recorder.cancel().catchError((Object _) {}));
     unawaited(_recorder.dispose().catchError((Object _) {}));
+    UiSound.release(this);
     super.dispose();
   }
 
@@ -775,6 +776,7 @@ class _ConversationViewState extends State<_ConversationView> {
       _recordedAudio = BytesBuilder(copy: false);
       final complete = Completer<void>();
       _audioComplete = complete;
+      UiSound.hold(this);
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -811,6 +813,7 @@ class _ConversationViewState extends State<_ConversationView> {
         }
       });
     } catch (_) {
+      UiSound.release(this);
       if (mounted) snack(context, ui('Unable to record. Try again.'));
     }
   }
@@ -822,6 +825,7 @@ class _ConversationViewState extends State<_ConversationView> {
     try {
       await _recorder.cancel();
     } catch (_) {}
+    UiSound.release(this);
     await _audioSubscription?.cancel();
     _audioSubscription = null;
     _audioComplete = null;
@@ -839,6 +843,7 @@ class _ConversationViewState extends State<_ConversationView> {
       final duration = math.max(1, _recordingSeconds);
       final complete = _audioComplete;
       await _recorder.stop();
+      UiSound.release(this);
       if (complete != null) {
         await complete.future.timeout(const Duration(seconds: 3));
       }
@@ -1428,6 +1433,12 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
       if (mounted) setState(() => _duration = value);
     });
     _stateSubscription = _player.onPlayerStateChanged.listen((value) {
+      // Interface sounds wait while a voice note plays.
+      if (value == PlayerState.playing) {
+        UiSound.hold(this);
+      } else {
+        UiSound.release(this);
+      }
       if (mounted) setState(() => _state = value);
     });
     _completeSubscription = _player.onPlayerComplete.listen((_) {
@@ -1451,6 +1462,7 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
     if (stateSubscription != null) unawaited(stateSubscription.cancel());
     if (completeSubscription != null) unawaited(completeSubscription.cancel());
     unawaited(_player.dispose());
+    UiSound.release(this);
     super.dispose();
   }
 
@@ -1461,6 +1473,13 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
       final source = widget.encodedAudio.isNotEmpty
           ? BytesSource(base64Decode(widget.encodedAudio))
           : UrlSource(widget.url);
+      // Interface sounds use the ambient session on iOS; a voice note is
+      // media the person asked for, so it plays in the standard session.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        try {
+          await _player.setAudioContext(AudioContextConfig().build());
+        } catch (_) {}
+      }
       await _player.play(source);
     }
   }

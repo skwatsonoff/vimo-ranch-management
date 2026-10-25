@@ -294,7 +294,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         _order[slot] = tab;
       }
     });
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     unawaited(_persist());
   }
 
@@ -398,7 +398,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          CupertinoSwitch(
+          SoundSwitch(
             value: on,
             activeTrackColor: Ink.tint,
             onChanged: (v) => _toggleWorkspace(kind, v),
@@ -417,7 +417,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       child: InkWell(
         onTap: () async {
           if (selected) return;
-          HapticFeedback.selectionClick();
+          selectionFeedback();
           setState(() => _vendorMode = mode);
           try {
             await saveVendorMode(mode);
@@ -735,7 +735,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                               ),
                             ),
                           ),
-                          CupertinoSwitch(
+                          SoundSwitch(
                             value: CloudSyncService.sharedDataEnabled,
                             activeTrackColor: Ink.tint,
                             onChanged: (value) async {
@@ -1945,7 +1945,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                                 ),
                                 child: Icon(
                                   r['kind'] == 'payment'
-                                      ? CupertinoIcons.money_dollar
+                                      ? Icons.currency_rupee_rounded
                                       : CupertinoIcons.drop_fill,
                                   size: 20,
                                   color: r['kind'] == 'payment'
@@ -1983,7 +1983,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                               Text(
                                 money(numv(r, 'amount')),
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight: FontWeight.w700,
                                   fontSize: 16,
                                 ),
                               ),
@@ -2111,7 +2111,7 @@ class _PersonStat extends StatelessWidget {
           value,
           style: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
             color: color,
           ),
         ),
@@ -2161,7 +2161,7 @@ class _TotalLine extends StatelessWidget {
         value,
         style: TextStyle(
           fontSize: strong ? 20 : 16,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w700,
           color: Ink.navy,
         ),
       ),

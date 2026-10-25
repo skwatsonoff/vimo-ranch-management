@@ -7,13 +7,15 @@
 //
 //  Design foundations
 //  ------------------
-//  · Every spacing, radius and type step comes from the Fibonacci / phi ladder
-//    defined in the `Gold` class. Nothing is an arbitrary number.
+//  · Spacing sits on the 4-point grid (`Space`); corner radii, the type
+//    ladder and proportions come from the phi ladder in `Gold`; colours are
+//    the VIMO Milk palette in `Ink`. Nothing is an arbitrary number.
 //  · All surfaces are squircles (superellipse corners), not circular-arc
 //    rounded rectangles, matching Apple's continuous corner curvature.
 //  · Glass surfaces carry a real specular rim, an inner sheen at the golden
 //    minor (0.382) height, and layered ambient + key shadows.
-//  · Motion is uniformly easeOutCubic with phi-derived durations.
+//  · Physical motion runs on critically damped springs (`Motion`); fades and
+//    colour changes use short ease-outs. Reduce Motion swaps both for fades.
 // =============================================================================
 
 import 'dart:async';
@@ -53,6 +55,9 @@ part 'business.dart';
 part 'social.dart';
 part 'social_feed.dart';
 part 'liquid_design.dart';
+part 'design_tokens.dart';
+part 'polish.dart';
+part 'ui_sound.dart';
 part 'account.dart';
 part 'social_profile.dart';
 part 'requested_updates.dart';
@@ -211,9 +216,12 @@ Future<void> main() async {
   await loadAppLanguage();
 
   runApp(const VimoApp());
-  WidgetsBinding.instance.addPostFrameCallback(
-    (_) => _browserRuntime.markAppReady(),
-  );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _browserRuntime.markAppReady();
+    // Load the interface sounds once the first frame is up, so launch never
+    // waits on audio.
+    unawaited(UiSound.preload());
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -950,20 +958,7 @@ class Gold {
   /// 1 - 1/phi. The "golden minor" — used for sheen height and split points.
   static const double minor = 0.381966011250105;
 
-  // --- Fibonacci spacing ladder ---------------------------------------------
-  // Whole steps are Fibonacci numbers. s16 and s27 are the sqrt(phi) half-steps
-  // between 13-21 and 21-34, needed when a full step would be too coarse.
-  static const double s2 = 2;
-  static const double s3 = 3;
-  static const double s5 = 5;
-  static const double s8 = 8;
-  static const double s13 = 13;
-  static const double s16 = 16;
-  static const double s21 = 21;
-  static const double s27 = 27;
-  static const double s34 = 34;
-  static const double s55 = 55;
-  static const double s89 = 89;
+  // Spacing lives in [Space] on the 4-point grid.
 
   // --- Corner radii (phi-stepped) -------------------------------------------
   static const double r8 = 8;
@@ -1026,15 +1021,30 @@ class Ink {
 
   static Color _c(int light, int dim) => Color(dark ? dim : light);
 
-  // Brand accent (the app's tint). Dark variants are lighter for contrast.
-  static Color get violet => _c(0xFF7C4DFF, 0xFF9B7DFF);
-  static Color get violetDeep => _c(0xFF5B2EE0, 0xFFA690FF);
-  static Color get violetDark => _c(0xFF4526B8, 0xFFC3B5FF);
+  // Brand: the VIMO Milk purples. Royal purple #5A2CA0 is the tint; deep
+  // purple #3B1D5D carries display text and the hero wash. Dark variants are
+  // lighter so tinted text keeps 4.5:1 or better on the dark canvas.
+  static Color get violet => _c(0xFF6A3CC0, 0xFFA98BF0);
+  static Color get violetDeep => _c(0xFF5A2CA0, 0xFFB79CF0);
+  static Color get violetDark => _c(0xFF3B1D5D, 0xFFCDB8FA);
 
   /// Tint used as a fill behind white labels (prominent buttons, selected
-  /// segments, switches, sent bubbles). Keeps white text at 4.5:1 or better in
-  /// both appearances, where [violetDeep] is tuned for tinted text instead.
-  static Color get tint => _c(0xFF5B2EE0, 0xFF7C4DFF);
+  /// segments, switches, sent bubbles): royal purple, white on it 9.1:1
+  /// (light) and 5.7:1 (dark). [violetDeep] is tuned for tinted text instead.
+  static Color get tint => _c(0xFF5A2CA0, 0xFF7A4BC9);
+
+  /// Deep purple, the brand's darkest tone (12.5:1 on the light canvas).
+  static Color get deepPurple => _c(0xFF3B1D5D, 0xFFCDB8FA);
+
+  /// VIMO orange. One meaning only: today and milk highlights (the today's
+  /// milk figure, its session dots, live/now markers). Never body text on
+  /// light surfaces (2.6:1); use [orangeText] for words.
+  static Color get orange => _c(0xFFFF7A00, 0xFFFF9A3C);
+  static Color get orangeText => _c(0xFFB35300, 0xFFFF9A3C);
+
+  /// Warm cream surface for friendly notices (birthday, tips). Text on it
+  /// uses [deepPurple] (12.6:1).
+  static Color get cream => _c(0xFFFFF3E0, 0xFF2B2016);
 
   // Labels: label, label, secondary label, tertiary label.
   static Color get navy => _c(0xFF000000, 0xFFFFFFFF);
@@ -1042,16 +1052,18 @@ class Ink {
   static Color get muted => _c(0xFF6C6C70, 0xFF98989F);
   static Color get faint => _c(0xFF8E8E93, 0xFF7C7C82);
 
-  // Grouped backgrounds: canvas (primary), surface (cells), surface2.
-  static Color get canvasTop => _c(0xFFF2F2F7, 0xFF000000);
+  // Grouped backgrounds: canvas (primary), surface (cells), surface2. The
+  // canvas is a soft lavender (light) and a purple-black (dark), so white
+  // cells read as frosted cards on the brand colour.
+  static Color get canvasTop => _c(0xFFF5F2FA, 0xFF0D0A12);
   static Color get canvasMid => canvasTop;
   static Color get canvasLow => canvasTop;
-  static Color get surface => _c(0xFFFFFFFF, 0xFF1C1C1E);
-  static Color get surface2 => _c(0xFFF2F2F7, 0xFF2C2C2E);
+  static Color get surface => _c(0xFFFFFFFF, 0xFF1C1824);
+  static Color get surface2 => _c(0xFFF0ECF7, 0xFF2A2533);
 
   /// Elevated surfaces (sheets, alerts) and the cells drawn on them.
-  static Color get sheet => _c(0xFFF2F2F7, 0xFF1C1C1E);
-  static Color get sheetCell => _c(0xFFFFFFFF, 0xFF2C2C2E);
+  static Color get sheet => _c(0xFFF5F2FA, 0xFF1C1824);
+  static Color get sheetCell => _c(0xFFFFFFFF, 0xFF2A2533);
 
   /// Tertiary system fill: text fields, segmented tracks, gray buttons.
   static Color get fill => _c(0x1F767680, 0x3D767680);
@@ -1059,19 +1071,20 @@ class Ink {
   static Color get separator => _c(0x4A3C3C43, 0xA6545458);
 
   /// Bars (navigation and tab bars) before the blur is applied.
-  static Color get bar => _c(0xD9F9F9F9, 0xD91C1C1E);
+  static Color get bar => _c(0xD9FAF8FD, 0xD91C1824);
 
   /// The regular Liquid Glass fill, laid over the blurred, saturated
   /// backdrop. Light enough for content colour to show through, dense enough
   /// to keep labels at 4.5:1.
-  static Color get glass => _c(0x85FCFCFE, 0x8C2A2A2D);
+  static Color get glass => _c(0x85FCFBFE, 0x8C2A2533);
 
-  /// Set by [VimoApp] from the browser's Reduce Transparency preference.
-  /// Liquid Glass becomes opaque while it is on.
+  /// Set by [VimoApp] from the browser's Reduce Transparency preference, the
+  /// in-app setting, or a low-end device. Liquid Glass becomes opaque while
+  /// it is on.
   static bool reduceTransparency = false;
 
   /// The brand tint on a light wash, used behind selected or featured items.
-  static Color get lavender => _c(0xFFEDE6FF, 0xFF2A2446);
+  static Color get lavender => _c(0xFFEEE7F9, 0xFF2A2140);
 
   // System tints.
   static Color get green => _c(0xFF34C759, 0xFF30D158);
@@ -1082,6 +1095,11 @@ class Ink {
   static Color get amberText => _c(0xFFC93400, 0xFFFFB340);
   static Color get greenText => _c(0xFF248A3D, 0xFF30D158);
   static Color get redText => _c(0xFFD70015, 0xFFFF6961);
+
+  // Brand artwork tones, identical in both appearances: washes over the
+  // hero illustration and text on gold keep their contrast in Dark Mode.
+  static const Color brandDeep = Color(0xFF3B1D5D);
+  static const Color brandRoyal = Color(0xFF5A2CA0);
 
   // Rank artwork (illustration colours, identical in both appearances).
   static const Color goldLight = Color(0xFFFBE08B);
@@ -1361,7 +1379,7 @@ class Glass extends StatelessWidget {
     this.blur = 21,
     this.tint,
     this.opacity = 0.48,
-    this.padding = const EdgeInsets.all(Gold.s21),
+    this.padding = const EdgeInsets.all(Space.s20),
     this.margin,
     this.elevation = 1,
     this.specular = 1,
@@ -1395,7 +1413,57 @@ class Glass extends StatelessWidget {
     if (onTap != null) {
       surface = Pressable(radius: radius, onTap: onTap, child: surface);
     }
-    return surface;
+    return _CardEntrance(child: surface);
+  }
+}
+
+/// Every card arrives rather than pops in: when it is first built (a page
+/// opening, a row scrolling into view) it fades up from 97% scale on a short
+/// settle curve. It runs once per card; Reduce Motion and the fast effects
+/// mode show cards in place.
+class _CardEntrance extends StatefulWidget {
+  final Widget child;
+  const _CardEntrance({required this.child});
+
+  @override
+  State<_CardEntrance> createState() => _CardEntranceState();
+}
+
+class _CardEntranceState extends State<_CardEntrance>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _c;
+  Animation<double>? _t;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_c != null || Motion.reduced(context) || DevicePerformance.fast) {
+      return;
+    }
+    final c = AnimationController(vsync: this, duration: Motion.medium);
+    _c = c;
+    _t = CurvedAnimation(parent: c, curve: Motion.settle);
+    c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The wrapper stays in the tree after the entrance so the card's own
+    // state (text fields, scroll) is never rebuilt from scratch.
+    final t = _t ?? kAlwaysCompleteAnimation;
+    return FadeTransition(
+      opacity: t,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: .97, end: 1).animate(t),
+        child: widget.child,
+      ),
+    );
   }
 }
 
@@ -1756,35 +1824,68 @@ class Pressable extends StatefulWidget {
   State<Pressable> createState() => _PressableState();
 }
 
-class _PressableState extends State<Pressable> {
+class _PressableState extends State<Pressable>
+    with SingleTickerProviderStateMixin {
   bool _down = false;
+
+  /// Press depth from 0 (rest) to 1 (fully pressed). Driven by a spring from
+  /// wherever it is, so a quick tap, a long hold and a press dragged away all
+  /// move continuously and can be interrupted at any point.
+  late final AnimationController _press = AnimationController.unbounded(
+    vsync: this,
+  );
 
   void _set(bool v) {
     if (widget.onTap == null || _down == v) return;
     setState(() => _down = v);
+    if (Motion.reduced(context)) {
+      _press.value = 0;
+      return;
+    }
+    // Pressing responds on touch-down with a snappy spring; release settles
+    // back on the house spring, carrying the current velocity.
+    _press.animateWith(
+      SpringSimulation(
+        v ? Motion.snappy : Motion.standard,
+        _press.value,
+        v ? 1 : 0,
+        _press.velocity,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    final reduce = MediaQuery.disableAnimationsOf(context);
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
+        onTap: enabled
+            ? () {
+                UiSound.play(UiSoundKind.tap);
+                widget.onTap!();
+              }
+            : null,
         onTapDown: enabled ? (_) => _set(true) : null,
         onTapUp: enabled ? (_) => _set(false) : null,
         onTapCancel: enabled ? () => _set(false) : null,
         child: AnimatedOpacity(
+          // The dim is the instant cue; it never waits for the spring.
           opacity: _down ? .72 : 1,
-          duration: _down ? Duration.zero : const Duration(milliseconds: 200),
-          child: AnimatedScale(
-            scale: _down && !reduce ? 1 - (0.02 * widget.depth) : 1,
-            duration: reduce
-                ? Duration.zero
-                : const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
+          duration: _down ? Duration.zero : Motion.short,
+          child: AnimatedBuilder(
+            animation: _press,
+            builder: (context, child) => Transform.scale(
+              scale: 1 - (0.025 * widget.depth) * _press.value.clamp(0, 1.2),
+              child: child,
+            ),
             child: widget.child,
           ),
         ),
@@ -1822,7 +1923,7 @@ class Shell extends StatelessWidget {
   const Shell({
     super.key,
     required this.child,
-    this.maxWidth = Gold.contentWidth + Gold.s55,
+    this.maxWidth = Gold.contentWidth + Space.s56,
     this.edgeToEdge = false,
   });
 
@@ -1843,7 +1944,7 @@ class Shell extends StatelessWidget {
 /// bar itself (reported through [MediaQuery] by [MainShell]) plus room for
 /// the floating Add button when the tab shows one.
 double floatingBarClearance(BuildContext context, {bool addButton = false}) =>
-    MediaQuery.paddingOf(context).bottom + (addButton ? Gold.s89 : Gold.s21);
+    MediaQuery.paddingOf(context).bottom + (addButton ? Space.s88 : Space.s20);
 
 // -----------------------------------------------------------------------------
 //  Motion
@@ -1874,6 +1975,12 @@ class LiquidRoute<T> extends PageRoute<T>
   bool get maintainState => true;
 
   @override
+  bool didPop(T? result) {
+    UiSound.play(UiSoundKind.whoosh);
+    return super.didPop(result);
+  }
+
+  @override
   Widget buildTransitions(
     BuildContext context,
     Animation<double> animation,
@@ -1892,8 +1999,10 @@ class LiquidRoute<T> extends PageRoute<T>
   }
 }
 
-Future<T?> push<T>(BuildContext context, Widget page) =>
-    Navigator.of(context).push<T>(LiquidRoute<T>(builder: (_) => page));
+Future<T?> push<T>(BuildContext context, Widget page) {
+  UiSound.play(UiSoundKind.whoosh);
+  return Navigator.of(context).push<T>(LiquidRoute<T>(builder: (_) => page));
+}
 
 Future<T?> guardedPush<T>(
   BuildContext context, {
@@ -1908,9 +2017,10 @@ Future<T?> guardedPush<T>(
   return push<T>(context, page);
 }
 
-/// Content appears in place, as in system apps. Lists and grids don't animate
-/// in on every visit (Apple: avoid motion on frequent interactions).
-class Reveal extends StatelessWidget {
+/// A screen's blocks settle in one after another as it opens (a short rise
+/// and fade, 40 ms apart, capped so the last block is in place within about
+/// half a second). Reduce Motion and the fast effects mode skip it.
+class Reveal extends StatefulWidget {
   final Widget child;
   final int index;
   final double rise;
@@ -1923,7 +2033,57 @@ class Reveal extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => child;
+  State<Reveal> createState() => _RevealState();
+}
+
+class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
+  AnimationController? _c;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_c != null || Motion.reduced(context) || DevicePerformance.fast) {
+      return;
+    }
+    // The stagger is the start of an interval on one controller, so no timer
+    // outlives the widget.
+    final delay = 40 * math.min(widget.index, 8).toInt();
+    final total = Motion.medium.inMilliseconds + delay;
+    _c = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: total),
+    )..forward();
+    _curve = CurvedAnimation(
+      parent: _c!,
+      curve: Interval(delay / total, 1, curve: Motion.settle),
+    );
+  }
+
+  CurvedAnimation? _curve;
+
+  @override
+  void dispose() {
+    _curve?.dispose();
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _curve;
+    if (t == null) return widget.child;
+    return FadeTransition(
+      opacity: t,
+      child: AnimatedBuilder(
+        animation: t,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(0, 16 * (1 - t.value)),
+          child: child,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
 }
 
 /// A number that cross-fades when it changes, so a stat updating never snaps.
@@ -1933,8 +2093,40 @@ class FlowText extends StatelessWidget {
 
   const FlowText(this.value, {super.key, this.style});
 
+  static final RegExp _number = RegExp(r'^(\D*?)(-?[\d,]*\.?\d+)(\D*)$');
+
   @override
   Widget build(BuildContext context) {
+    // A figure ("₹1,250", "12.5 L", "3") counts from its last value to the
+    // new one; anything else cross-fades.
+    final match = _number.firstMatch(value);
+    if (match != null) {
+      final prefix = match.group(1)!;
+      final digits = match.group(2)!;
+      final suffix = match.group(3)!;
+      final grouped = digits.contains(',');
+      final decimals = digits.contains('.') ? digits.split('.').last.length : 0;
+      final number = double.tryParse(digits.replaceAll(',', ''));
+      if (number != null) {
+        return CountUpText(
+          key: ValueKey<String>('$prefix|$suffix'),
+          value: number,
+          style: style,
+          format: (v) {
+            var text = v.toStringAsFixed(decimals);
+            if (grouped) {
+              final parts = text.split('.');
+              final whole = parts.first.replaceAllMapped(
+                RegExp(r'(\d)(?=(\d{3})+$)'),
+                (m) => '${m[1]},',
+              );
+              text = parts.length > 1 ? '$whole.${parts[1]}' : whole;
+            }
+            return '$prefix$text$suffix';
+          },
+        );
+      }
+    }
     return AnimatedSwitcher(
       duration: Gold.base,
       switchInCurve: Gold.ease,
@@ -2006,7 +2198,7 @@ class LiquidButton extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           height: height,
-          padding: const EdgeInsets.symmetric(horizontal: Gold.s16),
+          padding: const EdgeInsets.symmetric(horizontal: Space.s16),
           decoration: ShapeDecoration(
             shape: const StadiumBorder(),
             color: busy || enabled ? fill : Ink.fill,
@@ -2019,7 +2211,7 @@ class LiquidButton extends StatelessWidget {
                     children: [
                       if (icon != null) ...[
                         Icon(icon, color: foreground, size: 19),
-                        const SizedBox(width: Gold.s8),
+                        const SizedBox(width: Space.s8),
                       ],
                       Flexible(
                         child: AppText(
@@ -2071,8 +2263,8 @@ class GhostButton extends StatelessWidget {
         child: Container(
           constraints: const BoxConstraints(minHeight: 50),
           padding: const EdgeInsets.symmetric(
-            horizontal: Gold.s16,
-            vertical: Gold.s8,
+            horizontal: Space.s16,
+            vertical: Space.s8,
           ),
           decoration: ShapeDecoration(
             shape: const StadiumBorder(),
@@ -2084,7 +2276,7 @@ class GhostButton extends StatelessWidget {
             children: [
               if (icon != null) ...[
                 Icon(icon, size: 19, color: tint),
-                const SizedBox(width: Gold.s8),
+                const SizedBox(width: Space.s8),
               ],
               Flexible(
                 child: AppText(
@@ -2132,7 +2324,7 @@ class Segment extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
-            if (!active) HapticFeedback.selectionClick();
+            if (!active) selectionFeedback();
             onTap();
           },
           child: AnimatedContainer(
@@ -2140,11 +2332,11 @@ class Segment extends StatelessWidget {
                 ? Duration.zero
                 : const Duration(milliseconds: 220),
             curve: Curves.easeOut,
-            margin: const EdgeInsets.symmetric(horizontal: Gold.s3),
+            margin: const EdgeInsets.symmetric(horizontal: Space.s4),
             constraints: const BoxConstraints(minHeight: 44),
             padding: const EdgeInsets.symmetric(
-              vertical: Gold.s8,
-              horizontal: Gold.s8,
+              vertical: Space.s8,
+              horizontal: Space.s8,
             ),
             decoration: ShapeDecoration(
               shape: const StadiumBorder(),
@@ -2156,7 +2348,7 @@ class Segment extends StatelessWidget {
               children: [
                 if (icon != null) ...[
                   Icon(icon, size: 18, color: color),
-                  const SizedBox(width: Gold.s5),
+                  const SizedBox(width: Space.s4),
                 ],
                 Flexible(
                   child: AppText(
@@ -2255,14 +2447,14 @@ class LiquidSegmentBar extends StatelessWidget {
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
                               if (i != selected) {
-                                HapticFeedback.selectionClick();
+                                selectionFeedback();
                               }
                               onChanged(i);
                             },
                             child: Center(
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: Gold.s5,
+                                  horizontal: Space.s4,
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -2278,7 +2470,7 @@ class LiquidSegmentBar extends StatelessWidget {
                                             ? Colors.white
                                             : Ink.navy,
                                       ),
-                                      const SizedBox(width: Gold.s5),
+                                      const SizedBox(width: Space.s4),
                                     ],
                                     Flexible(
                                       child: AnimatedDefaultTextStyle(
@@ -2351,7 +2543,10 @@ InputDecoration fieldStyle(
         (icon == null
             ? null
             : Padding(
-                padding: const EdgeInsets.only(left: Gold.s13, right: Gold.s8),
+                padding: const EdgeInsets.only(
+                  left: Space.s12,
+                  right: Space.s8,
+                ),
                 child: Icon(icon, size: 20, color: Ink.violetDeep),
               )),
     prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
@@ -2364,8 +2559,8 @@ InputDecoration fieldStyle(
     filled: true,
     fillColor: Ink.fill,
     contentPadding: const EdgeInsets.symmetric(
-      horizontal: Gold.s16,
-      vertical: Gold.s16,
+      horizontal: Space.s16,
+      vertical: Space.s16,
     ),
     enabledBorder: border(Colors.transparent, 0),
     focusedBorder: border(Ink.violetDeep, 1.5),
@@ -2377,26 +2572,77 @@ InputDecoration fieldStyle(
 
 /// A brief status message in a floating capsule, in the inverse of the
 /// current appearance so it stands apart from content.
-void snack(BuildContext context, String message) {
-  final messenger = ScaffoldMessenger.maybeOf(context);
+/// What a snack bar reports: plain information, a completed action or a
+/// problem. Success and error carry a symbol (never colour alone), a haptic
+/// and a sound on the same frame.
+enum SnackTone { info, success, error }
+
+void snack(
+  BuildContext context,
+  String message, {
+  SnackTone tone = SnackTone.info,
+  String? actionLabel,
+  VoidCallback? onAction,
+  ScaffoldMessengerState? messenger,
+}) {
+  // [messenger] lets a page that is closing hand the message to the screen
+  // underneath (its own context is gone by the time the bar shows).
+  messenger ??= ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return;
   messenger.clearSnackBars();
+  final symbol = switch (tone) {
+    SnackTone.success => CupertinoIcons.checkmark_circle_fill,
+    SnackTone.error => CupertinoIcons.exclamationmark_circle_fill,
+    SnackTone.info => null,
+  };
+  final symbolColor = switch (tone) {
+    SnackTone.success => Ink.dark ? const Color(0xFF248A3D) : Ink.green,
+    _ => Ink.dark ? const Color(0xFFD70015) : Ink.red,
+  };
+  switch (tone) {
+    case SnackTone.success:
+      HapticFeedback.lightImpact();
+      UiSound.play(UiSoundKind.success);
+    case SnackTone.error:
+      HapticFeedback.mediumImpact();
+      UiSound.play(UiSoundKind.error);
+    case SnackTone.info:
+      break;
+  }
   messenger.showSnackBar(
     SnackBar(
-      content: AppText(
-        message,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
-          color: Ink.surface,
-        ),
+      content: Row(
+        children: [
+          if (symbol != null) ...[
+            Icon(symbol, size: 20, color: symbolColor),
+            const SizedBox(width: Space.s8),
+          ],
+          Expanded(
+            child: AppText(
+              message,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                color: Ink.surface,
+              ),
+            ),
+          ),
+        ],
       ),
+      action: actionLabel == null || onAction == null
+          ? null
+          : SnackBarAction(
+              label: ui(actionLabel),
+              textColor: Ink.dark ? Ink.brandRoyal : const Color(0xFFCDB8FA),
+              onPressed: onAction,
+            ),
       behavior: SnackBarBehavior.floating,
       backgroundColor: Ink.navy.withValues(alpha: 0.92),
       elevation: 0,
-      margin: const EdgeInsets.all(Gold.s16),
+      margin: const EdgeInsets.all(Space.s16),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      duration: const Duration(milliseconds: 3200),
+      // A snack bar with an action stays long enough to reach the action.
+      duration: Duration(milliseconds: onAction == null ? 3200 : 5000),
       shape: const StadiumBorder(),
     ),
   );
@@ -2450,7 +2696,7 @@ class _SheetPanel extends StatelessWidget {
   final Widget child;
   const _SheetPanel({required this.grabber, required this.child});
 
-  static const double _inset = Gold.s8;
+  static const double _inset = Space.s8;
   static const double _radius = Gold.r34;
 
   @override
@@ -2728,7 +2974,7 @@ class RanchIcon extends StatelessWidget {
   const RanchIcon({
     super.key,
     required this.type,
-    this.size = Gold.s21,
+    this.size = Space.s20,
     this._color,
     this.weight = 2.0,
   });
@@ -5294,7 +5540,7 @@ class BrowserNotificationService {
                   content: Row(
                     children: [
                       const Icon(CupertinoIcons.bell_fill, color: Colors.white),
-                      const SizedBox(width: Gold.s13),
+                      const SizedBox(width: Space.s12),
                       Expanded(
                         child: AppText(
                           '$title\n$message',
@@ -6059,7 +6305,7 @@ class CowMark extends StatelessWidget {
   final double size;
   final Color? _color;
   Color get color => _color ?? Ink.violetDeep;
-  const CowMark({super.key, this.size = Gold.s21, this._color});
+  const CowMark({super.key, this.size = Space.s20, this._color});
 
   @override
   Widget build(BuildContext context) {
@@ -6101,7 +6347,7 @@ class CowHoofIcon extends StatelessWidget {
   final Color? _color;
   Color get color => _color ?? Ink.violetDeep;
 
-  const CowHoofIcon({super.key, this.size = Gold.s34, this._color});
+  const CowHoofIcon({super.key, this.size = Space.s32, this._color});
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
@@ -6121,7 +6367,7 @@ class Rosette extends StatelessWidget {
   final int rank;
   final double size;
 
-  const Rosette({super.key, required this.rank, this.size = Gold.s34});
+  const Rosette({super.key, required this.rank, this.size = Space.s32});
 
   @override
   Widget build(BuildContext context) {
@@ -6602,7 +6848,7 @@ class AnimalAvatar extends StatefulWidget {
   const AnimalAvatar({
     super.key,
     required this.animal,
-    this.radius = Gold.s34,
+    this.radius = Space.s32,
     this.decorate = true,
   });
 
@@ -6707,7 +6953,7 @@ class _AnimalAvatarState extends State<AnimalAvatar>
                   color: (birthday ? Ink.violet : rankColor(rank)).withValues(
                     alpha: 0.38,
                   ),
-                  blurRadius: Gold.s21,
+                  blurRadius: Space.s20,
                   spreadRadius: 1,
                 ),
               ],
@@ -6719,8 +6965,8 @@ class _AnimalAvatarState extends State<AnimalAvatar>
               top: -2,
               left: -2,
               child: Container(
-                width: radius > 34 ? Gold.s21 : Gold.s13,
-                height: radius > 34 ? Gold.s21 : Gold.s13,
+                width: radius > 34 ? Space.s20 : Space.s12,
+                height: radius > 34 ? Space.s20 : Space.s12,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: const LinearGradient(
@@ -6760,7 +7006,7 @@ class SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: Gold.s13, left: Gold.s3),
+      padding: const EdgeInsets.only(bottom: Space.s12, left: Space.s4),
       child: Row(
         children: [
           Expanded(
@@ -6806,7 +7052,7 @@ Widget panel(String title, String emptyMessage, List<Widget> children) {
             color: Ink.navy,
           ),
         ),
-        const SizedBox(height: Gold.s8),
+        const SizedBox(height: Space.s8),
         if (children.isEmpty)
           AppText(
             emptyMessage,
@@ -6837,22 +7083,22 @@ class InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Glass(
       radius: Gold.r21,
-      padding: const EdgeInsets.all(Gold.s13),
+      padding: const EdgeInsets.all(Space.s12),
       elevation: 0.62,
       child: Row(
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
-                radius: Gold.concentric(Gold.r21, Gold.s13),
+                radius: Gold.concentric(Gold.r21, Space.s12),
               ),
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(icon, color: color, size: Gold.t21),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: AppText(
               title,
@@ -6897,24 +7143,24 @@ class DataCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Glass(
       radius: Gold.r27,
-      margin: const EdgeInsets.only(bottom: Gold.s13),
-      padding: const EdgeInsets.all(Gold.s16),
+      margin: const EdgeInsets.only(bottom: Space.s12),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.75,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
-                radius: Gold.concentric(Gold.r27, Gold.s16),
+                radius: Gold.concentric(Gold.r27, Space.s16),
               ),
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(icon, color: color, size: Gold.t21),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -6931,16 +7177,16 @@ class DataCard extends StatelessWidget {
                   subtitle,
                   style: TextStyle(color: Ink.muted, fontSize: Gold.t11),
                 ),
-                const SizedBox(height: Gold.s8),
+                const SizedBox(height: Space.s8),
                 Wrap(
-                  spacing: Gold.s8,
-                  runSpacing: Gold.s5,
+                  spacing: Space.s8,
+                  runSpacing: Space.s4,
                   children: [
                     for (final d in details)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: Gold.s8,
-                          vertical: Gold.s5,
+                          horizontal: Space.s8,
+                          vertical: Space.s4,
                         ),
                         decoration: ShapeDecoration(
                           shape: const SquircleBorder(radius: Gold.r8),
@@ -6990,8 +7236,8 @@ class SyncChip extends StatelessWidget {
 
         return Container(
           padding: const EdgeInsets.symmetric(
-            horizontal: Gold.s13,
-            vertical: Gold.s8,
+            horizontal: Space.s12,
+            vertical: Space.s8,
           ),
           decoration: ShapeDecoration(
             shape: SquircleBorder(
@@ -7014,7 +7260,7 @@ class SyncChip extends StatelessWidget {
                 size: Gold.t13,
                 color: fg,
               ),
-              const SizedBox(width: Gold.s5),
+              const SizedBox(width: Space.s4),
               Flexible(
                 child: AppText(
                   label,
@@ -7041,11 +7287,17 @@ class EmptyNote extends StatelessWidget {
   final String title;
   final String message;
 
+  /// Optional next step, shown as a tinted button under the message.
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
   const EmptyNote({
     super.key,
     required this.icon,
     required this.title,
     required this.message,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
@@ -7053,40 +7305,45 @@ class EmptyNote extends StatelessWidget {
     return Glass(
       radius: Gold.r27,
       padding: const EdgeInsets.symmetric(
-        horizontal: Gold.s21,
-        vertical: Gold.s34,
+        horizontal: Space.s20,
+        vertical: Space.s32,
       ),
       child: Column(
         children: [
           Container(
-            width: Gold.s55,
-            height: Gold.s55,
+            width: Space.s56,
+            height: Space.s56,
             decoration: ShapeDecoration(
               shape: const SquircleBorder(radius: Gold.r21),
               color: Ink.violet.withValues(alpha: 0.10),
             ),
             child: Icon(icon, color: Ink.violet, size: Gold.t27),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           AppText(
             title,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: Ink.navy,
-              fontSize: Gold.t16,
+              fontSize: 17,
             ),
           ),
           if (message.isNotEmpty) ...[
-            const SizedBox(height: Gold.s5),
+            const SizedBox(height: Space.s4),
             AppText(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Ink.muted,
-                fontSize: Gold.t13,
-                height: 1.4,
-              ),
+              style: TextStyle(color: Ink.muted, fontSize: 15, height: 1.4),
+            ),
+          ],
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: Space.s16),
+            TextButton.icon(
+              style: liquidActionStyle(),
+              onPressed: onAction,
+              icon: const Icon(CupertinoIcons.arrow_right, size: 17),
+              label: AppText(actionLabel!),
             ),
           ],
         ],
@@ -7818,10 +8075,10 @@ class _AccessLoadingScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            BrandMark(size: Gold.s89),
-            SizedBox(height: Gold.s21),
+            BrandMark(size: Space.s88),
+            SizedBox(height: Space.s20),
             CupertinoActivityIndicator(),
-            SizedBox(height: Gold.s13),
+            SizedBox(height: Space.s12),
             AppText(
               'Checking ranch access...',
               style: TextStyle(color: Ink.muted, fontWeight: FontWeight.w700),
@@ -7848,7 +8105,7 @@ class _AccessErrorScreen extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: Gold.contentWidth),
             child: Padding(
-              padding: const EdgeInsets.all(Gold.s21),
+              padding: const EdgeInsets.all(Space.s20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -7857,13 +8114,13 @@ class _AccessErrorScreen extends StatelessWidget {
                     title: 'Could not verify ranch access',
                     message: message,
                   ),
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   LiquidButton(
                     label: 'Try Again',
                     icon: CupertinoIcons.arrow_clockwise,
                     onPressed: onRetry,
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   GhostButton(
                     label: 'Sign Out',
                     icon: CupertinoIcons.square_arrow_right,
@@ -8135,14 +8392,14 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
               constraints: const BoxConstraints(maxWidth: Gold.contentWidth),
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(
-                  Gold.s21,
-                  Gold.s34,
-                  Gold.s21,
-                  Gold.s55,
+                  Space.s20,
+                  Space.s32,
+                  Space.s20,
+                  Space.s56,
                 ),
                 children: [
-                  const Center(child: BrandMark(size: Gold.s89)),
-                  const SizedBox(height: Gold.s13),
+                  const Center(child: BrandMark(size: Space.s88)),
+                  const SizedBox(height: Space.s12),
                   AppText(
                     bi('Set up your ranch', 'உங்கள் தொழுவத்தை அமைக்கவும்'),
                     textAlign: TextAlign.center,
@@ -8152,23 +8409,23 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: Gold.s5),
+                  const SizedBox(height: Space.s4),
                   AppText(
                     'Create a private ranch or request access to an existing one.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Ink.muted, height: 1.45),
                   ),
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   Glass(
                     radius: Gold.r21,
-                    padding: const EdgeInsets.all(Gold.s5),
+                    padding: const EdgeInsets.all(Space.s4),
                     child: LiquidSegmentBar(
                       labels: const ['Create New', 'Join Existing'],
                       index: _mode,
                       onChanged: (value) => setState(() => _mode = value),
                     ),
                   ),
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   if (_mode == 0) ...[
                     TextField(
                       controller: _farm,
@@ -8178,7 +8435,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                         icon: CupertinoIcons.house,
                       ),
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     TextField(
                       controller: _owner,
                       textCapitalization: TextCapitalization.words,
@@ -8187,7 +8444,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                         icon: CupertinoIcons.shield,
                       ),
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     TextField(
                       controller: _place,
                       textCapitalization: TextCapitalization.words,
@@ -8196,14 +8453,14 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                         icon: CupertinoIcons.location,
                       ),
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     Glass(
                       radius: Gold.r21,
                       padding: const EdgeInsets.fromLTRB(
-                        Gold.s16,
-                        Gold.s5,
-                        Gold.s8,
-                        Gold.s5,
+                        Space.s16,
+                        Space.s4,
+                        Space.s8,
+                        Space.s4,
                       ),
                       elevation: 0.5,
                       child: Row(
@@ -8213,7 +8470,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                             color: Ink.violet,
                             size: Gold.t21,
                           ),
-                          const SizedBox(width: Gold.s13),
+                          const SizedBox(width: Space.s12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -8239,7 +8496,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                               ],
                             ),
                           ),
-                          CupertinoSwitch(
+                          SoundSwitch(
                             value: _sameNumber && accountPhone.isNotEmpty,
                             activeTrackColor: Ink.tint,
                             onChanged: accountPhone.isEmpty
@@ -8255,7 +8512,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       child: _sameNumber && accountPhone.isNotEmpty
                           ? const SizedBox(width: double.infinity)
                           : Padding(
-                              padding: const EdgeInsets.only(top: Gold.s13),
+                              padding: const EdgeInsets.only(top: Space.s12),
                               child: TextField(
                                 controller: _ranchPhone,
                                 keyboardType: TextInputType.phone,
@@ -8266,7 +8523,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                               ),
                             ),
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     TextField(
                       controller: _createId,
                       autocorrect: false,
@@ -8278,7 +8535,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                       onChanged: _checkAvailability,
                     ),
                     if (_availabilityText.isNotEmpty) ...[
-                      const SizedBox(height: Gold.s8),
+                      const SizedBox(height: Space.s8),
                       AppText(
                         _availabilityText,
                         style: TextStyle(
@@ -8297,7 +8554,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                         icon: CupertinoIcons.person,
                       ),
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     TextField(
                       controller: _joinId,
                       autocorrect: false,
@@ -8319,7 +8576,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                         }
                       },
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     const EmptyNote(
                       icon: CupertinoIcons.checkmark_seal,
                       title: 'Admin approval required',
@@ -8327,7 +8584,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                           'The ranch admin will receive your request. Ranch data stays private until they approve it.',
                     ),
                   ],
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   LiquidButton(
                     label: _mode == 0 ? 'Create Ranch' : 'Request to Join',
                     icon: _mode == 0
@@ -8337,7 +8594,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                     onPressed: _submit,
                   ),
                   if (!widget.pageMode) ...[
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     GhostButton(
                       label: 'Sign Out',
                       icon: CupertinoIcons.square_arrow_right,
@@ -8467,15 +8724,15 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                     maxWidth: Gold.contentWidth,
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.all(Gold.s21),
+                    padding: const EdgeInsets.all(Space.s20),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const BrandMark(size: Gold.s89),
-                        const SizedBox(height: Gold.s21),
+                        const BrandMark(size: Space.s88),
+                        const SizedBox(height: Space.s20),
                         Glass(
                           radius: Gold.r34,
-                          padding: const EdgeInsets.all(Gold.s34),
+                          padding: const EdgeInsets.all(Space.s32),
                           child: Column(
                             children: [
                               Icon(
@@ -8483,7 +8740,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 color: Ink.violet,
                                 size: Gold.t34,
                               ),
-                              const SizedBox(height: Gold.s13),
+                              const SizedBox(height: Space.s12),
                               AppText(
                                 'Waiting for admin approval',
                                 textAlign: TextAlign.center,
@@ -8493,7 +8750,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              const SizedBox(height: Gold.s8),
+                              const SizedBox(height: Space.s8),
                               AppText(
                                 'Ranch ID  ${widget.ranch}',
                                 textAlign: TextAlign.center,
@@ -8502,7 +8759,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              const SizedBox(height: Gold.s8),
+                              const SizedBox(height: Space.s8),
                               AppText(
                                 'You will automatically enter the ranch after an admin accepts your request.',
                                 textAlign: TextAlign.center,
@@ -8512,11 +8769,11 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                 ),
                               ),
                               if (_activating) ...[
-                                const SizedBox(height: Gold.s21),
+                                const SizedBox(height: Space.s20),
                                 CupertinoActivityIndicator(),
                               ],
                               if (_activationError.isNotEmpty) ...[
-                                const SizedBox(height: Gold.s13),
+                                const SizedBox(height: Space.s12),
                                 AppText(
                                   _activationError,
                                   textAlign: TextAlign.center,
@@ -8525,7 +8782,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(height: Gold.s13),
+                                const SizedBox(height: Space.s12),
                                 GhostButton(
                                   label: 'Try Again',
                                   icon: CupertinoIcons.arrow_clockwise,
@@ -8539,7 +8796,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: Gold.s21),
+                        const SizedBox(height: Space.s20),
                         GhostButton(
                           label: 'Cancel Request',
                           icon: CupertinoIcons.xmark,
@@ -8565,7 +8822,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
 /// without adding another pale board, crop, or frame around the artwork.
 class BrandMark extends StatelessWidget {
   final double size;
-  const BrandMark({super.key, this.size = Gold.s55});
+  const BrandMark({super.key, this.size = Space.s56});
 
   @override
   Widget build(BuildContext context) {
@@ -8674,7 +8931,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      if (mounted)
+      if (mounted) {
         snack(
           context,
           bi(
@@ -8682,6 +8939,7 @@ class _LoginScreenState extends State<LoginScreen> {
             '$email-க்கு பாஸ்வேர்டு மாற்றும் இணைப்பு அனுப்பப்பட்டது',
           ),
         );
+      }
     } on FirebaseAuthException catch (e) {
       if (mounted) snack(context, _friendlyError(e));
     }
@@ -8731,15 +8989,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 constraints: const BoxConstraints(maxWidth: Gold.contentWidth),
                 child: ListView(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: Gold.s21,
-                    vertical: Gold.s34,
+                    horizontal: Space.s20,
+                    vertical: Space.s32,
                   ),
                   children: [
                     const Reveal(
                       index: 0,
-                      child: Center(child: BrandMark(size: Gold.s89)),
+                      child: Center(child: BrandMark(size: Space.s88)),
                     ),
-                    const SizedBox(height: Gold.s21),
+                    const SizedBox(height: Space.s20),
                     Reveal(
                       index: 1,
                       child: Column(
@@ -8767,12 +9025,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: Gold.s34),
+                    const SizedBox(height: Space.s32),
                     Reveal(
                       index: 2,
                       child: Glass(
                         radius: Gold.r34,
-                        padding: const EdgeInsets.all(Gold.s21),
+                        padding: const EdgeInsets.all(Space.s20),
                         elevation: 1.3,
                         child: Column(
                           children: [
@@ -8784,7 +9042,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 color: Ink.navy,
                               ),
                             ),
-                            const SizedBox(height: Gold.s3),
+                            const SizedBox(height: Space.s4),
                             AppText(
                               'Sign in to continue',
                               style: TextStyle(
@@ -8792,7 +9050,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 fontSize: Gold.t13,
                               ),
                             ),
-                            const SizedBox(height: Gold.s21),
+                            const SizedBox(height: Space.s20),
                             TextField(
                               controller: _email,
                               keyboardType: TextInputType.emailAddress,
@@ -8803,7 +9061,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 icon: CupertinoIcons.mail,
                               ),
                             ),
-                            const SizedBox(height: Gold.s13),
+                            const SizedBox(height: Space.s12),
                             TextField(
                               controller: _password,
                               obscureText: _obscure,
@@ -8814,7 +9072,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 'Password',
                                 icon: CupertinoIcons.lock,
                                 suffix: IconButton(
-                                  splashRadius: Gold.s21,
+                                  splashRadius: Space.s20,
                                   icon: Icon(
                                     _obscure
                                         ? CupertinoIcons.eye
@@ -8827,7 +9085,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: Gold.s5),
+                            const SizedBox(height: Space.s4),
                             Row(
                               children: [
                                 ChoiceChip(
@@ -8860,7 +9118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: Gold.s21),
+                            const SizedBox(height: Space.s20),
                             LiquidButton(
                               label: 'Sign In',
                               busy: _busy,
@@ -8870,7 +9128,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: Gold.s21),
+                    const SizedBox(height: Space.s20),
                     Reveal(
                       index: 3,
                       child: Row(
@@ -8971,11 +9229,36 @@ String notificationText(Map<String, dynamic> row, String field) {
 class RanchNotificationService {
   const RanchNotificationService._();
   static Timer? _timer;
+  static StreamSubscription<BoxEvent>? _arrivals;
 
   static void start() {
     _timer?.cancel();
     _tick();
     _timer = Timer.periodic(const Duration(minutes: 1), (_) => _tick());
+    _arrivals?.cancel();
+    _arrivals = Hive.box('notifications').watch().listen(_chimeIfNew);
+  }
+
+  /// A soft chime when a notification meant for this person arrives: one
+  /// from a family member (via sync), a join request or the daily reminder.
+  /// Notes this person creates by their own action stay silent; the action
+  /// already confirmed itself.
+  static void _chimeIfNew(BoxEvent event) {
+    if (event.deleted || event.value is! Map) return;
+    final row = asMap(event.value);
+    final created = DateTime.tryParse(txt(row, 'createdAt'));
+    if (created == null ||
+        DateTime.now().difference(created) > const Duration(minutes: 2)) {
+      return;
+    }
+    final me = currentUserName();
+    final fromSomeoneElse = txt(row, 'addedBy') != me;
+    final prompt = const {'join', 'reminder'}.contains(txt(row, 'type'));
+    if ((fromSomeoneElse || prompt) &&
+        notificationForMe(row, me) &&
+        !notificationRead(row)) {
+      UiSound.play(UiSoundKind.notification);
+    }
   }
 
   static Future<void> _tick() async {
@@ -9289,7 +9572,7 @@ class NotificationHistoryScreen extends StatelessWidget {
                   ),
                 )
               : ListView(
-                  padding: const EdgeInsets.all(Gold.s21),
+                  padding: const EdgeInsets.all(Space.s20),
                   children: [
                     for (final e in entries)
                       Builder(
@@ -9297,8 +9580,8 @@ class NotificationHistoryScreen extends StatelessWidget {
                           final n = asMap(e.value);
                           return Glass(
                             radius: Gold.r21,
-                            margin: const EdgeInsets.only(bottom: Gold.s13),
-                            padding: const EdgeInsets.all(Gold.s13),
+                            margin: const EdgeInsets.only(bottom: Space.s12),
+                            padding: const EdgeInsets.all(Space.s12),
                             onTap: () async {
                               final read = List<String>.from(
                                 n['readBy'] is List ? n['readBy'] : [],
@@ -9326,7 +9609,7 @@ class NotificationHistoryScreen extends StatelessWidget {
                                       ? Ink.faint
                                       : Ink.violetDeep,
                                 ),
-                                const SizedBox(width: Gold.s13),
+                                const SizedBox(width: Space.s12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -9766,10 +10049,8 @@ class _RecentEntryCorrectionsState extends State<RecentEntryCorrections> {
                       : balance - old + quantity;
                   if (newBalance < 0) {
                     updateDialog(
-                      () => error = bi(
-                        'Insufficient stock',
-                        'இருப்பு போதவில்லை',
-                      ),
+                      () =>
+                          error = bi('Insufficient stock', 'இருப்பு போதவில்லை'),
                     );
                     return;
                   }
@@ -9927,7 +10208,7 @@ class _MainShellState extends State<MainShell> {
 
   /// Height reserved under every scroll view so the floating bar and the action
   /// button never sit on top of content.
-  static const double bottomInset = Gold.s89 + Gold.s34;
+  static const double bottomInset = Space.s88 + Space.s32;
 
   void _openCard(String type) {
     switch (type) {
@@ -10016,6 +10297,7 @@ class _MainShellState extends State<MainShell> {
         extendBody: true,
         backgroundColor: Ink.canvasTop,
         floatingActionButtonAnimator: const _GlassFabAnimator(),
+        floatingActionButtonLocation: const _ColumnFabLocation(),
         appBar: AppBar(
           toolbarHeight: 60,
           leadingWidth: 64,
@@ -10102,7 +10384,10 @@ class _MainShellState extends State<MainShell> {
                 index: tab,
                 children: [
                   for (var i = 0; i < pages.length; i++)
-                    TickerMode(enabled: i == tab, child: pages[i]),
+                    TickerMode(
+                      enabled: i == tab,
+                      child: _TabEntrance(active: i == tab, child: pages[i]),
+                    ),
                 ],
               ),
               _ScrollEdgeEffect(visible: _topEdge),
@@ -10134,13 +10419,18 @@ class _MainShellState extends State<MainShell> {
         bottomNavigationBar: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(Gold.s21, 0, Gold.s21, Gold.s13),
+            padding: const EdgeInsets.fromLTRB(
+              Space.s20,
+              0,
+              Space.s20,
+              Space.s12,
+            ),
             child: Align(
               alignment: Alignment.bottomCenter,
               heightFactor: 1,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
-                  maxWidth: Gold.contentWidth + Gold.s89,
+                  maxWidth: Gold.contentWidth + Space.s88,
                 ),
                 child: _NavBar(
                   index: tab,
@@ -10163,6 +10453,58 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+/// A tab page settles in when it is chosen: a quick fade with a short rise,
+/// so switching tabs reads as moving to a place rather than a cut. The page
+/// keeps its state and scroll position. Reduce Motion switches instantly.
+class _TabEntrance extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const _TabEntrance({required this.active, required this.child});
+
+  @override
+  State<_TabEntrance> createState() => _TabEntranceState();
+}
+
+class _TabEntranceState extends State<_TabEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+    value: 1,
+  );
+  late final Animation<double> _t = CurvedAnimation(
+    parent: _c,
+    curve: Motion.settle,
+  );
+
+  @override
+  void didUpdateWidget(_TabEntrance old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active && !Motion.reduced(context)) {
+      _c.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: _t,
+    child: AnimatedBuilder(
+      animation: _t,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, 10 * (1 - _t.value)),
+        child: child,
+      ),
+      child: widget.child,
+    ),
+  );
+}
+
 /// The scroll edge effect under the title bar: once content scrolls, it
 /// dissolves into the background over a short band instead of being cut off
 /// by a hard line, which keeps the title legible without a divider.
@@ -10175,7 +10517,7 @@ class _ScrollEdgeEffect extends StatelessWidget {
     top: 0,
     left: 0,
     right: 0,
-    height: Gold.s21,
+    height: Space.s20,
     child: IgnorePointer(
       child: ValueListenableBuilder<bool>(
         valueListenable: visible,
@@ -10231,6 +10573,25 @@ class _GlassAddButton extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The Add button belongs to the content it adds to. On a phone it sits at
+/// the trailing edge as usual; on a wide window, where content is a centred
+/// column, it moves in beside that column instead of the far window edge.
+class _ColumnFabLocation extends FloatingActionButtonLocation {
+  const _ColumnFabLocation();
+
+  /// Half the widest tab column ([Shell] default) plus the gap beside it.
+  static const double _columnHalf = (Gold.contentWidth + Space.s56) / 2;
+
+  @override
+  Offset getOffset(ScaffoldPrelayoutGeometry geometry) {
+    final standard = FloatingActionButtonLocation.endFloat.getOffset(geometry);
+    final width = geometry.scaffoldSize.width;
+    final beside = width / 2 + _columnHalf + Space.s16;
+    if (width < 720 || beside > standard.dx) return standard;
+    return Offset(beside, standard.dy);
+  }
 }
 
 /// Shows and hides the Add button between tabs with a scale and fade only;
@@ -10316,7 +10677,7 @@ class _NavBarState extends State<_NavBar> with SingleTickerProviderStateMixin {
   }
 
   void _select(int i) {
-    if (i != _selected) HapticFeedback.selectionClick();
+    if (i != _selected) selectionFeedback();
     widget.onChanged(i);
     _glide(i);
   }
@@ -10330,7 +10691,7 @@ class _NavBarState extends State<_NavBar> with SingleTickerProviderStateMixin {
     _lens.value = _positionAt(dx);
     final over = _lens.value.round();
     if (over != _scrub) {
-      if (_scrub != null) HapticFeedback.selectionClick();
+      if (_scrub != null) selectionFeedback();
       setState(() => _scrub = over);
     }
   }
@@ -10477,6 +10838,48 @@ class _NavItem {
   const _NavItem(this.id, this.label, this.active, this.idle);
 }
 
+/// The chosen tab's symbol gives a small spring pop, like a pressed key
+/// returning. Reduce Motion keeps it still.
+class _SelectPop extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const _SelectPop({required this.active, required this.child});
+
+  @override
+  State<_SelectPop> createState() => _SelectPopState();
+}
+
+class _SelectPopState extends State<_SelectPop>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _scale = AnimationController.unbounded(
+    vsync: this,
+    value: 1,
+  );
+
+  @override
+  void didUpdateWidget(_SelectPop old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active && !Motion.reduced(context)) {
+      _scale.value = .82;
+      _scale.animateWith(SpringSimulation(Motion.momentum, .82, 1, 0));
+    }
+  }
+
+  @override
+  void dispose() {
+    _scale.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _scale,
+    builder: (context, child) =>
+        Transform.scale(scale: _scale.value, child: child),
+    child: widget.child,
+  );
+}
+
 class _NavCell extends StatelessWidget {
   final _NavItem item;
   final bool active;
@@ -10505,15 +10908,18 @@ class _NavCell extends StatelessWidget {
           children: [
             SizedBox(
               height: 28,
-              child: item.id == 'Vendor' && !milkShopMode
-                  ? MilkVendorIcon(size: 30, color: color)
-                  : item.active == null
-                  ? CowHoofIcon(size: 26, color: color)
-                  : Icon(
-                      active ? item.active : item.idle,
-                      size: 24,
-                      color: color,
-                    ),
+              child: _SelectPop(
+                active: active,
+                child: item.id == 'Vendor' && !milkShopMode
+                    ? MilkVendorIcon(size: 30, color: color)
+                    : item.active == null
+                    ? CowHoofIcon(size: 26, color: color)
+                    : Icon(
+                        active ? item.active : item.idle,
+                        size: 24,
+                        color: color,
+                      ),
+              ),
             ),
             const SizedBox(height: 2),
             Padding(
@@ -10577,20 +10983,20 @@ class DashboardScreen extends StatelessWidget {
       _StatTile(
         type: 'cows',
         label: 'Cows',
-        value: '${animalsBy('cow').length}',
+        number: animalsBy('cow').length.toDouble(),
         icon: const CowMark(size: 29),
-        ghost: const CowMark(size: Gold.s89),
+        ghost: const CowMark(size: Space.s88),
         accent: Ink.violet,
         onTap: onOpenCard,
       ),
       _StatTile(
         type: 'sell',
         label: 'Sell',
-        value: '${saleRows().length}',
+        number: saleRows().length.toDouble(),
         icon: Icon(CupertinoIcons.creditcard_fill, size: 29, color: Ink.green),
         ghost: Icon(
           CupertinoIcons.creditcard_fill,
-          size: Gold.s89,
+          size: Space.s88,
           color: Ink.green,
         ),
         accent: Ink.green,
@@ -10599,20 +11005,20 @@ class DashboardScreen extends StatelessWidget {
       _StatTile(
         type: 'calves',
         label: 'Calves',
-        value: '${animalsBy('calf').length}',
+        number: animalsBy('calf').length.toDouble(),
         icon: CowMark(size: 29, color: Ink.amber),
-        ghost: CowMark(size: Gold.s89, color: Ink.amber),
+        ghost: CowMark(size: Space.s88, color: Ink.amber),
         accent: Ink.amber,
         onTap: onOpenCard,
       ),
       _StatTile(
         type: 'stock',
         label: 'Stock',
-        value: '${stockRows().length}',
+        number: stockRows().length.toDouble(),
         icon: Icon(CupertinoIcons.cube_box_fill, size: 29, color: Ink.blue),
         ghost: Icon(
           CupertinoIcons.cube_box_fill,
-          size: Gold.s89,
+          size: Space.s88,
           color: Ink.blue,
         ),
         accent: Ink.blue,
@@ -10621,11 +11027,11 @@ class DashboardScreen extends StatelessWidget {
       _StatTile(
         type: 'pregnant',
         label: 'Pregnant Cows',
-        value: '${pregnantCowCount()}',
+        number: pregnantCowCount().toDouble(),
         icon: Icon(CupertinoIcons.heart, size: 29, color: Ink.violetDeep),
         ghost: Icon(
           CupertinoIcons.heart,
-          size: Gold.s89,
+          size: Space.s88,
           color: Ink.violetDeep,
         ),
         accent: Ink.violetDeep,
@@ -10635,16 +11041,16 @@ class DashboardScreen extends StatelessWidget {
         type: 'reports',
         label: 'Reports',
         // This month's result, not a count that repeats the Sell tile.
-        value: money(
-          reportDetailRows(
-                'income',
-                'This Month',
-              ).fold(0.0, (t, r) => t + numv(r, '_value')) -
-              reportDetailRows(
-                'expense',
-                'This Month',
-              ).fold(0.0, (t, r) => t + numv(r, '_value')),
-        ),
+        format: money,
+        number:
+            (reportDetailRows(
+              'income',
+              'This Month',
+            ).fold(0.0, (t, r) => t + numv(r, '_value')) -
+            reportDetailRows(
+              'expense',
+              'This Month',
+            ).fold(0.0, (t, r) => t + numv(r, '_value'))),
         icon: Icon(
           CupertinoIcons.chart_bar_alt_fill,
           size: 29,
@@ -10652,7 +11058,7 @@ class DashboardScreen extends StatelessWidget {
         ),
         ghost: Icon(
           CupertinoIcons.chart_bar_alt_fill,
-          size: Gold.s89,
+          size: Space.s88,
           color: Ink.amber,
         ),
         accent: Ink.amber,
@@ -10664,74 +11070,112 @@ class DashboardScreen extends StatelessWidget {
 
     return Shell(
       edgeToEdge: true,
-      child: ListView(
-        padding: EdgeInsets.fromLTRB(
-          Gold.s21,
-          Gold.s21,
-          Gold.s21,
-          floatingBarClearance(context, addButton: true),
+      child: RefreshIndicator.adaptive(
+        color: Ink.violetDeep,
+        onRefresh: () => _pullToSync(context),
+        child: _dashboardList(context, birthday, tiles, activity),
+      ),
+    );
+  }
+
+  /// Pull to refresh asks for a sync now and says how it went.
+  static Future<void> _pullToSync(BuildContext context) async {
+    try {
+      await AutoSyncService.run(reason: 'manual');
+      if (context.mounted) {
+        snack(
+          context,
+          bi('Up to date', 'புதுப்பிக்கப்பட்டது'),
+          tone: SnackTone.success,
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        final text = '$error'.replaceFirst('Bad state: ', '');
+        snack(context, text, tone: SnackTone.error);
+      }
+    }
+  }
+
+  Widget _dashboardList(
+    BuildContext context,
+    Map<String, dynamic>? birthday,
+    List<Widget> tiles,
+    List<Map<String, dynamic>> activity,
+  ) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        Space.s20,
+        Space.s20,
+        Space.s20,
+        floatingBarClearance(context, addButton: true),
+      ),
+      children: [
+        if (canManageRanch) ...[
+          const PendingJoinRequestsBanner(),
+          const SizedBox(height: Space.s12),
+        ],
+        Reveal(
+          index: 0,
+          child: birthday == null
+              ? const _RanchHero()
+              : _BirthdayHero(animal: birthday),
         ),
-        children: [
-          if (canManageRanch) ...[
-            const PendingJoinRequestsBanner(),
-            const SizedBox(height: Gold.s13),
-          ],
+        const SizedBox(height: Space.s16),
+        TodayMilkCard(
+          onOpen: () => onOpenCard('milk'),
+          onAdd: () => push(context, const AddEntryScreen()),
+        ),
+        const SizedBox(height: Space.s12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 800 ? 3 : 2;
+            return GridView.builder(
+              itemCount: tiles.length,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                mainAxisSpacing: Space.s12,
+                crossAxisSpacing: Space.s12,
+                // Fixed chrome plus the label and value lines, which grow
+                // with the person's text size.
+                mainAxisExtent:
+                    72 + 50 * MediaQuery.textScalerOf(context).scale(1),
+              ),
+              itemBuilder: (_, i) => Reveal(index: 1 + i, child: tiles[i]),
+            );
+          },
+        ),
+        if (activity.isNotEmpty) ...[
+          const SizedBox(height: Space.s32),
+          Reveal(index: 7, child: const SectionTitle(title: 'Recent Activity')),
           Reveal(
-            index: 0,
-            child: birthday == null
-                ? const _RanchHero()
-                : _BirthdayHero(animal: birthday),
-          ),
-          const SizedBox(height: Gold.s21),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 800 ? 3 : 2;
-              return GridView.builder(
-                itemCount: tiles.length,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  mainAxisSpacing: Gold.s13,
-                  crossAxisSpacing: Gold.s13,
-                  mainAxisExtent: 142,
-                ),
-                itemBuilder: (_, i) => Reveal(index: 1 + i, child: tiles[i]),
-              );
-            },
-          ),
-          if (activity.isNotEmpty) ...[
-            const SizedBox(height: Gold.s34),
-            Reveal(
-              index: 7,
-              child: const SectionTitle(title: 'Recent Activity'),
-            ),
-            Reveal(
-              index: 8,
-              child: Glass(
-                radius: Gold.r27,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Gold.s16,
-                  vertical: Gold.s8,
-                ),
-                child: Column(
-                  children: [
-                    for (int i = 0; i < activity.length; i++) ...[
-                      if (i > 0)
-                        Divider(
-                          height: Gold.s16,
-                          thickness: 1,
-                          color: Ink.violet.withValues(alpha: 0.08),
-                        ),
-                      _ActivityRow(entry: activity[i]),
-                    ],
+            index: 8,
+            child: Glass(
+              radius: Gold.r27,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.s16,
+                vertical: Space.s8,
+              ),
+              child: Column(
+                children: [
+                  for (int i = 0; i < activity.length; i++) ...[
+                    if (i > 0)
+                      Divider(
+                        height: Space.s16,
+                        thickness: 1,
+                        color: Ink.violet.withValues(alpha: 0.08),
+                      ),
+                    _ActivityRow(entry: activity[i]),
                   ],
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 }
@@ -10751,12 +11195,12 @@ class PendingJoinRequestsBanner extends StatelessWidget {
         if (snapshot.hasError) {
           return Glass(
             radius: Gold.r21,
-            padding: const EdgeInsets.all(Gold.s13),
+            padding: const EdgeInsets.all(Space.s12),
             onTap: () => push(context, const FamilyUsersScreen()),
             child: Row(
               children: [
                 Icon(CupertinoIcons.exclamationmark_circle, color: Ink.amber),
-                SizedBox(width: Gold.s13),
+                SizedBox(width: Space.s12),
                 Expanded(
                   child: AppText(
                     'Could not check join requests — tap to retry',
@@ -10778,7 +11222,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
         if (count == 0) return const SizedBox.shrink();
         return Glass(
           radius: Gold.r21,
-          padding: const EdgeInsets.all(Gold.s13),
+          padding: const EdgeInsets.all(Space.s12),
           gradient: LinearGradient(
             colors: [
               Ink.violet.withValues(alpha: 0.18),
@@ -10792,7 +11236,7 @@ class PendingJoinRequestsBanner extends StatelessWidget {
                 CupertinoIcons.person_badge_plus_fill,
                 color: Ink.violetDeep,
               ),
-              const SizedBox(width: Gold.s13),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: AppText(
                   // Whole sentences, so every language can phrase them.
@@ -10845,12 +11289,12 @@ class _ActivityRow extends StatelessWidget {
         canCorrectEntry(record);
     final canNote = record.isNotEmpty && canAddEntryNote(record);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Gold.s5),
+      padding: const EdgeInsets.symmetric(vertical: Space.s4),
       child: Row(
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: const SquircleBorder(radius: Gold.r13),
               color: color.withValues(alpha: 0.13),
@@ -10861,7 +11305,7 @@ class _ActivityRow extends StatelessWidget {
               color: color,
             ),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -10880,7 +11324,7 @@ class _ActivityRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: Gold.s8),
+                    const SizedBox(width: Space.s8),
                     AppText(
                       '${entry['value']}',
                       style: TextStyle(
@@ -10927,7 +11371,7 @@ class _ActivityRow extends StatelessWidget {
                 child: Row(
                   children: [
                     const Icon(CupertinoIcons.pencil, size: 22),
-                    const SizedBox(width: Gold.s13),
+                    const SizedBox(width: Space.s12),
                     Expanded(
                       child: AppText(
                         editable
@@ -10945,7 +11389,7 @@ class _ActivityRow extends StatelessWidget {
                 child: Row(
                   children: [
                     const Icon(CupertinoIcons.doc_text, size: 22),
-                    const SizedBox(width: Gold.s13),
+                    const SizedBox(width: Space.s12),
                     AppText(tamilUi ? 'Note சேர்க்க' : 'Add note'),
                   ],
                 ),
@@ -10971,9 +11415,11 @@ class _RanchHero extends StatelessWidget {
           shape: const SquircleBorder(radius: Gold.r34),
           shadows: [
             BoxShadow(
-              color: Ink.violetDeep.withValues(alpha: 0.28),
-              blurRadius: Gold.s34,
-              offset: const Offset(0, Gold.s16),
+              color: Ink.dark
+                  ? Colors.black.withValues(alpha: .5)
+                  : Ink.brandRoyal.withValues(alpha: 0.22),
+              blurRadius: Space.s32,
+              offset: const Offset(0, Space.s16),
             ),
           ],
         ),
@@ -10995,6 +11441,8 @@ class _RanchHero extends StatelessWidget {
                   filterQuality: FilterQuality.high,
                   gaplessPlayback: true,
                 ),
+                // Dark Mode: dim the light line art so the hero never glares.
+                if (Ink.dark) const ColoredBox(color: Color(0x52000000)),
                 // Legibility wash: opaque on the text side, clear on the art.
                 DecoratedBox(
                   decoration: BoxDecoration(
@@ -11002,44 +11450,52 @@ class _RanchHero extends StatelessWidget {
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                       colors: [
-                        Ink.violetDeep.withValues(alpha: 0.94),
-                        Ink.violet.withValues(alpha: 0.58),
-                        Ink.violet.withValues(alpha: 0.06),
+                        Ink.brandDeep.withValues(alpha: 0.94),
+                        Ink.brandRoyal.withValues(alpha: 0.60),
+                        Ink.brandRoyal.withValues(alpha: Ink.dark ? .34 : .06),
                       ],
                       stops: const [0.0, Gold.minor, Gold.invPhi],
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(Gold.s21),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AppText(
-                        farmName(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          height: 1.1,
-                          letterSpacing: -0.5,
+                  padding: const EdgeInsets.all(Space.s20),
+                  // With very large text (or long Tamil lines) on a small
+                  // phone the words shrink to fit the card instead of being
+                  // cut off.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AppText(
+                          farmName(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                            letterSpacing: -0.5,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: Gold.s3),
-                      const AppText(
-                        'Manage. Care. Grow.',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
+                        const SizedBox(height: Space.s4),
+                        const AppText(
+                          'Manage. Care. Grow.',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: Gold.t13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: Gold.s13),
-                      const SyncChip(light: true),
-                    ],
+                        const SizedBox(height: Space.s12),
+                        const SyncChip(light: true),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -11096,9 +11552,11 @@ class _BirthdayHeroState extends State<_BirthdayHero>
             shape: const SquircleBorder(radius: Gold.r34),
             shadows: [
               BoxShadow(
-                color: Ink.violet.withValues(alpha: 0.34),
-                blurRadius: Gold.s34,
-                offset: const Offset(0, Gold.s16),
+                color: Ink.dark
+                    ? Colors.black.withValues(alpha: .5)
+                    : Ink.brandRoyal.withValues(alpha: 0.26),
+                blurRadius: Space.s32,
+                offset: const Offset(0, Space.s16),
               ),
             ],
           ),
@@ -11122,15 +11580,16 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                     alignment: Alignment.centerRight,
                     gaplessPlayback: true,
                   ),
+                if (Ink.dark) const ColoredBox(color: Color(0x52000000)),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                       colors: [
-                        Ink.violetDeep.withValues(alpha: 0.95),
-                        Ink.violet.withValues(alpha: 0.46),
-                        Ink.violet.withValues(alpha: 0.0),
+                        Ink.brandDeep.withValues(alpha: 0.95),
+                        Ink.brandRoyal.withValues(alpha: 0.50),
+                        Ink.brandRoyal.withValues(alpha: Ink.dark ? .30 : 0),
                       ],
                       stops: const [0.0, 0.52, 1.0],
                     ),
@@ -11148,85 +11607,93 @@ class _BirthdayHeroState extends State<_BirthdayHero>
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(Gold.s21),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Gold.s13,
-                          vertical: Gold.s5,
-                        ),
-                        decoration: ShapeDecoration(
-                          shape: const SquircleBorder(radius: Gold.r13),
-                          gradient: const LinearGradient(
-                            colors: [Ink.goldLight, Ink.goldBase],
+                  padding: const EdgeInsets.all(Space.s20),
+                  // With very large text (or long Tamil lines) on a small
+                  // phone the words shrink to fit the card instead of being
+                  // cut off.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: Space.s12,
+                            vertical: Space.s4,
+                          ),
+                          decoration: ShapeDecoration(
+                            shape: const SquircleBorder(radius: Gold.r13),
+                            gradient: const LinearGradient(
+                              colors: [Ink.goldLight, Ink.goldBase],
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.cake_rounded,
+                                size: Gold.t13,
+                                color: Ink.brandDeep,
+                              ),
+                              const SizedBox(width: Space.s4),
+                              const AppText(
+                                'Happy Birthday!',
+                                style: TextStyle(
+                                  color: Ink.brandDeep,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.cake_rounded,
-                              size: Gold.t13,
-                              color: Ink.violetDark,
-                            ),
-                            SizedBox(width: Gold.s5),
-                            AppText(
-                              'Happy Birthday!',
-                              style: TextStyle(
-                                color: Ink.violetDark,
-                                fontWeight: FontWeight.w700,
-                                fontSize: Gold.t11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: Gold.s8),
-                      AppText(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          height: 1.1,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      AppText(
-                        years > 0
-                            ? bi(
-                                'Turns $years today',
-                                'இன்று $years வயது ஆகிறது',
-                              )
-                            : bi(
-                                'Born today \u2022 welcome',
-                                'இன்று பிறந்தது \u2022 வரவேற்கிறோம்',
-                              ),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: Gold.t13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (others > 0) ...[
-                        const SizedBox(height: Gold.s8),
+                        const SizedBox(height: Space.s8),
                         AppText(
-                          others == 1
-                              ? '+1 more birthday today'
-                              : '+$others more birthdays today',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.86),
-                            fontSize: Gold.t11,
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
                             fontWeight: FontWeight.w700,
+                            height: 1.1,
+                            letterSpacing: -0.5,
                           ),
                         ),
+                        AppText(
+                          years > 0
+                              ? bi(
+                                  'Turns $years today',
+                                  'இன்று $years வயது ஆகிறது',
+                                )
+                              : bi(
+                                  'Born today \u2022 welcome',
+                                  'இன்று பிறந்தது \u2022 வரவேற்கிறோம்',
+                                ),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: Gold.t13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (others > 0) ...[
+                          const SizedBox(height: Space.s8),
+                          AppText(
+                            others == 1
+                                ? '+1 more birthday today'
+                                : '+$others more birthdays today',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.86),
+                              fontSize: Gold.t11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ],
@@ -11284,7 +11751,8 @@ class _ConfettiPainter extends CustomPainter {
 class _StatTile extends StatelessWidget {
   final String type;
   final String label;
-  final String value;
+  final double number;
+  final String Function(double) format;
   final Widget icon;
   final Widget ghost;
   final Color accent;
@@ -11293,82 +11761,82 @@ class _StatTile extends StatelessWidget {
   const _StatTile({
     required this.type,
     required this.label,
-    required this.value,
+    required this.number,
+    this.format = _wholeNumber,
     required this.icon,
     required this.ghost,
     required this.accent,
     required this.onTap,
   });
 
+  static String _wholeNumber(double v) => v.round().toString();
+
   @override
   Widget build(BuildContext context) {
-    return Glass(
-      radius: Gold.r27,
-      blur: Gold.s21,
-      opacity: 0.66,
-      padding: EdgeInsets.zero,
+    return Semantics(
+      button: true,
+      label: '${ui(label)} ${format(number)}',
       onTap: type.isEmpty ? null : () => onTap(type),
-      child: Stack(
-        children: [
-          // Watermark illustration, clipped and anchored to the low corner.
-          Positioned(
-            right: -Gold.s13,
-            bottom: -Gold.s13,
-            child: Opacity(opacity: 0.07, child: ghost),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(Gold.s13),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: ShapeDecoration(
-                    shape: SquircleBorder(
-                      radius: Gold.concentric(Gold.r27, Gold.s16),
-                    ),
-                    color: Ink.surface.withValues(alpha: 0.72),
-                    shadows: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.16),
-                        blurRadius: Gold.s13,
-                        offset: const Offset(0, Gold.s5),
-                      ),
-                    ],
-                  ),
-                  child: Center(child: icon),
-                ),
-                const SizedBox(height: Gold.s13),
-                AppText(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: Gold.t13,
-                    color: Ink.muted,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: Gold.s2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: AlignmentDirectional.centerStart,
-                  child: FlowText(
-                    value,
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: Ink.navy,
-                      height: 1,
-                      letterSpacing: -0.8,
-                    ),
-                  ),
-                ),
-              ],
+      excludeSemantics: true,
+      child: Glass(
+        radius: Gold.r27,
+        padding: EdgeInsets.zero,
+        onTap: type.isEmpty ? null : () => onTap(type),
+        child: Stack(
+          children: [
+            // Watermark illustration, clipped and anchored to the low corner.
+            Positioned(
+              right: -Space.s12,
+              bottom: -Space.s12,
+              child: Opacity(opacity: 0.05, child: ghost),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.s16,
+                Space.s16,
+                Space.s12,
+                Space.s12,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: FittedBox(child: icon),
+                  ),
+                  const Spacer(),
+                  AppText(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: Gold.t13,
+                      color: Ink.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: Space.s2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: CountUpText(
+                      value: number,
+                      format: format,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: Ink.navy,
+                        height: 1.1,
+                        letterSpacing: -0.8,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -11469,9 +11937,9 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
     return Shell(
       child: ListView(
         padding: EdgeInsets.fromLTRB(
-          Gold.s21,
-          widget.standalone ? Gold.s55 : Gold.s21,
-          Gold.s21,
+          Space.s20,
+          widget.standalone ? Space.s56 : Space.s20,
+          Space.s20,
           _MainShellState.bottomInset,
         ),
         children: [
@@ -11500,12 +11968,12 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: Gold.s13),
+                  const SizedBox(width: Space.s12),
                   if (canEditAnimals)
                     Glass(
                       radius: Gold.r21,
-                      blur: Gold.s13,
-                      padding: const EdgeInsets.all(Gold.s13),
+                      blur: Space.s12,
+                      padding: const EdgeInsets.all(Space.s12),
                       elevation: 0.8,
                       onTap: () => guardedPush(
                         context,
@@ -11523,13 +11991,13 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
                 ],
               ),
             ),
-          if (!widget.standalone) const SizedBox(height: Gold.s21),
+          if (!widget.standalone) const SizedBox(height: Space.s20),
           Reveal(
             index: reveal++,
             child: Glass(
               radius: Gold.r27,
-              blur: Gold.s13,
-              padding: const EdgeInsets.all(Gold.s5),
+              blur: Space.s12,
+              padding: const EdgeInsets.all(Space.s4),
               elevation: 0.62,
               child: LiquidSegmentBar(
                 labels: tamilUi
@@ -11540,7 +12008,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
               ),
             ),
           ),
-          const SizedBox(height: Gold.s21),
+          const SizedBox(height: Space.s20),
           if (list.isEmpty)
             Reveal(
               index: reveal++,
@@ -11567,7 +12035,7 @@ class _AnimalsScreenState extends State<AnimalsScreen> {
               ),
             ),
           if (podium.isNotEmpty && rest.isNotEmpty) ...[
-            const SizedBox(height: Gold.s8),
+            const SizedBox(height: Space.s8),
             Reveal(
               index: reveal++,
               child: SectionTitle(title: tamilUi ? 'அனைத்தும்' : 'All Animals'),
@@ -11590,7 +12058,7 @@ class _BackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: Gold.s8),
+      padding: const EdgeInsets.only(left: Space.s8),
       child: SizedBox.square(
         dimension: 44,
         child: DecoratedBox(
@@ -11604,8 +12072,8 @@ class _BackButton extends StatelessWidget {
             boxShadow: [
               BoxShadow(
                 color: Ink.violetDeep.withValues(alpha: 0.13),
-                blurRadius: Gold.s13,
-                offset: const Offset(0, Gold.s5),
+                blurRadius: Space.s12,
+                offset: const Offset(0, Space.s4),
               ),
             ],
           ),
@@ -11683,10 +12151,10 @@ class _RankedCowCardState extends State<RankedCowCard>
     final palette = rankPalette(rank);
     final birthday = isBirthdayToday(a);
 
-    const photo = Gold.s89;
+    const photo = Space.s88;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: Gold.s13),
+      padding: const EdgeInsets.only(bottom: Space.s12),
       child: Pressable(
         radius: Gold.r27,
         onTap: () => push(context, AnimalProfileScreen(animalKey: a['key'])),
@@ -11697,8 +12165,8 @@ class _RankedCowCardState extends State<RankedCowCard>
             shadows: [
               BoxShadow(
                 color: palette[2].withValues(alpha: 0.34),
-                blurRadius: Gold.s21,
-                offset: const Offset(0, Gold.s8),
+                blurRadius: Space.s20,
+                offset: const Offset(0, Space.s8),
               ),
             ],
           ),
@@ -11716,7 +12184,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                 // repaints only the texture beneath it.
                 child: RepaintBoundary(
                   child: Padding(
-                    padding: const EdgeInsets.all(Gold.s16),
+                    padding: const EdgeInsets.all(Space.s16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -11746,8 +12214,8 @@ class _RankedCowCardState extends State<RankedCowCard>
                                           color: palette[2].withValues(
                                             alpha: 0.30,
                                           ),
-                                          blurRadius: Gold.s13,
-                                          offset: const Offset(0, Gold.s5),
+                                          blurRadius: Space.s12,
+                                          offset: const Offset(0, Space.s4),
                                         ),
                                       ],
                                     ),
@@ -11757,19 +12225,19 @@ class _RankedCowCardState extends State<RankedCowCard>
                                     ),
                                   ),
                                   Positioned(
-                                    left: -Gold.s8,
-                                    top: -Gold.s5,
-                                    child: Rosette(rank: rank, size: Gold.s34),
+                                    left: -Space.s8,
+                                    top: -Space.s4,
+                                    child: Rosette(rank: rank, size: Space.s32),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: Gold.s16),
+                            const SizedBox(width: Space.s16),
                             Expanded(
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: Gold.s13,
-                                  vertical: Gold.s8,
+                                  horizontal: Space.s12,
+                                  vertical: Space.s8,
                                 ),
                                 decoration: ShapeDecoration(
                                   shape: SquircleBorder(
@@ -11806,11 +12274,11 @@ class _RankedCowCardState extends State<RankedCowCard>
                                       ),
                                     ),
                                     if (birthday) ...[
-                                      const SizedBox(height: Gold.s5),
+                                      const SizedBox(height: Space.s4),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: Gold.s8,
-                                          vertical: Gold.s2,
+                                          horizontal: Space.s8,
+                                          vertical: Space.s2,
                                         ),
                                         decoration: ShapeDecoration(
                                           shape: const SquircleBorder(
@@ -11826,7 +12294,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                                               size: 11,
                                               color: Ink.violetDeep,
                                             ),
-                                            SizedBox(width: Gold.s3),
+                                            SizedBox(width: Space.s4),
                                             AppText(
                                               'Birthday today',
                                               style: TextStyle(
@@ -11845,7 +12313,7 @@ class _RankedCowCardState extends State<RankedCowCard>
                             ),
                           ],
                         ),
-                        const SizedBox(height: Gold.s13),
+                        const SizedBox(height: Space.s12),
                         _StatStrip(
                           entries: [
                             _StatEntry(
@@ -11882,7 +12350,7 @@ class _StatStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: Gold.s8),
+      padding: const EdgeInsets.symmetric(vertical: Space.s8),
       decoration: ShapeDecoration(
         shape: SquircleBorder(
           radius: Gold.r13,
@@ -11894,7 +12362,7 @@ class _StatStrip extends StatelessWidget {
         children: [
           for (int i = 0; i < entries.length; i++) ...[
             if (i > 0)
-              Container(width: 1, height: Gold.s21, color: Ink.separator),
+              Container(width: 1, height: Space.s20, color: Ink.separator),
             Expanded(
               child: Column(
                 children: [
@@ -11908,7 +12376,7 @@ class _StatStrip extends StatelessWidget {
                       color: Ink.navy.withValues(alpha: 0.78),
                     ),
                   ),
-                  const SizedBox(height: Gold.s2),
+                  const SizedBox(height: Space.s2),
                   AppText(
                     entries[i].value,
                     maxLines: 1,
@@ -11942,14 +12410,14 @@ class PlainAnimalCard extends StatelessWidget {
 
     return Glass(
       radius: Gold.r27,
-      margin: const EdgeInsets.only(bottom: Gold.s13),
-      padding: const EdgeInsets.all(Gold.s16),
+      margin: const EdgeInsets.only(bottom: Space.s12),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.8,
       onTap: () => push(context, AnimalProfileScreen(animalKey: a['key'])),
       child: Row(
         children: [
-          AnimalAvatar(animal: a, radius: Gold.s27),
-          const SizedBox(width: Gold.s16),
+          AnimalAvatar(animal: a, radius: Space.s28),
+          const SizedBox(width: Space.s16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -11968,7 +12436,7 @@ class PlainAnimalCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: Gold.s5),
+                    const SizedBox(width: Space.s4),
                     AppText(
                       '#${txt(a, 'id')}',
                       style: TextStyle(
@@ -11979,7 +12447,7 @@ class PlainAnimalCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: Gold.s2),
+                const SizedBox(height: Space.s2),
                 Text(
                   [
                     ui(txt(a, 'breed', 'Unknown breed')),
@@ -11996,7 +12464,7 @@ class PlainAnimalCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: Gold.s2),
+                const SizedBox(height: Space.s2),
                 Text(
                   isCow || isMaleAnimal(a)
                       ? '${bi('Age', 'வயது')} ${ageShort(a) == '--' ? bi('unknown', 'தெரியாது') : ageShort(a)} \u2022 ${bi('In farm', 'தொழுவத்தில்')} ${txt(a, 'arrivalDate').isEmpty ? bi('unknown', 'தெரியாது') : durationText(txt(a, 'arrivalDate'))}'
@@ -12012,14 +12480,14 @@ class PlainAnimalCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: Gold.s8),
+          const SizedBox(width: Space.s8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: Gold.s8,
-                  vertical: Gold.s3,
+                  horizontal: Space.s8,
+                  vertical: Space.s4,
                 ),
                 decoration: ShapeDecoration(
                   shape: const SquircleBorder(radius: Gold.r8),
@@ -12034,7 +12502,7 @@ class PlainAnimalCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: Gold.s5),
+              const SizedBox(height: Space.s4),
               Icon(
                 CupertinoIcons.chevron_right,
                 color: Ink.faint,
@@ -12207,7 +12675,7 @@ List<Map<String, dynamic>> cowTimeline(Map<String, dynamic> animal) {
       txt(r, 'date'),
       'Income / Sale',
       '${txt(r, 'category', 'Sale')} • ${money(numv(r, 'amount'))}',
-      CupertinoIcons.money_dollar_circle_fill,
+      Icons.currency_rupee_rounded,
       Ink.green,
       time: txt(r, 'time'),
     );
@@ -12245,7 +12713,7 @@ class _TimelineEvent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: Gold.s34,
+            width: Space.s32,
             child: Column(
               children: [
                 if (!first)
@@ -12258,8 +12726,8 @@ class _TimelineEvent extends StatelessWidget {
                 else
                   const Spacer(),
                 Container(
-                  width: Gold.s27,
-                  height: Gold.s27,
+                  width: Space.s28,
+                  height: Space.s28,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: color.withValues(alpha: .15),
@@ -12283,12 +12751,12 @@ class _TimelineEvent extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: Gold.s8),
+          const SizedBox(width: Space.s8),
           Expanded(
             child: Glass(
               radius: Gold.r21,
-              margin: const EdgeInsets.only(bottom: Gold.s13),
-              padding: const EdgeInsets.all(Gold.s13),
+              margin: const EdgeInsets.only(bottom: Space.s12),
+              padding: const EdgeInsets.all(Space.s12),
               elevation: .5,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -12322,18 +12790,18 @@ class _TimelineEvent extends StatelessWidget {
                             style: TextStyle(
                               color: color,
                               fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                     ],
                   ),
-                  const SizedBox(height: Gold.s3),
+                  const SizedBox(height: Space.s4),
                   AppText(
                     txt(event, 'detail'),
                     style: TextStyle(color: Ink.body),
                   ),
-                  const SizedBox(height: Gold.s5),
+                  const SizedBox(height: Space.s4),
                   AppText(
                     '${txt(event, 'displayDate', txt(event, 'date'))}${txt(event, 'time').isEmpty ? '' : ' • ${txt(event, 'time')}'}',
                     style: TextStyle(
@@ -12468,17 +12936,17 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         animalKey: widget.animalKey,
                         type: txt(a, 'type'),
                       ),
-                      const SizedBox(width: Gold.s8),
+                      const SizedBox(width: Space.s8),
                     ],
                   ],
                 ),
                 body: Shell(
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(
-                      Gold.s21,
-                      Gold.s8,
-                      Gold.s21,
-                      Gold.s55,
+                      Space.s20,
+                      Space.s8,
+                      Space.s20,
+                      Space.s56,
                     ),
                     children: [
                       _AnimalPortrait(
@@ -12489,16 +12957,16 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                         ),
                         rectangular: true,
                       ),
-                      const SizedBox(height: Gold.s8),
+                      const SizedBox(height: Space.s8),
                       Reveal(index: 0, child: _header(context, a, isCow, name)),
-                      const SizedBox(height: Gold.s16),
+                      const SizedBox(height: Space.s16),
                       Reveal(
                         index: 1,
                         child: _tabBar([
                           for (final id in tabIds) _tabLabel(id, a),
                         ]),
                       ),
-                      const SizedBox(height: Gold.s16),
+                      const SizedBox(height: Space.s16),
                       Reveal(index: 2, child: content),
                     ],
                   ),
@@ -12522,7 +12990,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
 
     return Glass(
       radius: Gold.r34,
-      padding: const EdgeInsets.all(Gold.s21),
+      padding: const EdgeInsets.all(Space.s20),
       elevation: 1.1,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -12548,8 +13016,8 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: Gold.s8,
-                        vertical: Gold.s3,
+                        horizontal: Space.s8,
+                        vertical: Space.s4,
                       ),
                       decoration: ShapeDecoration(
                         shape: const SquircleBorder(radius: Gold.r8),
@@ -12566,7 +13034,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: Gold.s3),
+                const SizedBox(height: Space.s4),
                 AppText(
                   [
                     ui(txt(a, 'breed', 'Unknown breed')),
@@ -12594,10 +13062,10 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                     color: Ink.body,
                   ),
                 ),
-                const SizedBox(height: Gold.s5),
+                const SizedBox(height: Space.s4),
                 Wrap(
-                  spacing: Gold.s5,
-                  runSpacing: Gold.s5,
+                  spacing: Space.s4,
+                  runSpacing: Space.s4,
                   children: [
                     // A bull's use is its own tab right below; no chip.
                     _Chip(label: status, color: statusColor(status)),
@@ -12622,8 +13090,8 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   Widget _tabBar(List<String> labels) {
     return Glass(
       radius: Gold.r21,
-      blur: Gold.s13,
-      padding: const EdgeInsets.all(Gold.s5),
+      blur: Space.s12,
+      padding: const EdgeInsets.all(Space.s4),
       elevation: 0.62,
       child: LiquidSegmentBar(
         labels: labels,
@@ -12636,17 +13104,17 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
   Widget _metric(String title, String value, IconData icon, Color color) {
     return Glass(
       radius: Gold.r21,
-      padding: const EdgeInsets.all(Gold.s16),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.62,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
-                radius: Gold.concentric(Gold.r21, Gold.s13),
+                radius: Gold.concentric(Gold.r21, Space.s12),
               ),
               color: color.withValues(alpha: 0.13),
             ),
@@ -12663,7 +13131,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: Gold.s2),
+          const SizedBox(height: Space.s2),
           AppText(
             value,
             maxLines: 1,
@@ -12700,19 +13168,19 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: 2,
-            crossAxisSpacing: Gold.s13,
-            mainAxisSpacing: Gold.s13,
+            crossAxisSpacing: Space.s12,
+            mainAxisSpacing: Space.s12,
             childAspectRatio: Gold.phi,
             children: [
               for (final m in metrics) _metric(m.$1, m.$2, m.$3, m.$4),
             ],
           ),
-          const SizedBox(height: Gold.s16),
+          const SizedBox(height: Space.s16),
         ],
         if (male && maleUseOf(a).isEmpty) ...[
           Glass(
             radius: Gold.r21,
-            padding: const EdgeInsets.all(Gold.s16),
+            padding: const EdgeInsets.all(Space.s16),
             elevation: 0.62,
             onTap: canEditAnimals
                 ? () => push(
@@ -12726,7 +13194,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             child: Row(
               children: [
                 Icon(CupertinoIcons.question_circle, color: Ink.violet),
-                const SizedBox(width: Gold.s13),
+                const SizedBox(width: Space.s12),
                 Expanded(
                   child: Text(
                     bi(
@@ -12743,7 +13211,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(height: Gold.s16),
+          const SizedBox(height: Space.s16),
         ],
         if (male && maleReadiness(a) != null) ...[
           InfoRow(
@@ -12752,15 +13220,15 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             icon: CupertinoIcons.arrow_up_right,
             color: Ink.green,
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
         ],
         if (isCow && !male) ...[
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: 2,
-            crossAxisSpacing: Gold.s13,
-            mainAxisSpacing: Gold.s13,
+            crossAxisSpacing: Space.s12,
+            mainAxisSpacing: Space.s12,
             childAspectRatio: Gold.phi,
             children: [
               _metric(
@@ -12791,7 +13259,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               ),
             ],
           ),
-          const SizedBox(height: Gold.s16),
+          const SizedBox(height: Space.s16),
         ],
         InfoRow(
           title: 'Last Doctor Visit',
@@ -12800,7 +13268,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           color: Ink.blue,
         ),
         if (!male && pregnantDate.isNotEmpty) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           InfoRow(
             title: 'Pregnancy Duration',
             value: bi(
@@ -12812,7 +13280,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           ),
         ],
         if (!male && stopDate.isNotEmpty) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           InfoRow(
             title: 'Milking Stopped',
             value: '${daysSince(stopDate)} days ago',
@@ -12821,10 +13289,10 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           ),
         ],
         if (txt(a, 'notes').isNotEmpty) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           Glass(
             radius: Gold.r21,
-            padding: const EdgeInsets.all(Gold.s16),
+            padding: const EdgeInsets.all(Space.s16),
             elevation: 0.62,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -12837,7 +13305,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                     fontSize: Gold.t13,
                   ),
                 ),
-                const SizedBox(height: Gold.s5),
+                const SizedBox(height: Space.s4),
                 AppText(
                   txt(a, 'notes'),
                   style: TextStyle(
@@ -12850,7 +13318,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             ),
           ),
         ],
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         if (male && maleUseOf(a).isNotEmpty && canRecordEntries) ...[
           LiquidButton(
             label: switch (maleUseOf(a)) {
@@ -12870,7 +13338,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               ),
             ),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
         ],
         if (isCow && !male) ...[
           LiquidButton(
@@ -12883,7 +13351,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
               page: AddEntryScreen(initialCow: name),
             ),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
         ],
         LiquidButton(
           label: tamilUi ? 'மருத்துவர் பதிவு' : 'Add Doctor Visit',
@@ -12898,7 +13366,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           ),
         ),
         if (!male && isCow && pregnantDate.isNotEmpty && stopDate.isEmpty) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           LiquidButton(
             label: tamilUi ? 'பால் கறப்பதை நிறுத்து' : 'Stop Milking',
             icon: CupertinoIcons.pause_fill,
@@ -12928,7 +13396,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         ],
         if (txt(a, 'gender', 'Female') == 'Female' &&
             pregnantDate.isNotEmpty) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           LiquidButton(
             label: tamilUi ? 'கன்று பிறந்தது' : 'Calf Born',
             icon: Icons.child_care_rounded,
@@ -12966,7 +13434,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             icon: Icons.vaccines_rounded,
             color: Ink.amber,
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           InfoRow(
             title: 'Pregnancy Duration',
             value: '${daysSince(pregnantDate)} days',
@@ -12975,7 +13443,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
           ),
         ],
         if (stopDate.isNotEmpty) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           InfoRow(
             title: 'Milking Stop Duration',
             value: '${daysSince(stopDate)} days',
@@ -12983,7 +13451,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
             color: Ink.red,
           ),
         ],
-        const SizedBox(height: Gold.s16),
+        const SizedBox(height: Space.s16),
         panel('Health Records', 'No doctor records yet.', [
           for (final r in doctors)
             _RecordLine(
@@ -13054,7 +13522,7 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
                       '${numv(r, 'quantity').toStringAsFixed(1)} L',
                       style: TextStyle(
                         fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color: Ink.violetDeep,
                       ),
                     ),
@@ -13141,7 +13609,7 @@ class _ProfileMenu extends StatelessWidget {
                 size: Gold.t21,
                 color: Ink.violetDeep,
               ),
-              SizedBox(width: Gold.s8),
+              SizedBox(width: Space.s8),
               AppText('Edit details'),
             ],
           ),
@@ -13151,7 +13619,7 @@ class _ProfileMenu extends StatelessWidget {
           child: Row(
             children: [
               Icon(CupertinoIcons.tag_fill, size: Gold.t21, color: Ink.green),
-              SizedBox(width: Gold.s8),
+              SizedBox(width: Space.s8),
               AppText('Record sale'),
             ],
           ),
@@ -13165,7 +13633,7 @@ class _ProfileMenu extends StatelessWidget {
                 size: Gold.t21,
                 color: Ink.red,
               ),
-              SizedBox(width: Gold.s8),
+              SizedBox(width: Space.s8),
               AppText('Record death'),
             ],
           ),
@@ -13185,8 +13653,8 @@ class _Chip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: Gold.s8,
-        vertical: Gold.s3,
+        horizontal: Space.s8,
+        vertical: Space.s4,
       ),
       decoration: ShapeDecoration(
         shape: const SquircleBorder(radius: Gold.r8),
@@ -13220,20 +13688,20 @@ class _RecordLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Gold.s8),
+      padding: const EdgeInsets.symmetric(vertical: Space.s8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: Gold.s27,
-            height: Gold.s27,
+            width: Space.s28,
+            height: Space.s28,
             decoration: ShapeDecoration(
               shape: const SquircleBorder(radius: Gold.r8),
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(icon, size: Gold.t13, color: color),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -13246,7 +13714,7 @@ class _RecordLine extends StatelessWidget {
                     color: Ink.navy,
                   ),
                 ),
-                const SizedBox(height: Gold.s2),
+                const SizedBox(height: Space.s2),
                 AppText(
                   subtitle,
                   style: TextStyle(color: Ink.muted, fontSize: 11, height: 1.4),
@@ -13279,11 +13747,13 @@ class FormPage extends StatelessWidget {
       appBar: AppBar(title: AppText(title), leading: const _BackButton()),
       body: Shell(
         child: ListView(
+          // Scrolling the form puts the keyboard away, as in system forms.
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s55,
-            Gold.s21,
-            Gold.s55,
+            Space.s20,
+            Space.s56,
+            Space.s20,
+            Space.s56,
           ),
           children: [
             for (int i = 0; i < children.length; i++)
@@ -13365,9 +13835,9 @@ class _SuggestionFieldState extends State<SuggestionField> {
               constraints: const BoxConstraints(maxWidth: 420, maxHeight: 260),
               child: Glass(
                 radius: Gold.r21,
-                blur: Gold.s21,
+                blur: Space.s20,
                 opacity: 0.92,
-                padding: const EdgeInsets.symmetric(vertical: Gold.s5),
+                padding: const EdgeInsets.symmetric(vertical: Space.s4),
                 child: ListView.builder(
                   padding: EdgeInsets.zero,
                   shrinkWrap: true,
@@ -13383,7 +13853,7 @@ class _SuggestionFieldState extends State<SuggestionField> {
                       choices[index],
                       style: TextStyle(
                         color: Ink.navy,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     onTap: () => onSelected(choices[index]),
@@ -13434,7 +13904,7 @@ class DateField extends StatelessWidget {
           children: [
             if (clearable && controller.text.isNotEmpty)
               IconButton(
-                splashRadius: Gold.s21,
+                splashRadius: Space.s20,
                 icon: Icon(
                   CupertinoIcons.xmark,
                   size: Gold.t21,
@@ -13446,7 +13916,7 @@ class DateField extends StatelessWidget {
                 },
               ),
             IconButton(
-              splashRadius: Gold.s21,
+              splashRadius: Space.s20,
               icon: Icon(
                 CupertinoIcons.calendar,
                 size: Gold.t21,
@@ -13689,12 +14159,20 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
   Future<void> _save() async {
     if (_saving) return;
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can save animal details');
+      snack(
+        context,
+        'Only admins and editors can save animal details',
+        tone: SnackTone.error,
+      );
       return;
     }
     final typed = _name.text.trim();
     if (typed.isEmpty) {
-      snack(context, bi('Please enter a name', 'பெயரை எழுதவும்'));
+      snack(
+        context,
+        bi('Please enter a name', 'பெயரை எழுதவும்'),
+        tone: SnackTone.error,
+      );
       return;
     }
     if (_isCow && _male && _maleUse.isEmpty) {
@@ -13704,6 +14182,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           'Choose what this bull is used for',
           'காளையின் பயன்பாட்டைத் தேர்வு செய்யவும்',
         ),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -13720,6 +14199,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           'An animal named "$typed" already exists',
           '"$typed" என்ற பெயரில் ஏற்கெனவே ஒரு கால்நடை உள்ளது',
         ),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -13795,9 +14275,29 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
       }
 
       AutoSyncService.scheduleSync(reason: 'animal saved');
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        Navigator.of(context).pop();
+        snack(
+          context,
+          _edit
+              ? bi(
+                  'Changes saved · $identity',
+                  'மாற்றங்கள் சேமிக்கப்பட்டன · $identity',
+                )
+              : bi('$identity added', '$identity சேர்க்கப்பட்டது'),
+          tone: SnackTone.success,
+          messenger: messenger,
+        );
+      }
     } catch (error) {
-      if (mounted) snack(context, 'Could not save animal. Please try again');
+      if (mounted) {
+        snack(
+          context,
+          'Could not save animal. Please try again',
+          tone: SnackTone.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -13813,6 +14313,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         snack(
           context,
           'No photo selected. Please allow Photos access and try again',
+          tone: SnackTone.error,
         );
         return;
       }
@@ -13821,14 +14322,20 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
         _imageUrl = '';
       });
     } catch (_) {
-      if (mounted) snack(context, 'Could not open Photos. Please try again');
+      if (mounted) {
+        snack(
+          context,
+          'Could not open Photos. Please try again',
+          tone: SnackTone.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _pickingPhoto = false);
     }
   }
 
   Widget _photoHero(String currentId) {
-    const size = Gold.s89 + Gold.s34 + Gold.s21;
+    const size = Space.s88 + Space.s32 + Space.s20;
     Widget image = const CowMark(size: size * .58);
     if (_imageData.startsWith('data:image')) {
       image = Image.memory(
@@ -13860,8 +14367,8 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             radius: Gold.r55,
             onTap: _pickPhoto,
             child: SizedBox(
-              width: size + Gold.s8,
-              height: size + Gold.s8,
+              width: size + Space.s8,
+              height: size + Space.s8,
               child: Stack(
                 children: [
                   Center(
@@ -13877,8 +14384,8 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                         shadows: [
                           BoxShadow(
                             color: Ink.violetDeep.withValues(alpha: .16),
-                            blurRadius: Gold.s34,
-                            offset: const Offset(0, Gold.s13),
+                            blurRadius: Space.s32,
+                            offset: const Offset(0, Space.s12),
                           ),
                         ],
                       ),
@@ -13890,8 +14397,8 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                     right: 0,
                     bottom: 0,
                     child: Container(
-                      width: Gold.s34 + Gold.s8,
-                      height: Gold.s34 + Gold.s8,
+                      width: Space.s32 + Space.s8,
+                      height: Space.s32 + Space.s8,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Ink.violetDeep,
@@ -13899,7 +14406,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                       ),
                       child: _pickingPhoto
                           ? const Padding(
-                              padding: EdgeInsets.all(Gold.s8),
+                              padding: EdgeInsets.all(Space.s8),
                               child: CupertinoActivityIndicator(
                                 color: Colors.white,
                               ),
@@ -13916,14 +14423,14 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             ),
           ),
         ),
-        const SizedBox(height: Gold.s8),
+        const SizedBox(height: Space.s8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(
-                horizontal: Gold.s13,
-                vertical: Gold.s5,
+                horizontal: Space.s12,
+                vertical: Space.s4,
               ),
               decoration: ShapeDecoration(
                 shape: const SquircleBorder(radius: Gold.r13),
@@ -13939,7 +14446,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               ),
             ),
             if (hasPhoto) ...[
-              const SizedBox(width: Gold.s13),
+              const SizedBox(width: Space.s12),
               GestureDetector(
                 onTap: () => setState(() {
                   _imageData = '';
@@ -13973,14 +14480,14 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               icon: CupertinoIcons.tag,
             ),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           Glass(
             radius: Gold.r21,
             padding: const EdgeInsets.fromLTRB(
-              Gold.s16,
-              Gold.s5,
-              Gold.s8,
-              Gold.s5,
+              Space.s16,
+              Space.s4,
+              Space.s8,
+              Space.s4,
             ),
             elevation: 0.5,
             child: Row(
@@ -13997,7 +14504,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                     ),
                   ),
                 ),
-                CupertinoSwitch(
+                SoundSwitch(
                   value: _outsideService,
                   activeTrackColor: Ink.tint,
                   onChanged: (v) => setState(() => _outsideService = v),
@@ -14016,7 +14523,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               icon: Icons.sports_rounded,
             ),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           DateField(
             controller: _fitness,
             label: bi(
@@ -14049,7 +14556,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
               ],
               onChanged: (v) => setState(() => _pair = v ?? ''),
             ),
-            const SizedBox(height: Gold.s13),
+            const SizedBox(height: Space.s12),
           ],
           TextField(
             controller: _dailyRate,
@@ -14100,18 +14607,18 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                 : 'Add Calf'),
       children: [
         _photoHero(currentId),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         TextField(
           controller: _name,
           textCapitalization: TextCapitalization.words,
           textInputAction: TextInputAction.next,
           decoration: fieldStyle(nameLabel, icon: CupertinoIcons.pencil),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         Glass(
           radius: Gold.r21,
-          blur: Gold.s13,
-          padding: const EdgeInsets.all(Gold.s5),
+          blur: Space.s12,
+          padding: const EdgeInsets.all(Space.s4),
           elevation: 0.62,
           child: LiquidSegmentBar(
             labels: genderLabels,
@@ -14130,7 +14637,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           alignment: Alignment.topCenter,
           child: _male
               ? Padding(
-                  padding: const EdgeInsets.only(top: Gold.s21),
+                  padding: const EdgeInsets.only(top: Space.s20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -14140,7 +14647,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                         onChanged: (v) => setState(() => _maleUse = v),
                       ),
                       if (_roleFields(self).isNotEmpty) ...[
-                        const SizedBox(height: Gold.s5),
+                        const SizedBox(height: Space.s4),
                         ..._roleFields(self),
                       ],
                     ],
@@ -14148,7 +14655,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                 )
               : const SizedBox(width: double.infinity),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         PickerField<String>(
           initialValue: _breed,
           isExpanded: true,
@@ -14160,11 +14667,11 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           ],
           onChanged: (v) => setState(() => _breed = v ?? _breed),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         Glass(
           radius: Gold.r21,
-          blur: Gold.s13,
-          padding: const EdgeInsets.all(Gold.s5),
+          blur: Space.s12,
+          padding: const EdgeInsets.all(Space.s4),
           elevation: 0.62,
           child: LiquidSegmentBar(
             labels: [for (final s in sources) ui(s)],
@@ -14178,7 +14685,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             }),
           ),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         UnknownToggleField(
           label: bi('Date of birth', 'பிறந்த தேதி'),
           unknown: _dobUnknown,
@@ -14191,7 +14698,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           ),
         ),
         if (!hasDob) ...[
-          const SizedBox(height: Gold.s16),
+          const SizedBox(height: Space.s16),
           UnknownToggleField(
             label: bi('Age', 'வயது'),
             unknown: _ageUnknown,
@@ -14211,7 +14718,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           ),
         ],
         if (!isCow) ...[
-          const SizedBox(height: Gold.s16),
+          const SizedBox(height: Space.s16),
           PickerField<String>(
             initialValue: motherNames().contains(_mother)
                 ? _mother
@@ -14229,7 +14736,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
             onChanged: (v) => setState(() => _mother = v ?? _mother),
           ),
         ],
-        const SizedBox(height: Gold.s16),
+        const SizedBox(height: Space.s16),
         UnknownToggleField(
           label: bi('Farm arrival date', 'தொழுவத்திற்கு வந்த தேதி'),
           unknown: _arrivalUnknown,
@@ -14244,24 +14751,24 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
           ),
         ),
         if (_source == 'Purchased') ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           TextField(
             controller: _purchase,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: fieldStyle(
               'Purchase Amount',
-              icon: CupertinoIcons.money_dollar_circle,
+              icon: Icons.currency_rupee_rounded,
             ),
           ),
         ],
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _notes,
           maxLines: 4,
           textCapitalization: TextCapitalization.sentences,
           decoration: fieldStyle('Notes (optional)'),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: _edit
               ? 'Save Changes'
@@ -14292,11 +14799,12 @@ class AddEntryScreen extends StatefulWidget {
 class _AddEntryScreenState extends State<AddEntryScreen> {
   int _mode = 0;
   int _stockItem = 0;
-  String _session = 'Morning';
+  String _session = milkSessionForTime(DateTime.now());
   String _cow = '';
   bool _saving = false;
 
   final _milk = TextEditingController();
+  final _milkFocus = FocusNode();
   final _qty = TextEditingController();
   final _expenseName = TextEditingController();
   final _amount = TextEditingController();
@@ -14315,6 +14823,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
   @override
   void dispose() {
     _milk.dispose();
+    _milkFocus.dispose();
     _qty.dispose();
     _expenseName.dispose();
     _amount.dispose();
@@ -14322,11 +14831,31 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  /// The next cow to milk after [_cow]: the first one, in list order after
+  /// it, that has no entry for this session today (or simply the next one).
+  String _nextCow() {
+    final cows = cowNames();
+    if (cows.length < 2) return _cow;
+    final start = cows.indexOf(_cow);
+    for (int step = 1; step < cows.length; step++) {
+      final candidate = cows[(start + step) % cows.length];
+      if (milkRecordedFor(candidate, _session, todayDate()) <= 0) {
+        return candidate;
+      }
+    }
+    return cows[(start + 1) % cows.length];
+  }
+
+  Future<void> _save({bool next = false}) async {
     if (_saving) return;
+    String? saved;
     try {
       if (!canRecordEntries) {
-        snack(context, 'Your ranch role does not allow adding entries');
+        snack(
+          context,
+          'Your ranch role does not allow adding entries',
+          tone: SnackTone.error,
+        );
         return;
       }
       if (_mode == 0) {
@@ -14335,6 +14864,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           snack(
             context,
             tamilUi ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14342,6 +14872,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           snack(
             context,
             tamilUi ? 'பால் அளவை உள்ளிடவும்' : 'Please enter the milk quantity',
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14356,12 +14887,29 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           'addedBy': currentUserName(),
           'createdAt': DateTime.now().toIso8601String(),
         });
+        saved = bi(
+          'Saved ${formatLitres(quantity)} · $_cow · ${ui(_session)}',
+          '${formatLitres(quantity)} சேமிக்கப்பட்டது · $_cow · ${ui(_session)}',
+        );
+        if (next && mounted) {
+          final following = _nextCow();
+          setState(() {
+            _cow = following;
+            _milk.clear();
+            _notes.clear();
+            _saving = false;
+          });
+          snack(context, saved, tone: SnackTone.success);
+          _milkFocus.requestFocus();
+          return;
+        }
       } else if (_mode == 1) {
         final quantity = toDouble(_qty.text);
         if (quantity <= 0) {
           snack(
             context,
             tamilUi ? 'அளவை உள்ளிடவும்' : 'Please enter the quantity',
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14374,6 +14922,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
               'Only ${available.toStringAsFixed(1)} ${stockUnit(item)} of $item is available',
               '${ui(item)} ${available.toStringAsFixed(1)} ${stockUnit(item)} மட்டுமே உள்ளது',
             ),
+            tone: SnackTone.error,
           );
           return;
         }
@@ -14391,15 +14940,27 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           'addedBy': currentUserName(),
           'createdAt': DateTime.now().toIso8601String(),
         });
+        saved = bi(
+          'Used ${quantity.toStringAsFixed(1)} ${stockUnit(item)} of $item',
+          '${ui(item)} ${quantity.toStringAsFixed(1)} ${stockUnit(item)} பயன்படுத்தப்பட்டது',
+        );
       } else {
         final name = _expenseName.text.trim();
         final amount = toDouble(_amount.text);
         if (name.isEmpty) {
-          snack(context, 'Please enter the expense name');
+          snack(
+            context,
+            'Please enter the expense name',
+            tone: SnackTone.error,
+          );
           return;
         }
         if (amount <= 0) {
-          snack(context, 'Please enter the expense amount');
+          snack(
+            context,
+            'Please enter the expense amount',
+            tone: SnackTone.error,
+          );
           return;
         }
         setState(() => _saving = true);
@@ -14413,9 +14974,21 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           'addedBy': currentUserName(),
           'createdAt': DateTime.now().toIso8601String(),
         });
+        saved = bi(
+          'Saved $name · ${money(amount)}',
+          '$name · ${money(amount)} சேமிக்கப்பட்டது',
+        );
       }
 
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        Navigator.of(context).pop();
+        // The snack bar lives on the app's messenger, so it stays visible on
+        // the screen people return to.
+        if (messenger != null) {
+          snack(context, saved, tone: SnackTone.success, messenger: messenger);
+        }
+      }
     } catch (_) {
       if (mounted) {
         snack(
@@ -14423,6 +14996,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           tamilUi
               ? 'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
               : 'Could not save. Please try again.',
+          tone: SnackTone.error,
         );
       }
     } finally {
@@ -14450,8 +15024,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             decoration: fieldStyle(
               tamilUi ? 'மாடு' : 'Cow',
               prefix: const Padding(
-                padding: EdgeInsets.only(left: Gold.s13, right: Gold.s8),
-                child: CowHoofIcon(size: Gold.s34),
+                padding: EdgeInsets.only(left: Space.s12, right: Space.s8),
+                child: CowHoofIcon(size: Space.s32),
               ),
             ),
             items: [
@@ -14460,36 +15034,101 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             ],
             onChanged: (v) => setState(() => _cow = v ?? _cow),
           ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         Glass(
           radius: Gold.r21,
-          blur: Gold.s13,
-          padding: const EdgeInsets.all(Gold.s5),
+          blur: Space.s12,
+          padding: const EdgeInsets.all(Space.s4),
           elevation: 0.62,
+          // The ranch milks twice a day: morning and evening.
           child: LiquidSegmentBar(
             labels: tamilUi
-                ? const ['காலை', 'மதியம்', 'மாலை']
-                : const ['Morning', 'Afternoon', 'Evening'],
-            index: const [
-              'Morning',
-              'Afternoon',
-              'Evening',
-            ].indexOf(_session).clamp(0, 2),
-            onChanged: (value) => setState(
-              () => _session = const ['Morning', 'Afternoon', 'Evening'][value],
-            ),
+                ? const ['காலை', 'மாலை']
+                : const ['Morning', 'Evening'],
+            index: _session == 'Evening' ? 1 : 0,
+            onChanged: (value) =>
+                setState(() => _session = const ['Morning', 'Evening'][value]),
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _milk,
+          focusNode: _milkFocus,
+          autofocus: cows.isNotEmpty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _save(next: cows.length > 1),
           decoration: fieldStyle(
             tamilUi ? 'பால் அளவு (லிட்டர்)' : 'Milk Quantity (Liter)',
             icon: CupertinoIcons.drop,
           ),
         ),
+        if (cows.isNotEmpty) _milkHints(),
       ],
+    );
+  }
+
+  /// One-tap help under the quantity: this cow's last quantity for the
+  /// session (most cows give a steady amount), and a note when this session
+  /// is already recorded today so it is not entered twice by mistake.
+  Widget _milkHints() {
+    final last = lastMilkQuantityFor(_cow, _session);
+    final already = milkRecordedFor(_cow, _session, todayDate());
+    if (last == null && already <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.s8),
+      child: Wrap(
+        spacing: Space.s8,
+        runSpacing: Space.s8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (last != null)
+            ActionChip(
+              avatar: Icon(
+                CupertinoIcons.arrow_counterclockwise,
+                size: 16,
+                color: Ink.violetDeep,
+              ),
+              label: Text(
+                bi(
+                  'Last: ${formatLitres(last)}',
+                  'கடைசியாக: ${formatLitres(last)}',
+                ),
+              ),
+              labelStyle: TextStyle(
+                color: Ink.violetDeep,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+              backgroundColor: Ink.lavender,
+              side: BorderSide.none,
+              shape: const StadiumBorder(),
+              materialTapTargetSize: MaterialTapTargetSize.padded,
+              onPressed: () {
+                selectionFeedback();
+                final text = last == last.roundToDouble()
+                    ? last.toStringAsFixed(0)
+                    : last.toString();
+                _milk.value = TextEditingValue(
+                  text: text,
+                  selection: TextSelection.collapsed(offset: text.length),
+                );
+              },
+            ),
+          if (already > 0)
+            Text(
+              bi(
+                'Already recorded ${formatLitres(already)} this session today',
+                'இன்று இந்த நேரத்தில் ${formatLitres(already)} ஏற்கனவே பதிவாகியுள்ளது',
+              ),
+              style: TextStyle(
+                color: Ink.amberText,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -14498,14 +15137,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       children: [
         for (int i = 0; i < _stockItems.length; i++)
           Padding(
-            padding: const EdgeInsets.only(bottom: Gold.s8),
+            padding: const EdgeInsets.only(bottom: Space.s8),
             child: Pressable(
               radius: Gold.r21,
               onTap: () => setState(() => _stockItem = i),
               child: AnimatedContainer(
                 duration: Gold.base,
                 curve: Gold.ease,
-                padding: const EdgeInsets.all(Gold.s13),
+                padding: const EdgeInsets.all(Space.s12),
                 decoration: ShapeDecoration(
                   shape: SquircleBorder(
                     radius: Gold.r21,
@@ -14531,8 +15170,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                 child: Row(
                   children: [
                     Container(
-                      width: Gold.s34,
-                      height: Gold.s34,
+                      width: Space.s32,
+                      height: Space.s32,
                       decoration: ShapeDecoration(
                         shape: const SquircleBorder(radius: Gold.r13),
                         color: _stockItem == i
@@ -14542,12 +15181,12 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
                       child: Center(
                         child: RanchIcon(
                           type: _stockIcons[i],
-                          size: Gold.s21,
+                          size: Space.s20,
                           color: _stockItem == i ? Colors.white : Ink.violet,
                         ),
                       ),
                     ),
-                    const SizedBox(width: Gold.s13),
+                    const SizedBox(width: Space.s12),
                     Expanded(
                       child: AppText(
                         _stockItems[i],
@@ -14577,7 +15216,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
               ),
             ),
           ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _qty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -14600,15 +15239,18 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           suggestions: frequentNameSuggestions(expenseRows(), 'name'),
           label: 'Expense Name',
           icon: CupertinoIcons.doc_text,
+          // Picking a usual expense offers its last amount, still editable.
+          onSelected: (name) {
+            if (_amount.text.trim().isNotEmpty) return;
+            final last = lastExpenseAmountFor(name);
+            if (last != null) _amount.text = last.toStringAsFixed(0);
+          },
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _amount,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: fieldStyle(
-            'Amount',
-            icon: CupertinoIcons.money_dollar_circle,
-          ),
+          decoration: fieldStyle('Amount', icon: Icons.currency_rupee_rounded),
         ),
       ],
     );
@@ -14621,25 +15263,23 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       children: [
         Glass(
           radius: Gold.r21,
-          blur: Gold.s13,
-          padding: const EdgeInsets.all(Gold.s5),
+          blur: Space.s12,
+          padding: const EdgeInsets.all(Space.s4),
           elevation: 0.62,
           child: LiquidSegmentBar(
             labels: tamilUi
-                ? const ['பால்', 'தீவனம்']
+                ? const ['பால்', 'தீவனம்', 'இதர செலவு']
                 : const ['Milk', 'Stock Use', 'Others'],
-            icons: tamilUi
-                ? const [CupertinoIcons.drop_fill, CupertinoIcons.cube_box_fill]
-                : const [
-                    CupertinoIcons.drop_fill,
-                    CupertinoIcons.cube_box_fill,
-                    CupertinoIcons.doc_text_fill,
-                  ],
+            icons: const [
+              CupertinoIcons.drop_fill,
+              CupertinoIcons.cube_box_fill,
+              CupertinoIcons.doc_text_fill,
+            ],
             index: _mode,
             onChanged: (value) => setState(() => _mode = value),
           ),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         AnimatedSize(
           duration: Gold.base,
           curve: Gold.ease,
@@ -14650,7 +15290,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             _ => _otherExpenseForm(),
           },
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _notes,
           maxLines: 3,
@@ -14659,7 +15299,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
             tamilUi ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
           ),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: switch (_mode) {
             0 => tamilUi ? 'பால் பதிவை சேமி' : 'Save Milk Entry',
@@ -14670,6 +15310,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           busy: _saving,
           onPressed: _save,
         ),
+        if (_mode == 0 && cowNames().length > 1) ...[
+          const SizedBox(height: Space.s12),
+          GhostButton(
+            label: bi('Save & Next Cow', 'சேமித்து அடுத்த மாடு'),
+            icon: CupertinoIcons.arrow_right,
+            onPressed: _saving ? null : () => _save(next: true),
+          ),
+        ],
       ],
     );
   }
@@ -14689,8 +15337,21 @@ class DoctorScreen extends StatefulWidget {
 
 class _DoctorScreenState extends State<DoctorScreen> {
   int _visit = 0;
-  String _semen = semenTypes.first;
+  // The breed injection used most often on this ranch comes first.
+  String _semen = _usualSemen();
   bool _saving = false;
+
+  static String _usualSemen() {
+    final used = frequentNameSuggestions(
+      doctorRows(),
+      'injection',
+      where: (r) => txt(r, 'type') == 'Pregnancy Injection',
+    );
+    for (final name in used) {
+      if (semenTypes.contains(name)) return name;
+    }
+    return semenTypes.first;
+  }
 
   final _problem = TextEditingController();
   final _medicine = TextEditingController();
@@ -14713,12 +15374,13 @@ class _DoctorScreenState extends State<DoctorScreen> {
         tamilUi
             ? 'இந்த பதிவு செய்ய அனுமதி இல்லை'
             : 'Your ranch role does not allow doctor entries',
+        tone: SnackTone.error,
       );
       return;
     }
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
-      snack(context, 'Animal not found');
+      snack(context, 'Animal not found', tone: SnackTone.error);
       return;
     }
     if (_visit == 0 && _problem.text.trim().isEmpty) {
@@ -14727,12 +15389,17 @@ class _DoctorScreenState extends State<DoctorScreen> {
         tamilUi
             ? 'உடல்நிலை பிரச்சனையை எழுதவும்'
             : 'Please describe the problem',
+        tone: SnackTone.error,
       );
       return;
     }
     final animal = withKey(widget.animalKey, raw);
     if (_visit == 1 && txt(animal, 'gender', 'Female') != 'Female') {
-      snack(context, 'Pregnancy can only be recorded for a female animal');
+      snack(
+        context,
+        'Pregnancy can only be recorded for a female animal',
+        tone: SnackTone.error,
+      );
       return;
     }
 
@@ -14766,13 +15433,33 @@ class _DoctorScreenState extends State<DoctorScreen> {
         );
       }
       AutoSyncService.scheduleSync(reason: 'doctor visit saved');
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        final name = txt(animal, 'name');
+        Navigator.of(context).pop();
+        snack(
+          context,
+          _visit == 1
+              ? bi(
+                  'Pregnancy recorded · $name',
+                  'சினைப் பதிவு சேமிக்கப்பட்டது · $name',
+                )
+              : bi(
+                  'Doctor visit saved · $name',
+                  'மருத்துவர் பதிவு சேமிக்கப்பட்டது · $name',
+                ),
+          tone: SnackTone.success,
+          messenger: messenger,
+        );
+      }
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         snack(
           context,
           '${bi('Could not save', 'சேமிக்க முடியவில்லை')}: $error',
+          tone: SnackTone.error,
         );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -14806,12 +15493,12 @@ class _DoctorScreenState extends State<DoctorScreen> {
       children: [
         Glass(
           radius: Gold.r21,
-          padding: const EdgeInsets.all(Gold.s16),
+          padding: const EdgeInsets.all(Space.s16),
           elevation: 0.62,
           child: Row(
             children: [
               CowHoofIcon(size: Gold.t21, color: Ink.violet),
-              const SizedBox(width: Gold.s13),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: AppText(
                   txt(animal, 'name'),
@@ -14836,11 +15523,11 @@ class _DoctorScreenState extends State<DoctorScreen> {
           ),
         ),
         if (female) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           Glass(
             radius: Gold.r21,
-            blur: Gold.s13,
-            padding: const EdgeInsets.all(Gold.s5),
+            blur: Space.s12,
+            padding: const EdgeInsets.all(Space.s4),
             elevation: 0.62,
             child: LiquidSegmentBar(
               labels: tamilUi
@@ -14851,23 +15538,30 @@ class _DoctorScreenState extends State<DoctorScreen> {
             ),
           ),
         ],
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         if (_visit == 0) ...[
-          TextField(
+          // Problems and medicines already used on this ranch are offered
+          // as people type, most frequent first.
+          SuggestionField(
             controller: _problem,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: fieldStyle(
-              tamilUi ? 'உடல்நிலை பிரச்சனை' : 'Problem',
-              icon: Icons.healing_rounded,
+            suggestions: frequentNameSuggestions(
+              doctorRows(),
+              'problem',
+              where: (r) => txt(r, 'type') != 'Pregnancy Injection',
             ),
+            label: tamilUi ? 'உடல்நிலை பிரச்சனை' : 'Problem',
+            icon: Icons.healing_rounded,
           ),
-          const SizedBox(height: Gold.s13),
-          TextField(
+          const SizedBox(height: Space.s12),
+          SuggestionField(
             controller: _medicine,
-            decoration: fieldStyle(
-              tamilUi ? 'ஊசி / மருந்து' : 'Injection / Medicine',
-              icon: Icons.vaccines_rounded,
+            suggestions: frequentNameSuggestions(
+              doctorRows(),
+              'injection',
+              where: (r) => txt(r, 'type') != 'Pregnancy Injection',
             ),
+            label: tamilUi ? 'ஊசி / மருந்து' : 'Injection / Medicine',
+            icon: Icons.vaccines_rounded,
           ),
         ] else
           PickerField<String>(
@@ -14884,16 +15578,16 @@ class _DoctorScreenState extends State<DoctorScreen> {
             ],
             onChanged: (v) => setState(() => _semen = v ?? _semen),
           ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _cost,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             tamilUi ? 'செலவு' : 'Cost',
-            icon: CupertinoIcons.money_dollar_circle,
+            icon: Icons.currency_rupee_rounded,
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _notes,
           maxLines: 3,
@@ -14902,7 +15596,7 @@ class _DoctorScreenState extends State<DoctorScreen> {
             tamilUi ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
           ),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: tamilUi ? 'பதிவை சேமி' : 'Save Doctor Visit',
           icon: CupertinoIcons.checkmark_alt,
@@ -14952,18 +15646,26 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
 
   Future<void> _save() async {
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can register a calf birth');
+      snack(
+        context,
+        'Only admins and editors can register a calf birth',
+        tone: SnackTone.error,
+      );
       return;
     }
     final raw = Hive.box('animals').get(widget.motherKey);
     if (raw == null) {
-      snack(context, 'Mother not found');
+      snack(context, 'Mother not found', tone: SnackTone.error);
       return;
     }
 
     final mother = withKey(widget.motherKey, raw);
     if (txt(mother, 'pregnancyStartDate').isEmpty) {
-      snack(context, 'No active pregnancy is recorded for this animal');
+      snack(
+        context,
+        'No active pregnancy is recorded for this animal',
+        tone: SnackTone.error,
+      );
       return;
     }
     // Compute the id once; calling nextId twice would allocate two numbers and
@@ -14981,6 +15683,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           'An animal named "$calfName" already exists',
           '"$calfName" என்ற பெயரில் ஏற்கெனவே ஒரு கால்நடை உள்ளது',
         ),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -15067,6 +15770,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
         wasCalf
             ? '${txt(mother, 'name')} moved to Cows and milking started'
             : 'Newborn calf saved and milking restarted',
+        tone: SnackTone.success,
       );
       Navigator.of(context).pop();
       Navigator.of(context).maybePop();
@@ -15075,7 +15779,13 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
       if (calvingKey != null) await calvingBox.delete(calvingKey);
       if (calfKey != null) await animalsBox.delete(calfKey);
       await animalsBox.put(widget.motherKey, asMap(raw));
-      if (mounted) snack(context, 'Birth was not saved. Please try again');
+      if (mounted) {
+        snack(
+          context,
+          'Birth was not saved. Please try again',
+          tone: SnackTone.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -15091,7 +15801,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
       children: [
         Glass(
           radius: Gold.r21,
-          padding: const EdgeInsets.all(Gold.s16),
+          padding: const EdgeInsets.all(Space.s16),
           elevation: 0.62,
           child: Row(
             children: [
@@ -15100,7 +15810,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
                 color: Ink.violet,
                 size: Gold.t21,
               ),
-              const SizedBox(width: Gold.s13),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: AppText(
                   '${bi('Mother', 'தாய்')}  ${localizedAnimalLabel(motherName)}',
@@ -15116,7 +15826,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
             ],
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _name,
           textCapitalization: TextCapitalization.words,
@@ -15125,7 +15835,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
             icon: CupertinoIcons.pencil,
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         PickerField<String>(
           initialValue: _breed,
           isExpanded: true,
@@ -15137,7 +15847,7 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           ],
           onChanged: (v) => setState(() => _breed = v ?? _breed),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         PickerField<String>(
           initialValue: _gender,
           isExpanded: true,
@@ -15149,14 +15859,14 @@ class _CalfBornScreenState extends State<CalfBornScreen> {
           ],
           onChanged: (v) => setState(() => _gender = v ?? _gender),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _notes,
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
           decoration: fieldStyle('Notes (optional)'),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: 'Save Newborn Calf',
           icon: CupertinoIcons.checkmark_alt,
@@ -15222,19 +15932,19 @@ class PregnantCowsScreen extends StatelessWidget {
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(
-                maxWidth: Gold.contentWidth + Gold.s89,
+                maxWidth: Gold.contentWidth + Space.s88,
               ),
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(
-                  Gold.s21,
-                  Gold.s13,
-                  Gold.s21,
-                  Gold.s55,
+                  Space.s20,
+                  Space.s12,
+                  Space.s20,
+                  Space.s56,
                 ),
                 children: [
                   if (cows.isNotEmpty) ...[
                     _PregnancySummary(count: cows.length),
-                    const SizedBox(height: Gold.s16),
+                    const SizedBox(height: Space.s16),
                   ],
                   if (cows.isEmpty)
                     SizedBox(
@@ -15246,12 +15956,17 @@ class PregnantCowsScreen extends StatelessWidget {
                           'Record a pregnancy injection from a cow profile to see her here.',
                           'மாட்டின் profile-ல் சினை ஊசியைப் பதிவு செய்தால் இங்கே தெரியும்.',
                         ),
+                        actionLabel: bi('Open cows', 'மாடுகளைத் திற'),
+                        onAction: () => push(
+                          context,
+                          const AnimalsScreen(initialTab: 0, standalone: true),
+                        ),
                       ),
                     )
                   else
                     for (final cow in cows)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: Gold.s13),
+                        padding: const EdgeInsets.only(bottom: Space.s12),
                         child: _PregnancyCard(animal: cow),
                       ),
                 ],
@@ -15271,13 +15986,13 @@ class _PregnancySummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Glass(
     radius: Gold.r27,
-    padding: const EdgeInsets.all(Gold.s21),
+    padding: const EdgeInsets.all(Space.s20),
     elevation: 0.9,
     child: Row(
       children: [
         Container(
-          width: Gold.s55,
-          height: Gold.s55,
+          width: Space.s56,
+          height: Space.s56,
           decoration: ShapeDecoration(
             shape: SquircleBorder(radius: Gold.r21),
             gradient: LinearGradient(
@@ -15292,7 +16007,7 @@ class _PregnancySummary extends StatelessWidget {
             size: Gold.t27,
           ),
         ),
-        const SizedBox(width: Gold.s16),
+        const SizedBox(width: Space.s16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -15302,7 +16017,7 @@ class _PregnancySummary extends StatelessWidget {
                 style: TextStyle(
                   color: Ink.navy,
                   fontSize: Gold.t34,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   height: 1.05,
                 ),
               ),
@@ -15344,7 +16059,7 @@ class _PregnancyCard extends StatelessWidget {
         : '${due.year}-${two(due.month)}-${two(due.day)}';
     return Glass(
       radius: Gold.r27,
-      padding: const EdgeInsets.all(Gold.s16),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.8,
       onTap: () => push(context, AnimalProfileScreen(animalKey: animal['key'])),
       child: Column(
@@ -15352,8 +16067,8 @@ class _PregnancyCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              AnimalAvatar(animal: animal, radius: Gold.s27),
-              const SizedBox(width: Gold.s13),
+              AnimalAvatar(animal: animal, radius: Space.s28),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -15368,7 +16083,7 @@ class _PregnancyCard extends StatelessWidget {
                         color: Ink.navy,
                       ),
                     ),
-                    const SizedBox(height: Gold.s2),
+                    const SizedBox(height: Space.s2),
                     Text(
                       [
                         ui(txt(animal, 'breed', 'Unknown breed')),
@@ -15389,17 +16104,17 @@ class _PregnancyCard extends StatelessWidget {
               Icon(CupertinoIcons.chevron_right, color: Ink.faint),
             ],
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           ClipRRect(
             borderRadius: BorderRadius.circular(Gold.r8),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: Gold.s8,
+              minHeight: Space.s8,
               color: left <= 14 ? Ink.amber : Ink.violetDeep,
               backgroundColor: Ink.violet.withValues(alpha: .12),
             ),
           ),
-          const SizedBox(height: Gold.s8),
+          const SizedBox(height: Space.s8),
           Row(
             children: [
               Expanded(
@@ -15752,12 +16467,16 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
     // Guard before any await: a double tap must never record two sales.
     if (_saving) return;
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can sell animals');
+      snack(
+        context,
+        'Only admins and editors can sell animals',
+        tone: SnackTone.error,
+      );
       return;
     }
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
-      snack(context, 'Animal not found');
+      snack(context, 'Animal not found', tone: SnackTone.error);
       return;
     }
 
@@ -15766,16 +16485,17 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       snack(
         context,
         bi('This animal is already sold', 'இது ஏற்கனவே விற்கப்பட்டது'),
+        tone: SnackTone.error,
       );
       return;
     }
     final price = toDouble(_amount.text);
     if (price <= 0) {
-      snack(context, 'Please enter the sale amount');
+      snack(context, 'Please enter the sale amount', tone: SnackTone.error);
       return;
     }
     if (_customer.text.trim().isEmpty) {
-      snack(context, 'Please select a customer');
+      snack(context, 'Please select a customer', tone: SnackTone.error);
       return;
     }
 
@@ -15825,6 +16545,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
             'Could not save the sale. Try again.',
             'விற்பனையைச் சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
           ),
+          tone: SnackTone.error,
         );
       }
       return;
@@ -15859,12 +16580,12 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
       children: [
         Glass(
           radius: Gold.r21,
-          padding: const EdgeInsets.all(Gold.s16),
+          padding: const EdgeInsets.all(Space.s16),
           elevation: 0.62,
           child: Row(
             children: [
-              AnimalAvatar(animal: animal, radius: Gold.s21, decorate: false),
-              const SizedBox(width: Gold.s13),
+              AnimalAvatar(animal: animal, radius: Space.s20, decorate: false),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: AppText(
                   txt(animal, 'name'),
@@ -15880,7 +16601,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
             ],
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         customerPicker(
           context: context,
           customer: _customer,
@@ -15888,25 +16609,25 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
           contact: _customerContact,
           refresh: () => setState(() {}),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _amount,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             'Sale Price / Income',
-            icon: CupertinoIcons.money_dollar_circle,
+            icon: Icons.currency_rupee_rounded,
           ),
         ),
         if (calfCount > 0) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           Glass(
             radius: Gold.r21,
             padding: const EdgeInsets.symmetric(
-              horizontal: Gold.s16,
-              vertical: Gold.s5,
+              horizontal: Space.s16,
+              vertical: Space.s4,
             ),
             elevation: 0.62,
-            child: SwitchListTile.adaptive(
+            child: SoundSwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _withCalves,
               activeThumbColor: Ink.violet,
@@ -15927,14 +16648,14 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
             ),
           ),
         ],
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _notes,
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
           decoration: fieldStyle('Notes (optional)'),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: 'Save Sale',
           icon: CupertinoIcons.checkmark_alt,
@@ -15977,18 +16698,23 @@ class _DeathScreenState extends State<DeathScreen> {
     // One confirmation at a time: repeated taps must not open two dialogs.
     if (_saving) return;
     if (!canEditAnimals) {
-      snack(context, 'Only admins and editors can update animal status');
+      snack(
+        context,
+        'Only admins and editors can update animal status',
+        tone: SnackTone.error,
+      );
       return;
     }
     final raw = Hive.box('animals').get(widget.animalKey);
     if (raw == null) {
-      snack(context, 'Animal not found');
+      snack(context, 'Animal not found', tone: SnackTone.error);
       return;
     }
     if (txt(withKey(widget.animalKey, raw), 'status') == 'Died') {
       snack(
         context,
         bi('Death already recorded', 'இறப்பு ஏற்கனவே பதிவு செய்யப்பட்டது'),
+        tone: SnackTone.error,
       );
       return;
     }
@@ -16053,6 +16779,7 @@ class _DeathScreenState extends State<DeathScreen> {
             'Could not save. Try again.',
             'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
           ),
+          tone: SnackTone.error,
         );
       }
       return;
@@ -16085,12 +16812,12 @@ class _DeathScreenState extends State<DeathScreen> {
       children: [
         Glass(
           radius: Gold.r21,
-          padding: const EdgeInsets.all(Gold.s16),
+          padding: const EdgeInsets.all(Space.s16),
           elevation: 0.62,
           child: Row(
             children: [
               CowHoofIcon(size: Gold.t21, color: Ink.red),
-              const SizedBox(width: Gold.s13),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: AppText(
                   txt(animal, 'name'),
@@ -16106,7 +16833,7 @@ class _DeathScreenState extends State<DeathScreen> {
             ],
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         PickerField<String>(
           initialValue: _reason,
           isExpanded: true,
@@ -16121,23 +16848,23 @@ class _DeathScreenState extends State<DeathScreen> {
           ],
           onChanged: (v) => setState(() => _reason = v ?? _reason),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _cost,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: fieldStyle(
             'Cost / Expense',
-            icon: CupertinoIcons.money_dollar_circle,
+            icon: Icons.currency_rupee_rounded,
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _notes,
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
           decoration: fieldStyle('Notes (optional)'),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: 'Save Death Record',
           icon: CupertinoIcons.checkmark_alt,
@@ -16258,16 +16985,24 @@ class _SellScreenState extends State<SellScreen> {
     if (_saving) return;
     try {
       if (_isAnimalSale && !canEditAnimals) {
-        snack(context, 'Only admins and editors can sell cows or calves');
+        snack(
+          context,
+          'Only admins and editors can sell cows or calves',
+          tone: SnackTone.error,
+        );
         return;
       }
       if (!_isAnimalSale && !canRecordEntries) {
-        snack(context, 'Your ranch role does not allow recording sales');
+        snack(
+          context,
+          'Your ranch role does not allow recording sales',
+          tone: SnackTone.error,
+        );
         return;
       }
       final amount = _amount;
       if (!amount.isFinite || (!_ownUse && amount <= 0)) {
-        snack(context, 'Please enter an amount');
+        snack(context, 'Please enter an amount', tone: SnackTone.error);
         return;
       }
 
@@ -16275,23 +17010,39 @@ class _SellScreenState extends State<SellScreen> {
       double quantity = toDouble(_qty.text);
       double perUnit = _ownUse ? 0.0 : toDouble(_price.text);
       if (!_isAnimalSale && (quantity <= 0 || (!_ownUse && perUnit <= 0))) {
-        snack(context, 'Please enter a valid quantity and price');
+        snack(
+          context,
+          'Please enter a valid quantity and price',
+          tone: SnackTone.error,
+        );
         return;
       }
 
       if (!_ownUse) {
         if (_customer.text.trim().isEmpty) {
-          snack(context, 'Please enter the customer name');
+          snack(
+            context,
+            'Please enter the customer name',
+            tone: SnackTone.error,
+          );
           return;
         }
       }
       if (_type == 0) {
         if (!quantity.isFinite || quantity <= 0) {
-          snack(context, 'Please enter the milk quantity');
+          snack(
+            context,
+            'Please enter the milk quantity',
+            tone: SnackTone.error,
+          );
           return;
         }
         if (quantity > availableMilk('Today')) {
-          snack(context, 'Cannot sell more than the milk available today');
+          snack(
+            context,
+            'Cannot sell more than the milk available today',
+            tone: SnackTone.error,
+          );
           return;
         }
       }
@@ -16300,13 +17051,13 @@ class _SellScreenState extends State<SellScreen> {
       if (_isAnimalSale) {
         final list = _sellable;
         if (list.isEmpty) {
-          snack(context, 'No animals available to sell');
+          snack(context, 'No animals available to sell', tone: SnackTone.error);
           return;
         }
         final selected = _animal.isEmpty ? '${list.first['key']}' : _animal;
         final matches = list.where((a) => '${a['key']}' == selected).toList();
         if (matches.isEmpty) {
-          snack(context, 'Please choose an animal');
+          snack(context, 'Please choose an animal', tone: SnackTone.error);
           return;
         }
         animal = matches.first;
@@ -16353,8 +17104,12 @@ class _SellScreenState extends State<SellScreen> {
       snack(
         context,
         _ownUse
-            ? bi('Own use milk saved', 'சொந்த பயன்பாட்டுப் பால் சேமிக்கப்பட்டது')
+            ? bi(
+                'Own use milk saved',
+                'சொந்த பயன்பாட்டுப் பால் சேமிக்கப்பட்டது',
+              )
             : bi('Sale saved', 'விற்பனை சேமிக்கப்பட்டது'),
+        tone: SnackTone.success,
       );
       setState(() {
         _saving = false;
@@ -16373,6 +17128,7 @@ class _SellScreenState extends State<SellScreen> {
           tamilUi
               ? 'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
               : 'Could not save. Please try again.',
+          tone: SnackTone.error,
         );
       }
     } finally {
@@ -16419,7 +17175,7 @@ class _SellScreenState extends State<SellScreen> {
               color: Ink.navy,
             ),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           _BalanceRow(
             label: tamilUi ? 'கறந்த பால்' : 'Collected',
             value: '${collected.toStringAsFixed(1)} L',
@@ -16443,7 +17199,7 @@ class _SellScreenState extends State<SellScreen> {
           ),
           if (selling > 0) ...[
             Divider(
-              height: Gold.s21,
+              height: Space.s20,
               color: Ink.violet.withValues(alpha: 0.10),
             ),
             _BalanceRow(
@@ -16462,21 +17218,33 @@ class _SellScreenState extends State<SellScreen> {
 
   Future<void> _saveStockPurchase() async {
     if (!canRecordEntries) {
-      snack(context, 'Your ranch role does not allow adding stock');
+      snack(
+        context,
+        'Your ranch role does not allow adding stock',
+        tone: SnackTone.error,
+      );
       return;
     }
     final quantity = toDouble(_stockQty.text);
     final amount = toDouble(_stockAmount.text);
     if (_stockSupplier.text.trim().isEmpty) {
-      snack(context, 'Please select a customer or supplier');
+      snack(
+        context,
+        'Please select a customer or supplier',
+        tone: SnackTone.error,
+      );
       return;
     }
     if (quantity <= 0) {
-      snack(context, 'Please enter the purchased quantity');
+      snack(
+        context,
+        'Please enter the purchased quantity',
+        tone: SnackTone.error,
+      );
       return;
     }
     if (amount <= 0) {
-      snack(context, 'Please enter the purchase amount');
+      snack(context, 'Please enter the purchase amount', tone: SnackTone.error);
       return;
     }
     setState(() => _saving = true);
@@ -16502,7 +17270,11 @@ class _SellScreenState extends State<SellScreen> {
       'createdAt': DateTime.now().toIso8601String(),
     });
     if (!mounted) return;
-    snack(context, '${_stockItems[_stockItem]} stock added');
+    snack(
+      context,
+      '${_stockItems[_stockItem]} stock added',
+      tone: SnackTone.success,
+    );
     setState(() {
       _saving = false;
       _stockQty.clear();
@@ -16521,16 +17293,16 @@ class _SellScreenState extends State<SellScreen> {
       return Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s8,
-            Gold.s21,
+            Space.s20,
+            Space.s8,
+            Space.s20,
             _MainShellState.bottomInset,
           ),
           children: [
             Row(
               children: [
                 for (int i = 0; i < _stockItems.length; i++) ...[
-                  if (i > 0) const SizedBox(width: Gold.s13),
+                  if (i > 0) const SizedBox(width: Space.s12),
                   Expanded(
                     child: Glass(
                       radius: Gold.r27,
@@ -16551,7 +17323,7 @@ class _SellScreenState extends State<SellScreen> {
                                 : CupertinoIcons.cube_box_fill,
                             color: i == 0 ? Ink.amber : Ink.violet,
                           ),
-                          const SizedBox(height: Gold.s13),
+                          const SizedBox(height: Space.s12),
                           AppText(
                             tamilUi
                                 ? (i == 0 ? 'வைக்கோல்' : 'தவிடு')
@@ -16576,13 +17348,13 @@ class _SellScreenState extends State<SellScreen> {
                 ],
               ],
             ),
-            const SizedBox(height: Gold.s21),
+            const SizedBox(height: Space.s20),
             SectionTitle(
               title: tamilUi ? 'வாங்கிய தீவனத்தை சேர்' : 'Add Purchased Stock',
             ),
             Glass(
               radius: Gold.r27,
-              blur: Gold.s21,
+              blur: Space.s20,
               child: Column(
                 children: [
                   LiquidSegmentBar(
@@ -16590,7 +17362,7 @@ class _SellScreenState extends State<SellScreen> {
                     index: _stockItem,
                     onChanged: (value) => setState(() => _stockItem = value),
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   customerPicker(
                     context: context,
                     customer: _stockSupplier,
@@ -16598,7 +17370,7 @@ class _SellScreenState extends State<SellScreen> {
                     contact: _stockSupplierContact,
                     refresh: () => setState(() {}),
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   TextField(
                     controller: _stockQty,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -16611,7 +17383,7 @@ class _SellScreenState extends State<SellScreen> {
                       icon: Icons.scale_rounded,
                     ),
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   TextField(
                     controller: _stockAmount,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -16619,10 +17391,10 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                     decoration: fieldStyle(
                       tamilUi ? 'மொத்த தொகை' : 'Total Purchase Amount',
-                      icon: CupertinoIcons.money_dollar_circle,
+                      icon: Icons.currency_rupee_rounded,
                     ),
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   TextField(
                     controller: _stockNotes,
                     maxLines: 2,
@@ -16630,7 +17402,7 @@ class _SellScreenState extends State<SellScreen> {
                       tamilUi ? 'குறிப்பு (விருப்பம்)' : 'Notes (optional)',
                     ),
                   ),
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   LiquidButton(
                     label: tamilUi ? 'இருப்பில் சேர்' : 'Add to Stock',
                     icon: CupertinoIcons.plus_square_fill,
@@ -16641,7 +17413,7 @@ class _SellScreenState extends State<SellScreen> {
               ),
             ),
             if (recent.isNotEmpty) ...[
-              const SizedBox(height: Gold.s21),
+              const SizedBox(height: Space.s20),
               SectionTitle(
                 title: tamilUi
                     ? 'சமீபத்திய தீவன பதிவுகள்'
@@ -16649,10 +17421,10 @@ class _SellScreenState extends State<SellScreen> {
               ),
               for (final record in recent)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: Gold.s8),
+                  padding: const EdgeInsets.only(bottom: Space.s8),
                   child: Glass(
                     radius: Gold.r21,
-                    padding: const EdgeInsets.all(Gold.s13),
+                    padding: const EdgeInsets.all(Space.s12),
                     child: Row(
                       children: [
                         Icon(
@@ -16663,7 +17435,7 @@ class _SellScreenState extends State<SellScreen> {
                               ? Ink.red
                               : Ink.green,
                         ),
-                        const SizedBox(width: Gold.s13),
+                        const SizedBox(width: Space.s12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -16714,7 +17486,7 @@ class _SellScreenState extends State<SellScreen> {
               actions: [
                 if (_section == 2)
                   Padding(
-                    padding: const EdgeInsets.only(right: Gold.s8),
+                    padding: const EdgeInsets.only(right: Space.s8),
                     child: IconButton(
                       tooltip: ui('Export'),
                       icon: Icon(
@@ -16753,9 +17525,9 @@ class _SellScreenState extends State<SellScreen> {
               // The app bar already names the page; content starts right
               // beneath it.
               padding: const EdgeInsets.fromLTRB(
-                Gold.s21,
-                Gold.s8,
-                Gold.s21,
+                Space.s20,
+                Space.s8,
+                Space.s20,
                 _MainShellState.bottomInset,
               ),
               children: [
@@ -16764,8 +17536,8 @@ class _SellScreenState extends State<SellScreen> {
                     index: 1,
                     child: Glass(
                       radius: Gold.r27,
-                      blur: Gold.s13,
-                      padding: const EdgeInsets.all(Gold.s5),
+                      blur: Space.s12,
+                      padding: const EdgeInsets.all(Space.s4),
                       elevation: 0.62,
                       child: LiquidSegmentBar(
                         labels: _types,
@@ -16775,6 +17547,7 @@ class _SellScreenState extends State<SellScreen> {
                             snack(
                               context,
                               'Only admins and editors can sell cows or calves',
+                              tone: SnackTone.error,
                             );
                             return;
                           }
@@ -16793,13 +17566,13 @@ class _SellScreenState extends State<SellScreen> {
                       ),
                     ),
                   ),
-                const SizedBox(height: Gold.s13),
+                const SizedBox(height: Space.s12),
                 if (_type == 0) ...[
                   Reveal(index: 3, child: _milkBalance()),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                 ],
                 Reveal(index: 4, child: _customerFields()),
-                const SizedBox(height: Gold.s13),
+                const SizedBox(height: Space.s12),
                 if (_isAnimalSale) ...[
                   Reveal(
                     index: 4,
@@ -16819,10 +17592,10 @@ class _SellScreenState extends State<SellScreen> {
                               _type == 1 ? 'Select Cow' : 'Select Calf',
                               prefix: const Padding(
                                 padding: EdgeInsets.only(
-                                  left: Gold.s13,
-                                  right: Gold.s8,
+                                  left: Space.s12,
+                                  right: Space.s8,
                                 ),
-                                child: CowHoofIcon(size: Gold.s34),
+                                child: CowHoofIcon(size: Space.s32),
                               ),
                             ),
                             items: [
@@ -16838,7 +17611,7 @@ class _SellScreenState extends State<SellScreen> {
                                 setState(() => _animal = v ?? _animal),
                           ),
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   Reveal(
                     index: 5,
                     child: TextField(
@@ -16848,7 +17621,7 @@ class _SellScreenState extends State<SellScreen> {
                       ),
                       decoration: fieldStyle(
                         'Sale Amount',
-                        icon: CupertinoIcons.money_dollar_circle,
+                        icon: Icons.currency_rupee_rounded,
                       ),
                     ),
                   ),
@@ -16866,7 +17639,7 @@ class _SellScreenState extends State<SellScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   Reveal(
                     index: 6,
                     child: TextField(
@@ -16886,7 +17659,7 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: Gold.s13),
+                const SizedBox(height: Space.s12),
                 Reveal(
                   index: 6,
                   child: Glass(
@@ -16902,8 +17675,8 @@ class _SellScreenState extends State<SellScreen> {
                     child: Row(
                       children: [
                         Container(
-                          width: Gold.s34,
-                          height: Gold.s34,
+                          width: Space.s32,
+                          height: Space.s32,
                           decoration: ShapeDecoration(
                             shape: const SquircleBorder(radius: Gold.r13),
                             color: Ink.green.withValues(alpha: 0.18),
@@ -16914,7 +17687,7 @@ class _SellScreenState extends State<SellScreen> {
                             size: Gold.t21,
                           ),
                         ),
-                        const SizedBox(width: Gold.s13),
+                        const SizedBox(width: Space.s12),
                         Expanded(
                           child: AppText(
                             tamilUi ? 'மொத்த தொகை' : 'Calculated Amount',
@@ -16937,7 +17710,7 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: Gold.s13),
+                const SizedBox(height: Space.s12),
                 Reveal(
                   index: 7,
                   child: TextField(
@@ -16949,7 +17722,7 @@ class _SellScreenState extends State<SellScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: Gold.s21),
+                const SizedBox(height: Space.s20),
                 Reveal(
                   index: 8,
                   child: LiquidButton(
@@ -16993,15 +17766,15 @@ class _BalanceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Gold.s5),
+      padding: const EdgeInsets.symmetric(vertical: Space.s4),
       child: Row(
         children: [
           Container(
-            width: Gold.s8,
-            height: Gold.s8,
+            width: Space.s8,
+            height: Space.s8,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: AppText(
               label,
@@ -17084,10 +17857,10 @@ class RecordListScreen extends StatelessWidget {
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s55,
-            Gold.s21,
-            Gold.s55,
+            Space.s20,
+            Space.s56,
+            Space.s20,
+            Space.s56,
           ),
           children: [
             Reveal(
@@ -17097,7 +17870,7 @@ class RecordListScreen extends StatelessWidget {
                   for (final p in const ['Today', 'This Week', 'This Month'])
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.only(right: Gold.s8),
+                        padding: const EdgeInsets.only(right: Space.s8),
                         child: _MiniStat(
                           label: p,
                           value: isMilk
@@ -17110,7 +17883,7 @@ class RecordListScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: Gold.s21),
+            const SizedBox(height: Space.s20),
             if (list.isEmpty)
               const Reveal(
                 index: 1,
@@ -17140,7 +17913,7 @@ class RecordListScreen extends StatelessWidget {
                         title: txt(list[i], 'cat'),
                         subtitle:
                             '${txt(list[i], 'date')} \u2022 ${txt(list[i], 'time', '--')}',
-                        icon: CupertinoIcons.money_dollar_circle_fill,
+                        icon: Icons.currency_rupee_rounded,
                         color: Ink.red,
                         details: [
                           '${bi('Details', 'விவரம்')}: ${cleanFoodLabel(txt(list[i], 'foodLabel', txt(list[i], 'type', txt(list[i], 'reason', '-'))))}',
@@ -17171,7 +17944,7 @@ class _MiniStat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Glass(
       radius: Gold.r21,
-      padding: const EdgeInsets.all(Gold.s13),
+      padding: const EdgeInsets.all(Space.s12),
       elevation: 0.62,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -17186,7 +17959,7 @@ class _MiniStat extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: Gold.s3),
+          const SizedBox(height: Space.s4),
           AppText(
             value,
             maxLines: 1,
@@ -17250,9 +18023,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return Shell(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(
-          Gold.s21,
-          Gold.s8,
-          Gold.s21,
+          Space.s20,
+          Space.s8,
+          Space.s20,
           _MainShellState.bottomInset,
         ),
         children: [
@@ -17270,8 +18043,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 crossAxisCount: constraints.maxWidth >= 800 ? 4 : 2,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: Gold.s13,
-                mainAxisSpacing: Gold.s13,
+                crossAxisSpacing: Space.s12,
+                mainAxisSpacing: Space.s12,
                 mainAxisExtent: math.max(
                   164,
                   118 + 48 * MediaQuery.textScalerOf(context).scale(1),
@@ -17322,7 +18095,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
             ),
           ),
-          const SizedBox(height: Gold.s16),
+          const SizedBox(height: Space.s16),
           Reveal(
             index: 3,
             child: Glass(
@@ -17354,13 +18127,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   ProfitBar(
                     income: income,
                     expense: expense,
                     showValues: false,
                   ),
-                  const SizedBox(height: Gold.s8),
+                  const SizedBox(height: Space.s8),
                   AppText(
                     net >= 0
                         ? bi(
@@ -17381,7 +18154,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
             ),
           ),
-          const SizedBox(height: Gold.s34),
+          const SizedBox(height: Space.s32),
           Reveal(
             index: 4,
             child: const SectionTitle(title: 'Detailed Reports'),
@@ -17445,17 +18218,17 @@ class _SummaryTile extends StatelessWidget {
     return Glass(
       onTap: onTap,
       radius: Gold.r27,
-      padding: const EdgeInsets.all(Gold.s16),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.8,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
-                radius: Gold.concentric(Gold.r27, Gold.s16),
+                radius: Gold.concentric(Gold.r27, Space.s16),
               ),
               color: color.withValues(alpha: 0.13),
             ),
@@ -17472,7 +18245,7 @@ class _SummaryTile extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: Gold.s2),
+          const SizedBox(height: Space.s2),
           FlowText(
             value,
             style: TextStyle(
@@ -17517,9 +18290,9 @@ class ProfitBar extends StatelessWidget {
         // A plain capsule clip: the squircle path degenerates on a bar this
         // thin and could hide the bar entirely.
         ClipRRect(
-          borderRadius: BorderRadius.circular(Gold.s8),
+          borderRadius: BorderRadius.circular(Space.s8),
           child: SizedBox(
-            height: Gold.s13,
+            height: Space.s12,
             child: Row(
               children: [
                 Expanded(
@@ -17549,7 +18322,7 @@ class ProfitBar extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         // Income sits under the green end of the bar and expense under the
         // red end, so each reads directly against its share.
         Row(
@@ -17562,7 +18335,7 @@ class ProfitBar extends StatelessWidget {
                 value: showValues ? money(income) : '',
               ),
             ),
-            const SizedBox(width: Gold.s16),
+            const SizedBox(width: Space.s16),
             Expanded(
               child: _ProfitLegend(
                 color: Ink.red,
@@ -17597,7 +18370,7 @@ class _ProfitLegend extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _Dot(color: color),
-          const SizedBox(width: Gold.s5),
+          const SizedBox(width: Space.s4),
           Flexible(
             child: AppText(
               label,
@@ -17613,7 +18386,7 @@ class _ProfitLegend extends StatelessWidget {
         ],
       ),
       if (value.isNotEmpty) ...[
-        const SizedBox(height: Gold.s2),
+        const SizedBox(height: Space.s2),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: end ? Alignment.centerRight : Alignment.centerLeft,
@@ -17621,7 +18394,7 @@ class _ProfitLegend extends StatelessWidget {
             value,
             style: TextStyle(
               fontSize: Gold.t16,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
             ),
           ),
@@ -17637,8 +18410,8 @@ class _Dot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: Gold.s8,
-    height: Gold.s8,
+    width: Space.s8,
+    height: Space.s8,
     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 }
@@ -17662,24 +18435,24 @@ class _ReportLink extends StatelessWidget {
   Widget build(BuildContext context) {
     return Glass(
       radius: Gold.r27,
-      margin: const EdgeInsets.only(bottom: Gold.s13),
-      padding: const EdgeInsets.all(Gold.s16),
+      margin: const EdgeInsets.only(bottom: Space.s12),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.8,
       onTap: onTap,
       child: Row(
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
-                radius: Gold.concentric(Gold.r27, Gold.s16),
+                radius: Gold.concentric(Gold.r27, Space.s16),
               ),
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(icon, color: color, size: Gold.t21),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -17809,18 +18582,18 @@ class ReportDetailScreen extends StatelessWidget {
                 '${ownerName()} \u2022 ${placeName()}',
                 style: TextStyle(color: Ink.muted, fontSize: Gold.t11),
               ),
-              const SizedBox(height: Gold.s16),
+              const SizedBox(height: Space.s16),
               ProfitBar(income: lifeIncome, expense: lifeExpense),
             ],
           ),
         ),
-        const SizedBox(height: Gold.s16),
+        const SizedBox(height: Space.s16),
         GridView.count(
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: Gold.s13,
-          mainAxisSpacing: Gold.s13,
+          crossAxisSpacing: Space.s12,
+          mainAxisSpacing: Space.s12,
           childAspectRatio: Gold.sqrtPhi,
           children: [
             _SummaryTile(
@@ -17849,14 +18622,14 @@ class ReportDetailScreen extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: Gold.s16),
+        const SizedBox(height: Space.s16),
         InfoRow(
           title: 'Lifetime Milk',
           value: '${milkTotal('All').toStringAsFixed(1)} L',
           icon: CupertinoIcons.drop_fill,
           color: Ink.violet,
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
 
         InfoRow(
           title: 'Net Result',
@@ -17864,7 +18637,7 @@ class ReportDetailScreen extends StatelessWidget {
           icon: CupertinoIcons.building_2_fill,
           color: lifeIncome - lifeExpense >= 0 ? Ink.green : Ink.red,
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: 'Export Reports',
           icon: CupertinoIcons.arrow_down_doc,
@@ -17885,10 +18658,10 @@ class ReportDetailScreen extends StatelessWidget {
         body: Shell(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
-              Gold.s21,
-              Gold.s55,
-              Gold.s21,
-              Gold.s55,
+              Space.s20,
+              Space.s56,
+              Space.s20,
+              Space.s56,
             ),
             children: [Reveal(index: 0, child: _business(context))],
           ),
@@ -17905,10 +18678,10 @@ class ReportDetailScreen extends StatelessWidget {
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s55,
-            Gold.s21,
-            Gold.s55,
+            Space.s20,
+            Space.s56,
+            Space.s20,
+            Space.s56,
           ),
           children: [
             if (buckets.isEmpty)
@@ -17932,8 +18705,8 @@ class ReportDetailScreen extends StatelessWidget {
 
                     return Glass(
                       radius: Gold.r27,
-                      margin: const EdgeInsets.only(bottom: Gold.s13),
-                      padding: const EdgeInsets.all(Gold.s16),
+                      margin: const EdgeInsets.only(bottom: Space.s12),
+                      padding: const EdgeInsets.all(Space.s16),
                       elevation: 0.8,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -17960,7 +18733,7 @@ class ReportDetailScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                          const SizedBox(height: Gold.s13),
+                          const SizedBox(height: Space.s12),
                           Row(
                             children: [
                               _Cell(
@@ -18011,7 +18784,7 @@ class _Cell extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: Gold.s2),
+          const SizedBox(height: Space.s2),
           AppText(
             value,
             maxLines: 1,
@@ -18219,7 +18992,7 @@ class ExportReportScreen extends StatelessWidget {
             }
           },
         ),
-        const SizedBox(height: Gold.s8),
+        const SizedBox(height: Space.s8),
         const SectionTitle(title: 'Individual files'),
         _ExportTile(
           title: 'Milk Records',
@@ -18236,7 +19009,7 @@ class ExportReportScreen extends StatelessWidget {
         _ExportTile(
           title: 'Expenses',
           subtitle: 'Stock, others, doctor, purchase and loss',
-          icon: CupertinoIcons.money_dollar_circle_fill,
+          icon: Icons.currency_rupee_rounded,
           color: Ink.red,
           onTap: () async {
             if (await downloadCsvFile('expenses_$stamp.csv', _expenseCsv()) &&
@@ -18269,7 +19042,7 @@ class ExportReportScreen extends StatelessWidget {
             }
           },
         ),
-        const SizedBox(height: Gold.s8),
+        const SizedBox(height: Space.s8),
         _ExportTile(
           title: 'Full Backup',
           subtitle: 'Everything, as a JSON file you can restore later',
@@ -18309,24 +19082,24 @@ class _ExportTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Glass(
       radius: Gold.r27,
-      margin: const EdgeInsets.only(bottom: Gold.s13),
-      padding: const EdgeInsets.all(Gold.s16),
+      margin: const EdgeInsets.only(bottom: Space.s12),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.8,
       onTap: onTap,
       child: Row(
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
-                radius: Gold.concentric(Gold.r27, Gold.s16),
+                radius: Gold.concentric(Gold.r27, Space.s16),
               ),
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(icon, color: color, size: Gold.t21),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -18372,10 +19145,10 @@ class SettingsScreen extends StatelessWidget {
         body: Shell(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
-              Gold.s21,
-              Gold.s55,
-              Gold.s21,
-              Gold.s55,
+              Space.s20,
+              Space.s56,
+              Space.s20,
+              Space.s56,
             ),
             children: [
               Reveal(
@@ -18383,12 +19156,12 @@ class SettingsScreen extends StatelessWidget {
                 child: Glass(
                   radius: Gold.r34,
                   elevation: 1.3,
-                  padding: const EdgeInsets.all(Gold.s21),
+                  padding: const EdgeInsets.all(Space.s20),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const BrandMark(size: Gold.s89),
-                      const SizedBox(width: Gold.s21),
+                      const BrandMark(size: Space.s88),
+                      const SizedBox(width: Space.s20),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -18406,7 +19179,7 @@ class SettingsScreen extends StatelessWidget {
                                 height: 1,
                               ),
                             ),
-                            const SizedBox(height: Gold.s5),
+                            const SizedBox(height: Space.s4),
                             AppText(
                               ranchId().isEmpty && firebaseReady
                                   ? (accountFullName.isNotEmpty
@@ -18433,7 +19206,7 @@ class SettingsScreen extends StatelessWidget {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            const SizedBox(height: Gold.s13),
+                            const SizedBox(height: Space.s12),
                             const SyncChip(),
                           ],
                         ),
@@ -18442,7 +19215,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: Gold.s21),
+              const SizedBox(height: Space.s20),
               Reveal(
                 index: 1,
                 child: _SettingLink(
@@ -18472,7 +19245,7 @@ class SettingsScreen extends StatelessWidget {
                     onTap: () => push(context, const RanchSettingsScreen()),
                   ),
                 ),
-              const SizedBox(height: Gold.s16),
+              const SizedBox(height: Space.s16),
               Reveal(index: 4, child: const SectionTitle(title: 'Data')),
               Reveal(
                 index: 5,
@@ -18550,7 +19323,7 @@ class SettingsScreen extends StatelessWidget {
               ),
               if (firebaseReady &&
                   FirebaseAuth.instance.currentUser != null) ...[
-                const SizedBox(height: Gold.s21),
+                const SizedBox(height: Space.s20),
                 Reveal(
                   index: 9,
                   child: GhostButton(
@@ -18564,7 +19337,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
               ],
-              const SizedBox(height: Gold.s21),
+              const SizedBox(height: Space.s20),
               Center(
                 child: AppText(
                   'Manage. Care. Grow.',
@@ -18602,24 +19375,24 @@ class _SettingLink extends StatelessWidget {
   Widget build(BuildContext context) {
     return Glass(
       radius: Gold.r27,
-      margin: const EdgeInsets.only(bottom: Gold.s13),
-      padding: const EdgeInsets.all(Gold.s16),
+      margin: const EdgeInsets.only(bottom: Space.s12),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.8,
       onTap: onTap,
       child: Row(
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: SquircleBorder(
-                radius: Gold.concentric(Gold.r27, Gold.s16),
+                radius: Gold.concentric(Gold.r27, Space.s16),
               ),
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(icon, color: color, size: Gold.t21),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -18717,19 +19490,19 @@ class _RanchSettingsScreenState extends State<RanchSettingsScreen> {
           textCapitalization: TextCapitalization.words,
           decoration: fieldStyle('Farm Name', icon: CupertinoIcons.house),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _owner,
           textCapitalization: TextCapitalization.words,
           decoration: fieldStyle('Owner Name', icon: CupertinoIcons.person),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _place,
           textCapitalization: TextCapitalization.words,
           decoration: fieldStyle('Place', icon: CupertinoIcons.location),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _price,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -18738,7 +19511,7 @@ class _RanchSettingsScreenState extends State<RanchSettingsScreen> {
             icon: CupertinoIcons.tag,
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _ranch,
           readOnly: true,
@@ -18747,9 +19520,9 @@ class _RanchSettingsScreenState extends State<RanchSettingsScreen> {
             icon: CupertinoIcons.lock_shield,
           ),
         ),
-        const SizedBox(height: Gold.s8),
+        const SizedBox(height: Space.s8),
 
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: 'Save Settings',
           icon: CupertinoIcons.checkmark_alt,
@@ -18761,7 +19534,7 @@ class _RanchSettingsScreenState extends State<RanchSettingsScreen> {
                   'Only the ranch admin can change these settings',
                 ),
         ),
-        const SizedBox(height: Gold.s27),
+        const SizedBox(height: Space.s28),
         _SettingLink(
           title: 'Family Users',
           subtitle: 'Admin, Editor and Data Entry access',
@@ -18788,6 +19561,7 @@ class AppSettingsScreen extends StatelessWidget {
         'performanceMode',
         'lowEndDevice',
         'purposeProfiles',
+        UiSound.settingKey,
       ],
     ),
     builder: (_, _, _) => Scaffold(
@@ -18796,10 +19570,10 @@ class AppSettingsScreen extends StatelessWidget {
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s13,
-            Gold.s21,
-            Gold.s55,
+            Space.s20,
+            Space.s12,
+            Space.s20,
+            Space.s56,
           ),
           children: [
             _InsetGroup(
@@ -18893,6 +19667,27 @@ class AppSettingsScreen extends StatelessWidget {
                         Hive.box('settings').put('performanceMode', v),
                   ),
                 ),
+                ListTile(
+                  leading: Icon(CupertinoIcons.speaker_2, color: _blue),
+                  title: AppText(bi('Sounds', 'ஒலிகள்')),
+                  subtitle: AppText(
+                    bi(
+                      'Soft sounds for saving, switches and alerts. '
+                          'Silent mode keeps them quiet.',
+                      'சேமித்தல், மாற்றிகள், அறிவிப்புகளுக்கு மென்மையான ஒலிகள். '
+                          'சைலண்ட் முறையில் ஒலிக்காது.',
+                    ),
+                    style: TextStyle(fontSize: 13, color: Ink.muted),
+                  ),
+                  trailing: Semantics(
+                    label: bi('Sounds', 'ஒலிகள்'),
+                    child: SoundSwitch(
+                      value: UiSound.enabled,
+                      activeTrackColor: Ink.tint,
+                      onChanged: UiSound.setEnabled,
+                    ),
+                  ),
+                ),
                 _ActionRow(
                   icon: CupertinoIcons.slider_horizontal_3,
                   label: 'Preferences',
@@ -18956,7 +19751,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 txt(request, 'email'),
                 style: TextStyle(color: Ink.muted),
               ),
-              const SizedBox(height: Gold.s13),
+              const SizedBox(height: Space.s12),
               PickerField<String>(
                 initialValue: role,
                 isExpanded: true,
@@ -18971,7 +19766,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 onChanged: (value) =>
                     setLocal(() => role = value ?? 'Data Entry'),
               ),
-              const SizedBox(height: Gold.s13),
+              const SizedBox(height: Space.s12),
               AppText(
                 rolePermissionSummary(role),
                 style: TextStyle(color: Ink.muted, height: 1.35),
@@ -19054,7 +19849,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 ],
                 onChanged: (value) => setLocal(() => role = value ?? role),
               ),
-              const SizedBox(height: Gold.s13),
+              const SizedBox(height: Space.s12),
               AppText(
                 rolePermissionSummary(role),
                 style: TextStyle(color: Ink.muted, height: 1.35),
@@ -19092,7 +19887,7 @@ class FamilyUsersScreen extends StatelessWidget {
     try {
       if (action == 'save') {
         await RanchAccessService.updateMemberRole(ranchId(), memberUid, role);
-        if (context.mounted)
+        if (context.mounted) {
           snack(
             context,
             bi(
@@ -19100,6 +19895,7 @@ class FamilyUsersScreen extends StatelessWidget {
               'அனுமதி ${ui(role)} ஆக மாற்றப்பட்டது',
             ),
           );
+        }
       } else {
         final confirm = await showDialog<bool>(
           context: context,
@@ -19145,8 +19941,8 @@ class FamilyUsersScreen extends StatelessWidget {
     final self = txt(member, 'uid') == RanchAccessService.uid;
     return Glass(
       radius: Gold.r27,
-      margin: const EdgeInsets.only(bottom: Gold.s13),
-      padding: const EdgeInsets.all(Gold.s16),
+      margin: const EdgeInsets.only(bottom: Space.s12),
+      padding: const EdgeInsets.all(Space.s16),
       elevation: 0.8,
       onTap: canManageRanch && !self
           ? () => _manageMember(context, member)
@@ -19154,15 +19950,15 @@ class FamilyUsersScreen extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: Gold.s34,
-            height: Gold.s34,
+            width: Space.s32,
+            height: Space.s32,
             decoration: ShapeDecoration(
               shape: const SquircleBorder(radius: Gold.r13),
               color: color.withValues(alpha: 0.13),
             ),
             child: Icon(roleIcon(role), color: color, size: Gold.t21),
           ),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -19186,8 +19982,8 @@ class FamilyUsersScreen extends StatelessWidget {
           ),
           Container(
             padding: const EdgeInsets.symmetric(
-              horizontal: Gold.s8,
-              vertical: Gold.s5,
+              horizontal: Space.s8,
+              vertical: Space.s4,
             ),
             decoration: ShapeDecoration(
               shape: const SquircleBorder(radius: Gold.r13),
@@ -19226,19 +20022,19 @@ class FamilyUsersScreen extends StatelessWidget {
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s89,
-            Gold.s21,
-            Gold.s55,
+            Space.s20,
+            Space.s88,
+            Space.s20,
+            Space.s56,
           ),
           children: [
             Glass(
               radius: Gold.r27,
-              padding: const EdgeInsets.all(Gold.s16),
+              padding: const EdgeInsets.all(Space.s16),
               child: Row(
                 children: [
                   Icon(Icons.key_rounded, color: Ink.violet),
-                  const SizedBox(width: Gold.s13),
+                  const SizedBox(width: Space.s12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -19262,7 +20058,7 @@ class FamilyUsersScreen extends StatelessWidget {
               ),
             ),
             if (canManageRanch) ...[
-              const SizedBox(height: Gold.s21),
+              const SizedBox(height: Space.s20),
               AppText(
                 'Join Requests',
                 style: TextStyle(
@@ -19271,7 +20067,7 @@ class FamilyUsersScreen extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: Gold.s13),
+              const SizedBox(height: Space.s12),
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: requests,
                 builder: (context, snapshot) {
@@ -19304,8 +20100,8 @@ class FamilyUsersScreen extends StatelessWidget {
                       for (final request in rows)
                         Glass(
                           radius: Gold.r27,
-                          margin: const EdgeInsets.only(bottom: Gold.s13),
-                          padding: const EdgeInsets.all(Gold.s16),
+                          margin: const EdgeInsets.only(bottom: Space.s12),
+                          padding: const EdgeInsets.all(Space.s16),
                           onTap: () => _reviewRequest(context, request),
                           child: Row(
                             children: [
@@ -19313,7 +20109,7 @@ class FamilyUsersScreen extends StatelessWidget {
                                 CupertinoIcons.person_badge_plus_fill,
                                 color: Ink.violet,
                               ),
-                              const SizedBox(width: Gold.s13),
+                              const SizedBox(width: Space.s12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -19350,7 +20146,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 },
               ),
             ],
-            const SizedBox(height: Gold.s21),
+            const SizedBox(height: Space.s20),
             AppText(
               'Members',
               style: TextStyle(
@@ -19359,7 +20155,7 @@ class FamilyUsersScreen extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: Gold.s13),
+            const SizedBox(height: Space.s12),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: members,
               builder: (context, snapshot) {
@@ -19444,7 +20240,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                 textCapitalization: TextCapitalization.words,
                 decoration: fieldStyle('Name', icon: CupertinoIcons.person),
               ),
-              const SizedBox(height: Gold.s13),
+              const SizedBox(height: Space.s12),
               PickerField<String>(
                 initialValue: role,
                 isExpanded: true,
@@ -19529,10 +20325,10 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
           body: Shell(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(
-                Gold.s21,
-                Gold.s55,
-                Gold.s21,
-                Gold.s55,
+                Space.s20,
+                Space.s56,
+                Space.s20,
+                Space.s56,
               ),
               children: [
                 const Reveal(
@@ -19544,7 +20340,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                         'Everyone sharing your Ranch ID sees the same animals and records.',
                   ),
                 ),
-                const SizedBox(height: Gold.s21),
+                const SizedBox(height: Space.s20),
                 for (int i = 0; i < users.length; i++)
                   Reveal(
                     index: 1 + i,
@@ -19558,17 +20354,20 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
 
                         return Glass(
                           radius: Gold.r27,
-                          margin: const EdgeInsets.only(bottom: Gold.s13),
-                          padding: const EdgeInsets.all(Gold.s16),
+                          margin: const EdgeInsets.only(bottom: Space.s12),
+                          padding: const EdgeInsets.all(Space.s16),
                           elevation: 0.8,
                           child: Row(
                             children: [
                               Container(
-                                width: Gold.s34,
-                                height: Gold.s34,
+                                width: Space.s32,
+                                height: Space.s32,
                                 decoration: ShapeDecoration(
                                   shape: SquircleBorder(
-                                    radius: Gold.concentric(Gold.r27, Gold.s16),
+                                    radius: Gold.concentric(
+                                      Gold.r27,
+                                      Space.s16,
+                                    ),
                                   ),
                                   color: color.withValues(alpha: 0.13),
                                 ),
@@ -19578,7 +20377,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                   size: Gold.t21,
                                 ),
                               ),
-                              const SizedBox(width: Gold.s13),
+                              const SizedBox(width: Space.s12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -19606,11 +20405,11 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: Gold.s8),
+                              const SizedBox(width: Space.s8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: Gold.s8,
-                                  vertical: Gold.s3,
+                                  horizontal: Space.s8,
+                                  vertical: Space.s4,
                                 ),
                                 decoration: ShapeDecoration(
                                   shape: const SquircleBorder(radius: Gold.r8),
@@ -19631,7 +20430,7 @@ class LegacyFamilyUsersScreen extends StatelessWidget {
                       },
                     ),
                   ),
-                const SizedBox(height: Gold.s8),
+                const SizedBox(height: Space.s8),
                 LiquidButton(
                   label: 'Add Family User',
                   icon: CupertinoIcons.person_badge_plus_fill,
@@ -19702,10 +20501,10 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
           body: Shell(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(
-                Gold.s21,
-                Gold.s55,
-                Gold.s21,
-                Gold.s55,
+                Space.s20,
+                Space.s56,
+                Space.s20,
+                Space.s56,
               ),
               children: [
                 Reveal(
@@ -19725,7 +20524,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                               color: signedIn ? Ink.green : Ink.amber,
                               size: Gold.t27,
                             ),
-                            const SizedBox(width: Gold.s13),
+                            const SizedBox(width: Space.s12),
                             Expanded(
                               child: AppText(
                                 signedIn && isOnlineNow()
@@ -19744,7 +20543,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: Gold.s16),
+                const SizedBox(height: Space.s16),
                 Reveal(
                   index: 1,
                   child: InfoRow(
@@ -19754,7 +20553,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     color: Ink.violet,
                   ),
                 ),
-                const SizedBox(height: Gold.s13),
+                const SizedBox(height: Space.s12),
                 Reveal(
                   index: 2,
                   child: InfoRow(
@@ -19764,7 +20563,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     color: Ink.blue,
                   ),
                 ),
-                const SizedBox(height: Gold.s13),
+                const SizedBox(height: Space.s12),
                 Reveal(
                   index: 3,
                   child: InfoRow(
@@ -19775,7 +20574,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                   ),
                 ),
                 if (settingText('lastSyncError', '').isNotEmpty) ...[
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   Glass(
                     child: AppText(
                       syncFailureHint(settingText('lastSyncError', '')),
@@ -19783,7 +20582,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: Gold.s13),
+                const SizedBox(height: Space.s12),
                 Reveal(
                   index: 4,
                   child: InfoRow(
@@ -19793,14 +20592,14 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     color: Ink.violetDeep,
                   ),
                 ),
-                const SizedBox(height: Gold.s16),
+                const SizedBox(height: Space.s16),
                 Reveal(
                   index: 5,
                   child: Glass(
                     radius: Gold.r27,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: Gold.s16,
-                      vertical: Gold.s5,
+                      horizontal: Space.s16,
+                      vertical: Space.s4,
                     ),
                     elevation: 0.8,
                     child: ListTile(
@@ -19818,7 +20617,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: Gold.s21),
+                const SizedBox(height: Space.s20),
                 if (!signedIn)
                   const Reveal(
                     index: 6,
@@ -19843,7 +20642,7 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                             ),
                     ),
                   ),
-                  const SizedBox(height: Gold.s13),
+                  const SizedBox(height: Space.s12),
                   Reveal(
                     index: 9,
                     child: GhostButton(
@@ -19859,12 +20658,12 @@ class _FirebaseSyncScreenState extends State<FirebaseSyncScreen> {
                     ),
                   ),
                   if (_counts != null) ...[
-                    const SizedBox(height: Gold.s16),
+                    const SizedBox(height: Space.s16),
                     panel('Cloud Records', 'Nothing in the cloud yet.', [
                       for (final entry in _counts!.entries)
                         Padding(
                           padding: const EdgeInsets.symmetric(
-                            vertical: Gold.s3,
+                            vertical: Space.s4,
                           ),
                           child: Row(
                             children: [
@@ -19943,10 +20742,10 @@ class WorksOfflineScreen extends StatelessWidget {
       body: Shell(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s55,
-            Gold.s21,
-            Gold.s55,
+            Space.s20,
+            Space.s56,
+            Space.s20,
+            Space.s56,
           ),
           children: [
             const Reveal(
@@ -19958,21 +20757,21 @@ class WorksOfflineScreen extends StatelessWidget {
                     'The ranch does not wait for a signal, and neither does this app.',
               ),
             ),
-            const SizedBox(height: Gold.s21),
+            const SizedBox(height: Space.s20),
             for (int i = 0; i < _points.length; i++)
               Reveal(
                 index: 1 + i,
                 child: Glass(
                   radius: Gold.r27,
-                  margin: const EdgeInsets.only(bottom: Gold.s13),
-                  padding: const EdgeInsets.all(Gold.s16),
+                  margin: const EdgeInsets.only(bottom: Space.s12),
+                  padding: const EdgeInsets.all(Space.s16),
                   elevation: 0.8,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        width: Gold.s27,
-                        height: Gold.s27,
+                        width: Space.s28,
+                        height: Space.s28,
                         decoration: ShapeDecoration(
                           shape: const SquircleBorder(radius: Gold.r8),
                           color: Ink.green.withValues(alpha: 0.14),
@@ -19983,7 +20782,7 @@ class WorksOfflineScreen extends StatelessWidget {
                           size: Gold.t13,
                         ),
                       ),
-                      const SizedBox(width: Gold.s13),
+                      const SizedBox(width: Space.s12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -19996,7 +20795,7 @@ class WorksOfflineScreen extends StatelessWidget {
                                 fontSize: Gold.t13,
                               ),
                             ),
-                            const SizedBox(height: Gold.s2),
+                            const SizedBox(height: Space.s2),
                             AppText(
                               _points[i][1],
                               style: TextStyle(
@@ -20012,7 +20811,7 @@ class WorksOfflineScreen extends StatelessWidget {
                   ),
                 ),
               ),
-            const SizedBox(height: Gold.s8),
+            const SizedBox(height: Space.s8),
             const SyncChip(),
           ],
         ),

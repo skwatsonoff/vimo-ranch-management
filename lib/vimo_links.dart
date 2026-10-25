@@ -248,7 +248,7 @@ class _VimoIdFieldState extends State<VimoIdField> {
   }
 
   void _pick(VimoIdMatch match) {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     widget.controller.value = TextEditingValue(
       text: match.id,
       selection: TextSelection.collapsed(offset: match.id.length),
@@ -542,7 +542,7 @@ class _LinkRequestBannerState extends State<LinkRequestBanner> {
   /// change on the phone at once, and the server copy follows.
   void _answer(String id, String from, bool accept) {
     setState(() => _answering.add(id));
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     VimoLinks.answer(id, accept: accept).catchError((Object error) {
       if (mounted) setState(() => _answering.remove(id));
       _linkProblem(error);

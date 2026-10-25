@@ -797,7 +797,7 @@ class _HomePin extends StatelessWidget {
                     '$number',
                     style: TextStyle(
                       color: Colors.white,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       fontSize: current ? 17 : 14,
                     ),
                   ),
@@ -1692,7 +1692,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
     final from = _stops.where((s) => s['id'] == ids.first).firstOrNull;
     final to = _stops.where((s) => s['id'] == ids.last).firstOrNull;
     if (from == null || to == null) return;
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() {
       _route['legs'] = [
         for (final leg in routeLegs(_route))
@@ -1826,7 +1826,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
       });
       _dirty = true;
     });
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     unawaited(_syncLegs());
     // A home marked on the route also becomes the person's saved location.
     if (personPoint(person) == null && canRecordEntries) {
@@ -2733,6 +2733,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
     unawaited(_stream?.cancel());
     unawaited(_recorder.cancel().catchError((Object _) {}));
     unawaited(_recorder.dispose().catchError((Object _) {}));
+    UiSound.release(this);
     _text.dispose();
     super.dispose();
   }
@@ -2778,6 +2779,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
       _audio = BytesBuilder(copy: false);
       final done = Completer<void>();
       _done = done;
+      UiSound.hold(this);
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -2809,6 +2811,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
         if (_seconds >= _maxSeconds) unawaited(_stop());
       });
     } catch (_) {
+      UiSound.release(this);
       if (mounted) snack(context, ui('Unable to record. Try again.'));
     }
   }
@@ -2819,6 +2822,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
     setState(() => _recording = false);
     try {
       await _recorder.stop();
+      UiSound.release(this);
       await _done?.future.timeout(const Duration(seconds: 3));
       await _stream?.cancel();
       final pcm = _audio.takeBytes();
@@ -3797,7 +3801,7 @@ class _RouteShareSheetState extends State<_RouteShareSheet> {
                     horizontal: 16,
                     vertical: 4,
                   ),
-                  child: SwitchListTile.adaptive(
+                  child: SoundSwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     value: _collectLater,
                     activeTrackColor: Ink.violetDeep,
@@ -5185,7 +5189,7 @@ class _StopChip extends StatelessWidget {
             else
               Text(
                 '$number',
-                style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                style: TextStyle(color: color, fontWeight: FontWeight.w700),
               ),
             const SizedBox(width: 6),
             Text(
@@ -5248,7 +5252,7 @@ class _HomeCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 22,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color: Ink.navy,
                         letterSpacing: -.4,
                       ),
@@ -5287,7 +5291,7 @@ class _HomeCard extends StatelessWidget {
                         key: ValueKey(litres),
                         style: TextStyle(
                           fontSize: 43,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           color: Ink.violetDeep,
                           letterSpacing: -1,
                         ),

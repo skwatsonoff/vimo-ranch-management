@@ -365,11 +365,11 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
         final bottom =
             MediaQuery.sizeOf(context).height -
             MediaQuery.paddingOf(context).bottom -
-            Gold.s13;
+            Space.s12;
         final panelBottom = panel
             .localToGlobal(Offset(0, panel.size.height))
             .dy;
-        final rowSlack = row.localToGlobal(Offset.zero).dy - top - Gold.s8;
+        final rowSlack = row.localToGlobal(Offset.zero).dy - top - Space.s8;
         // A row scrolled out of view comes back to the top; otherwise
         // scroll only as far as the slider needs.
         final delta = rowSlack < 0
@@ -395,7 +395,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
   }
 
   void _choose(String id) {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() {
       _others = false;
       _qty = const ShopQuantity();
@@ -405,7 +405,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
   }
 
   void _toggleOthers() {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() {
       _others = !_others || _selected != null;
       _selected = null;
@@ -415,7 +415,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
   }
 
   void _key(ShopQuantity next) {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() => _qty = next);
   }
 
@@ -666,7 +666,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
                             key: const ValueKey('others'),
                             items: others,
                             onPick: (id) {
-                              HapticFeedback.selectionClick();
+                              selectionFeedback();
                               setState(() {
                                 _selected = id;
                                 _others = false;
@@ -759,7 +759,7 @@ class _ShopStockCard extends StatelessWidget {
                       '${vendorFieldNumber(shopAvailable(txt(item, 'id')))} ${shopUnitShort(txt(item, 'unit'))}',
                       style: TextStyle(
                         fontSize: 21,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         letterSpacing: -.4,
                         color: Ink.navy,
                       ),
@@ -957,7 +957,7 @@ class _ShopSellPanel extends StatelessWidget {
                               text: quantity.label,
                               style: TextStyle(
                                 fontSize: 48,
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w700,
                                 letterSpacing: -1.2,
                                 color: empty ? Ink.faint : Ink.navy,
                               ),
@@ -988,7 +988,7 @@ class _ShopSellPanel extends StatelessWidget {
                           shopMoney(amount),
                           style: TextStyle(
                             fontSize: 40,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: -1,
                             color: empty ? Ink.faint : Ink.violetDeep,
                           ),
@@ -1581,7 +1581,7 @@ class _ShopItemSheetState extends State<_ShopItemSheet> {
           onTap: locked || _unitLocked
               ? null
               : () {
-                  HapticFeedback.selectionClick();
+                  selectionFeedback();
                   setState(() => _unit = unit);
                 },
           radius: Gold.r21,
@@ -1723,7 +1723,7 @@ class _ShopItemSheetState extends State<_ShopItemSheet> {
                           ],
                           style: const TextStyle(
                             fontSize: 22,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                           ),
                           decoration: fieldStyle(
                             '${switch (_unit) {
@@ -1898,7 +1898,7 @@ class _ShopAddStockSheetState extends State<_ShopAddStockSheet> {
                       : RegExp(r'^\d{0,5}(\.\d{0,2})?'),
                 ),
               ],
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
               decoration: fieldStyle(
                 '${bi('Quantity', 'அளவு')} (${shopUnitShort(unit)})',
                 icon: CupertinoIcons.plus_circle_fill,
@@ -1992,7 +1992,7 @@ class ShopStockScreen extends StatelessWidget {
                               '${vendorFieldNumber(shopAvailable(txt(item, 'id')))} ${shopUnitShort(txt(item, 'unit'))}',
                               style: TextStyle(
                                 fontSize: 17,
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w700,
                                 color: Ink.navy,
                               ),
                             ),
@@ -2152,7 +2152,7 @@ class ShopSalesScreen extends StatelessWidget {
                             shopMoney(total),
                             style: TextStyle(
                               fontSize: 34,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w700,
                               letterSpacing: -.6,
                               color: Ink.navy,
                             ),
@@ -2254,7 +2254,7 @@ class _ShopSaleRow extends StatelessWidget {
             shopMoney(numv(row, 'amount')),
             style: TextStyle(
               fontSize: 17,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               decoration: strike,
               color: voided ? Ink.muted : Ink.navy,
             ),
@@ -2286,7 +2286,7 @@ class _ShopCustomizeScreenState extends State<ShopCustomizeScreen> {
   Future<void> _saveQuick(List<String> quick) async {
     try {
       await saveShopCatalog(shopItems(), quick);
-      HapticFeedback.selectionClick();
+      selectionFeedback();
     } catch (_) {
       if (mounted) snack(context, ui('Unable to save. Try again.'));
     }

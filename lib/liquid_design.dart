@@ -762,7 +762,7 @@ class _PickerFieldState<T> extends FormFieldState<T> {
                     child: shown ?? const SizedBox(height: 22),
                   ),
                 ),
-                const SizedBox(width: Gold.s8),
+                const SizedBox(width: Space.s8),
                 Icon(
                   CupertinoIcons.chevron_up_chevron_down,
                   size: 16,
@@ -800,7 +800,7 @@ Future<PickedValue<T>?> showPickerMenu<T>(
     ),
   );
   if (picked == null) return null;
-  HapticFeedback.selectionClick();
+  selectionFeedback();
   for (final item in items) {
     if (item.value == picked.value) item.onTap?.call();
   }
@@ -912,14 +912,14 @@ class _PickerMenuRoute<T> extends PopupRoute<PickedValue<T>> {
     final safe = media.padding + media.viewInsets;
     final width = math.min(
       math.max(anchor.width, 240.0),
-      screen.width - Gold.s16 * 2,
+      screen.width - Space.s16 * 2,
     );
     final left = anchor.left
-        .clamp(Gold.s16, math.max(Gold.s16, screen.width - Gold.s16 - width))
+        .clamp(Space.s16, math.max(Space.s16, screen.width - Space.s16 - width))
         .toDouble();
-    final below = screen.height - safe.bottom - anchor.bottom - _gap - Gold.s8;
-    final above = anchor.top - safe.top - _gap - Gold.s8;
-    final wanted = math.min(items.length * _row + Gold.s8, 420.0);
+    final below = screen.height - safe.bottom - anchor.bottom - _gap - Space.s8;
+    final above = anchor.top - safe.top - _gap - Space.s8;
+    final wanted = math.min(items.length * _row + Space.s8, 420.0);
     final down = below >= wanted || below >= above;
     final maxHeight = math.max(_row * 2, math.min(down ? below : above, 420.0));
     final index = items.indexWhere((i) => i.value == selected);
@@ -1082,7 +1082,7 @@ class _PickerRowState<T> extends State<_PickerRow<T>> {
                       )
                     : null,
               ),
-              const SizedBox(width: Gold.s8),
+              const SizedBox(width: Space.s8),
               Expanded(
                 child: DefaultTextStyle.merge(
                   maxLines: 2,

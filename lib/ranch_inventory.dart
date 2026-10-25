@@ -179,7 +179,7 @@ class _VendorOnlyReportsState extends State<VendorOnlyReports> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(
-                maxWidth: Gold.contentWidth + Gold.s55 - 42,
+                maxWidth: Gold.contentWidth + Space.s56 - 42,
               ),
               child: LiquidSegmentBar(
                 labels: [
@@ -571,7 +571,7 @@ class _VendorProfitCard extends StatelessWidget {
                         money(profit.abs()),
                         style: TextStyle(
                           fontSize: 34,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: -.6,
                           color: good ? Ink.greenText : Ink.redText,
                         ),
@@ -689,7 +689,7 @@ class _VendorReportTile extends StatelessWidget {
                   value,
                   style: TextStyle(
                     fontSize: 22,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                   ),
                 ),
@@ -765,7 +765,7 @@ class _ShopReportRow extends StatelessWidget {
               AppText(
                 '${vendorFieldNumber(numv(row, 'quantity'))} $unit',
                 style: TextStyle(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   fontSize: 16,
                   color: color,
                 ),
@@ -800,7 +800,7 @@ class _VendorReportRow extends StatelessWidget {
         ? Ink.blue
         : Ink.violetDeep;
     final icon = payment
-        ? CupertinoIcons.money_dollar
+        ? Icons.currency_rupee_rounded
         : intake
         ? CupertinoIcons.arrow_down
         : clearance
@@ -871,7 +871,7 @@ class _VendorReportRow extends StatelessWidget {
                       : '${vendorFieldNumber(numv(row, 'quantity'))} L',
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     color: color,
                   ),
                 ),

@@ -234,7 +234,7 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
         (
           bi('Service income', 'கட்டண வருமானம்'),
           money(income),
-          CupertinoIcons.money_dollar_circle_fill,
+          Icons.currency_rupee_rounded,
           Ink.amber,
         ),
       ];
@@ -301,7 +301,7 @@ List<MaleMetric> maleMetrics(Map<String, dynamic> a) {
         (
           bi('Earned this month', 'இந்த மாத வருமானம்'),
           money(earned),
-          CupertinoIcons.money_dollar_circle_fill,
+          Icons.currency_rupee_rounded,
           Ink.green,
         ),
         (
@@ -525,7 +525,7 @@ class MaleUsePicker extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: Gold.s5, bottom: Gold.s8),
+          padding: const EdgeInsets.only(left: Space.s4, bottom: Space.s8),
           child: AppText(
             calf
                 ? bi(
@@ -545,7 +545,7 @@ class MaleUsePicker extends StatelessWidget {
         ),
         for (final use in options)
           Padding(
-            padding: const EdgeInsets.only(bottom: Gold.s8),
+            padding: const EdgeInsets.only(bottom: Space.s8),
             child: _UseTile(
               use: use,
               selected: value == use,
@@ -580,8 +580,8 @@ class _UseTile extends StatelessWidget {
           duration: Gold.base,
           curve: Gold.ease,
           padding: const EdgeInsets.symmetric(
-            horizontal: Gold.s16,
-            vertical: Gold.s13,
+            horizontal: Space.s16,
+            vertical: Space.s12,
           ),
           decoration: ShapeDecoration(
             shape: SquircleBorder(
@@ -593,8 +593,8 @@ class _UseTile extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: Gold.s34 + Gold.s5,
-                height: Gold.s34 + Gold.s5,
+                width: Space.s32 + Space.s4,
+                height: Space.s32 + Space.s4,
                 decoration: ShapeDecoration(
                   shape: const SquircleBorder(radius: Gold.r13),
                   color: selected
@@ -607,7 +607,7 @@ class _UseTile extends StatelessWidget {
                   color: selected ? Colors.white : maleUseColor(use),
                 ),
               ),
-              const SizedBox(width: Gold.s13),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,7 +620,7 @@ class _UseTile extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: Gold.s2),
+                    const SizedBox(height: Space.s2),
                     Text(
                       maleUseDescription(use),
                       style: TextStyle(
@@ -663,7 +663,7 @@ class MaleRolePanel extends StatelessWidget {
       children: [
         _RoleBanner(use: use),
         if (readiness != null) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           InfoRow(
             title: bi('Growth', 'வளர்ச்சி'),
             value: readiness,
@@ -672,7 +672,7 @@ class MaleRolePanel extends StatelessWidget {
           ),
         ],
         for (final fact in maleFacts(animal)) ...[
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           InfoRow(
             title: fact.$1,
             value: fact.$2,
@@ -680,7 +680,7 @@ class MaleRolePanel extends StatelessWidget {
             color: fact.$4,
           ),
         ],
-        const SizedBox(height: Gold.s16),
+        const SizedBox(height: Space.s16),
         if (use.isNotEmpty && canRecordEntries) ...[
           LiquidButton(
             label: switch (use) {
@@ -697,7 +697,7 @@ class MaleRolePanel extends StatelessWidget {
               MaleWorkEntryScreen(animalKey: animalKey, use: use),
             ),
           ),
-          const SizedBox(height: Gold.s16),
+          const SizedBox(height: Space.s16),
         ],
         panel(
           bi('History', 'வரலாறு'),
@@ -724,13 +724,13 @@ class _RoleBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Glass(
     radius: Gold.r27,
-    padding: const EdgeInsets.all(Gold.s16),
+    padding: const EdgeInsets.all(Space.s16),
     elevation: 0.8,
     child: Row(
       children: [
         Container(
-          width: Gold.s55 - Gold.s8,
-          height: Gold.s55 - Gold.s8,
+          width: Space.s56 - Space.s8,
+          height: Space.s56 - Space.s8,
           decoration: ShapeDecoration(
             shape: const SquircleBorder(radius: Gold.r21),
             gradient: LinearGradient(
@@ -744,7 +744,7 @@ class _RoleBanner extends StatelessWidget {
           ),
           child: Icon(maleUseIcon(use), color: Colors.white, size: Gold.t27),
         ),
-        const SizedBox(width: Gold.s13),
+        const SizedBox(width: Space.s12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -757,7 +757,7 @@ class _RoleBanner extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: Gold.s2),
+              const SizedBox(height: Space.s2),
               Text(
                 maleUseDescription(use),
                 style: TextStyle(
@@ -815,7 +815,7 @@ class _WorkLine extends StatelessWidget {
                 ),
                 onTap: () => Navigator.pop(sheet, 'delete'),
               ),
-            const SizedBox(height: Gold.s8),
+            const SizedBox(height: Space.s8),
           ],
         ),
       ),
@@ -1027,12 +1027,12 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
     }
   }
 
-  Widget _gap() => const SizedBox(height: Gold.s13);
+  Widget _gap() => const SizedBox(height: Space.s12);
 
   Widget _money(TextEditingController c, String label) => TextField(
     controller: c,
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-    decoration: fieldStyle(label, icon: CupertinoIcons.money_dollar_circle),
+    decoration: fieldStyle(label, icon: Icons.currency_rupee_rounded),
   );
 
   Widget _choices(
@@ -1041,8 +1041,8 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
     String Function(String) label,
     ValueChanged<String> onPick,
   ) => Wrap(
-    spacing: Gold.s8,
-    runSpacing: Gold.s8,
+    spacing: Space.s8,
+    runSpacing: Space.s8,
     children: [
       for (final v in values)
         ChoiceChip(
@@ -1066,8 +1066,8 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
     return [
       Glass(
         radius: Gold.r21,
-        blur: Gold.s13,
-        padding: const EdgeInsets.all(Gold.s5),
+        blur: Space.s12,
+        padding: const EdgeInsets.all(Space.s4),
         elevation: 0.62,
         child: LiquidSegmentBar(
           labels: [bi('Our cow', 'நம் மாடு'), bi('Outside cow', 'வெளி மாடு')],
@@ -1113,7 +1113,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
       _money(_fee, bi('Service fee (optional)', 'கட்டணம் (விருப்பம்)')),
       _gap(),
       Padding(
-        padding: const EdgeInsets.only(left: Gold.s5, bottom: Gold.s8),
+        padding: const EdgeInsets.only(left: Space.s4, bottom: Space.s8),
         child: Text(
           bi('Result', 'முடிவு'),
           style: TextStyle(color: Ink.muted, fontWeight: FontWeight.w700),
@@ -1131,8 +1131,8 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
   List<Widget> _jallikattu() => [
     Glass(
       radius: Gold.r21,
-      blur: Gold.s13,
-      padding: const EdgeInsets.all(Gold.s5),
+      blur: Space.s12,
+      padding: const EdgeInsets.all(Space.s4),
       elevation: 0.62,
       child: LiquidSegmentBar(
         labels: [workKindLabel('training'), workKindLabel('event')],
@@ -1218,12 +1218,12 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
       children: [
         Glass(
           radius: Gold.r21,
-          padding: const EdgeInsets.all(Gold.s16),
+          padding: const EdgeInsets.all(Space.s16),
           elevation: 0.62,
           child: Row(
             children: [
               Icon(maleUseIcon(widget.use), color: maleUseColor(widget.use)),
-              const SizedBox(width: Gold.s13),
+              const SizedBox(width: Space.s12),
               Expanded(
                 child: AppText(
                   txt(a, 'name'),
@@ -1268,7 +1268,7 @@ class _MaleWorkEntryScreenState extends State<MaleWorkEntryScreen> {
             bi('Notes (optional)', 'குறிப்பு (விருப்பம்)'),
           ),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: bi('Save', 'சேமி'),
           icon: CupertinoIcons.checkmark_alt,
@@ -1300,7 +1300,7 @@ class UnknownToggleField extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(Gold.s5, 0, 0, Gold.s5),
+        padding: const EdgeInsets.fromLTRB(Space.s4, 0, 0, Space.s4),
         child: Row(
           children: [
             Expanded(
@@ -1321,10 +1321,10 @@ class UnknownToggleField extends StatelessWidget {
                 fontSize: Gold.t13,
               ),
             ),
-            const SizedBox(width: Gold.s5),
+            const SizedBox(width: Space.s4),
             Transform.scale(
               scale: .82,
-              child: CupertinoSwitch(
+              child: SoundSwitch(
                 value: unknown,
                 activeTrackColor: Ink.tint,
                 onChanged: onUnknownChanged,
@@ -1341,8 +1341,8 @@ class UnknownToggleField extends StatelessWidget {
             ? Glass(
                 radius: Gold.r21,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: Gold.s16,
-                  vertical: Gold.s16,
+                  horizontal: Space.s16,
+                  vertical: Space.s16,
                 ),
                 elevation: 0.4,
                 child: Row(
@@ -1352,7 +1352,7 @@ class UnknownToggleField extends StatelessWidget {
                       color: Ink.faint,
                       size: Gold.t21,
                     ),
-                    const SizedBox(width: Gold.s13),
+                    const SizedBox(width: Space.s12),
                     Expanded(
                       child: Text(
                         bi(

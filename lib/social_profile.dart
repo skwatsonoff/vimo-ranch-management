@@ -195,7 +195,12 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
     body: Shell(
       edgeToEdge: true,
       child: uid.isEmpty
-          ? Center(child: Text(ui('Please sign in again')))
+          ? SignInStatePanel(
+              message: bi(
+                'Sign in to see your profile.',
+                'உங்கள் சுயவிவரத்தைப் பார்க்க உள்நுழையவும்.',
+              ),
+            )
           : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance
                   .collection('profiles')
@@ -260,7 +265,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               fontSize: 22,
-                                              fontWeight: FontWeight.w800,
+                                              fontWeight: FontWeight.w700,
                                               letterSpacing: .2,
                                               color: Ink.navy,
                                             ),
@@ -795,7 +800,7 @@ class _ProfileCount extends StatelessWidget {
                     count == null ? '–' : compact(count),
                     style: TextStyle(
                       fontSize: 20,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       color: Ink.navy,
                     ),
                   ),
@@ -1103,7 +1108,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
           ),
         ),
       ),
-      SwitchListTile.adaptive(
+      SoundSwitchListTile(
         value: _shareRanch,
         title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
         subtitle: Text(
@@ -1116,7 +1121,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
             ? (v) => setState(() => _shareRanch = v)
             : null,
       ),
-      SwitchListTile.adaptive(
+      SoundSwitchListTile(
         value: _shareShop,
         title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
         onChanged: (v) => setState(() => _shareShop = v),

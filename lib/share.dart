@@ -740,7 +740,7 @@ class SharedAnimalScreen extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: Gold.contentWidth + 34),
             child: ListView(
-              padding: const EdgeInsets.all(Gold.s21),
+              padding: const EdgeInsets.all(Space.s20),
               children: [
                 FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                   future: cardId.isEmpty
@@ -789,10 +789,10 @@ class SharedAnimalScreen extends StatelessWidget {
                     );
                   },
                 ),
-                const SizedBox(height: Gold.s21),
+                const SizedBox(height: Space.s20),
                 Glass(
                   radius: Gold.r27,
-                  padding: const EdgeInsets.all(Gold.s21),
+                  padding: const EdgeInsets.all(Space.s20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -804,13 +804,13 @@ class SharedAnimalScreen extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: Gold.s13),
+                      const SizedBox(height: Space.s12),
                       _SharedFact(
                         icon: CupertinoIcons.square_grid_2x2,
                         label: bi('Breed', 'இனம்'),
                         value: ui(txt(card.data, 'b', 'Unknown breed')),
                       ),
-                      const SizedBox(height: Gold.s8),
+                      const SizedBox(height: Space.s8),
                       _SharedFact(
                         icon: Icons.cake_outlined,
                         label: bi('Age', 'வயது'),
@@ -887,7 +887,7 @@ class SharedPostScreen extends StatelessWidget {
           if (snap.hasError || data == null) {
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(Gold.s21),
+                padding: const EdgeInsets.all(Space.s20),
                 child: EmptyNote(
                   icon: CupertinoIcons.search,
                   title: bi('Post not available', 'பதிவு கிடைக்கவில்லை'),

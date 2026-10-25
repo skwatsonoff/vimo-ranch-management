@@ -10,8 +10,8 @@
 
   <!-- iPhone / PWA polish -->
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F5F2FA" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0D0A12" media="(prefers-color-scheme: dark)">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="VIMO">
@@ -37,7 +37,7 @@
       padding: 0;
       width: 100%;
       min-height: 100%;
-      background: #F2F2F7;
+      background: #F5F2FA;
       overscroll-behavior: none;
       -webkit-tap-highlight-color: transparent;
     }
@@ -55,8 +55,8 @@
       align-items: center;
       justify-content: center;
       background:
-        radial-gradient(circle at 50% 44%, rgba(91, 46, 224, .12), transparent 26%),
-        #F2F2F7;
+        radial-gradient(circle at 50% 44%, rgba(90, 44, 160, .12), transparent 26%),
+        #F5F2FA;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       z-index: 9999;
     }
@@ -136,7 +136,7 @@
     }
 
     .splash-title {
-      color: #000000;
+      color: #3B1D5D;
       font-weight: 700;
       font-size: 28px;
       letter-spacing: 5px;
@@ -151,11 +151,11 @@
 
     /* Follow the system appearance from the first frame. */
     @media (prefers-color-scheme: dark) {
-      html, body { background: #000000; }
+      html, body { background: #0D0A12; }
       #loading {
         background:
-          radial-gradient(circle at 50% 44%, rgba(166, 144, 255, .16), transparent 26%),
-          #000000;
+          radial-gradient(circle at 50% 44%, rgba(183, 156, 240, .16), transparent 26%),
+          #0D0A12;
       }
       .splash-title { color: #FFFFFF; }
       .splash-subtitle { color: #98989F; }

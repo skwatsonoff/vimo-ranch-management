@@ -600,8 +600,8 @@ class MarketStatusPill extends StatelessWidget {
     final color = marketStatusColor(status);
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: Gold.s8,
-        vertical: Gold.s3,
+        horizontal: Space.s8,
+        vertical: Space.s4,
       ),
       decoration: ShapeDecoration(
         shape: const SquircleBorder(radius: Gold.r8),
@@ -648,7 +648,7 @@ class MarketStars extends StatelessWidget {
             color: Ink.navy,
           ),
         ),
-        const SizedBox(width: Gold.s3),
+        const SizedBox(width: Space.s4),
         for (var i = 1; i <= 5; i++)
           Icon(
             rating >= i - .25
@@ -659,7 +659,7 @@ class MarketStars extends StatelessWidget {
             size: size,
             color: Ink.goldDeep,
           ),
-        const SizedBox(width: Gold.s3),
+        const SizedBox(width: Space.s4),
         Text(
           '($reviews)',
           style: TextStyle(color: Ink.muted, fontSize: size - 1),
@@ -739,7 +739,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
       return Shell(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(Gold.s34),
+            padding: const EdgeInsets.all(Space.s32),
             child: AppText(
               bi(
                 'Sign in to find milk near you.',
@@ -785,7 +785,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
                   ),
               ],
             ),
-            const SizedBox(height: Gold.s5),
+            const SizedBox(height: Space.s4),
             Text(
               bi(
                 'Milk vendors and shops near you. Places are shown as an area of about 200 m.',
@@ -793,12 +793,12 @@ class _NearbyScreenState extends State<NearbyScreen> {
               ),
               style: TextStyle(color: Ink.muted, fontSize: 14),
             ),
-            const SizedBox(height: Gold.s21),
+            const SizedBox(height: Space.s20),
             const _MyMilkRequests(),
             if (_here == null)
               Glass(
                 radius: Gold.r27,
-                padding: const EdgeInsets.all(Gold.s21),
+                padding: const EdgeInsets.all(Space.s20),
                 child: Column(
                   children: [
                     Icon(
@@ -806,7 +806,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
                       size: 44,
                       color: Ink.violetDeep,
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     Text(
                       bi(
                         'Your location is used only to find vendors near you. It is not saved.',
@@ -815,7 +815,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Ink.body, fontSize: 15),
                     ),
-                    const SizedBox(height: Gold.s16),
+                    const SizedBox(height: Space.s16),
                     LiquidButton(
                       label: bi('Find milk near me', 'அருகில் பால் தேடு'),
                       icon: CupertinoIcons.search,
@@ -834,7 +834,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
                 index: _sort,
                 onChanged: (v) => setState(() => _sort = v),
               ),
-              const SizedBox(height: Gold.s16),
+              const SizedBox(height: Space.s16),
               if (_failed)
                 _MarketNote(
                   bi(
@@ -874,7 +874,7 @@ class _MarketNote extends StatelessWidget {
   const _MarketNote(this.text);
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: Gold.s34),
+    padding: const EdgeInsets.symmetric(vertical: Space.s32),
     child: Text(
       text,
       textAlign: TextAlign.center,
@@ -897,15 +897,15 @@ class _NearbyVendorRow extends StatelessWidget {
     onTap: onTap,
     child: Padding(
       padding: const EdgeInsets.fromLTRB(
-        Gold.s16,
-        Gold.s13,
-        Gold.s13,
-        Gold.s13,
+        Space.s16,
+        Space.s12,
+        Space.s12,
+        Space.s12,
       ),
       child: Row(
         children: [
           SizedBox(width: 26, child: Center(child: _marketIcon(vendor.shop))),
-          const SizedBox(width: Gold.s13),
+          const SizedBox(width: Space.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -924,11 +924,11 @@ class _NearbyVendorRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: Gold.s8),
+                    const SizedBox(width: Space.s8),
                     MarketStatusPill(status),
                   ],
                 ),
-                const SizedBox(height: Gold.s3),
+                const SizedBox(height: Space.s4),
                 Text(
                   [
                     marketDistanceLabel(vendor.distance),
@@ -937,7 +937,7 @@ class _NearbyVendorRow extends StatelessWidget {
                   ].join(' · '),
                   style: TextStyle(color: Ink.body, fontSize: 14),
                 ),
-                const SizedBox(height: Gold.s3),
+                const SizedBox(height: Space.s4),
                 MarketStars(rating: vendor.rating, reviews: vendor.reviews),
               ],
             ),
@@ -981,12 +981,12 @@ class _MyMilkRequests extends StatelessWidget {
             );
       if (docs.isEmpty) return const SizedBox.shrink();
       return Padding(
-        padding: const EdgeInsets.only(bottom: Gold.s21),
+        padding: const EdgeInsets.only(bottom: Space.s20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.only(left: Gold.s5, bottom: Gold.s8),
+              padding: const EdgeInsets.only(left: Space.s4, bottom: Space.s8),
               child: Text(
                 bi('MY REQUESTS', 'என் கோரிக்கைகள்'),
                 style: TextStyle(
@@ -1158,19 +1158,19 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
               children: [
                 Glass(
                   radius: Gold.r27,
-                  padding: const EdgeInsets.all(Gold.s16),
+                  padding: const EdgeInsets.all(Space.s16),
                   child: Row(
                     children: [
                       Container(
-                        width: Gold.s55,
-                        height: Gold.s55,
+                        width: Space.s56,
+                        height: Space.s56,
                         decoration: ShapeDecoration(
                           shape: const SquircleBorder(radius: Gold.r21),
                           color: Ink.violet.withValues(alpha: .13),
                         ),
                         child: Center(child: _marketIcon(v.shop, size: 28)),
                       ),
-                      const SizedBox(width: Gold.s16),
+                      const SizedBox(width: Space.s16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1181,10 +1181,10 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                                   : bi('Milk vendor', 'பால் வியாபாரி'),
                               style: TextStyle(color: Ink.muted, fontSize: 13),
                             ),
-                            const SizedBox(height: Gold.s3),
+                            const SizedBox(height: Space.s4),
                             Wrap(
-                              spacing: Gold.s8,
-                              runSpacing: Gold.s3,
+                              spacing: Space.s8,
+                              runSpacing: Space.s4,
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 MarketStatusPill(status),
@@ -1198,7 +1198,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                                   ),
                               ],
                             ),
-                            const SizedBox(height: Gold.s5),
+                            const SizedBox(height: Space.s4),
                             MarketStars(rating: v.rating, reviews: v.reviews),
                           ],
                         ),
@@ -1223,7 +1223,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: Gold.s16),
+                const SizedBox(height: Space.s16),
                 ClipPath(
                   clipper: SquircleClipper(Gold.r27),
                   child: SizedBox(
@@ -1266,7 +1266,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: Gold.s8),
+                const SizedBox(height: Space.s8),
                 Text(
                   point == null
                       ? bi(
@@ -1280,7 +1280,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                   style: TextStyle(color: Ink.muted, fontSize: 13),
                 ),
                 if (marketWindows(v.data).isNotEmpty) ...[
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   _InsetGroup(
                     children: [
                       for (final key in const ['morning', 'evening'])
@@ -1306,7 +1306,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                     ],
                   ),
                 ],
-                const SizedBox(height: Gold.s21),
+                const SizedBox(height: Space.s20),
                 if (open.isNotEmpty)
                   _InsetGroup(
                     children: [
@@ -1324,7 +1324,7 @@ class _MarketVendorScreenState extends State<MarketVendorScreen> {
                     icon: CupertinoIcons.drop_fill,
                     onPressed: () => showMarketRequestSheet(context, v),
                   ),
-                const SizedBox(height: Gold.s34),
+                const SizedBox(height: Space.s32),
                 _MarketReviews(vendor: v, proof: _proof),
               ],
             ),
@@ -1390,7 +1390,7 @@ class _MarketReviews extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: Gold.s5),
+              const SizedBox(height: Space.s4),
               Text(
                 bi(
                   'Only people who really bought from this vendor can review.',
@@ -1398,7 +1398,7 @@ class _MarketReviews extends StatelessWidget {
                 ),
                 style: TextStyle(color: Ink.muted, fontSize: 13),
               ),
-              const SizedBox(height: Gold.s13),
+              const SizedBox(height: Space.s12),
               if (docs.isEmpty)
                 _MarketNote(bi('No reviews yet', 'இன்னும் மதிப்பீடு இல்லை'))
               else
@@ -1419,7 +1419,7 @@ class _MarketReviews extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: Gold.s8),
+                            const SizedBox(width: Space.s8),
                             for (var i = 1; i <= 5; i++)
                               Icon(
                                 i <= numv(doc.data(), 'stars')
@@ -1477,7 +1477,7 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
   }
 
   void _step(double by) {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() => _litres = (_litres + by).clamp(.25, 50).toDouble());
   }
 
@@ -1533,9 +1533,9 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
 
   Widget _label(String text) => Padding(
     padding: const EdgeInsets.only(
-      left: Gold.s5,
-      top: Gold.s16,
-      bottom: Gold.s8,
+      left: Space.s4,
+      top: Space.s16,
+      bottom: Space.s8,
     ),
     child: Text(
       text,
@@ -1572,7 +1572,7 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
                     ),
                   ),
                   Text(widget.vendor.name, style: TextStyle(color: Ink.muted)),
-                  const SizedBox(height: Gold.s16),
+                  const SizedBox(height: Space.s16),
                   LiquidSegmentBar(
                     labels: [
                       bi('Today only', 'இன்று மட்டும்'),
@@ -1585,8 +1585,8 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
                   Glass(
                     radius: Gold.r21,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: Gold.s8,
-                      vertical: Gold.s5,
+                      horizontal: Space.s8,
+                      vertical: Space.s4,
                     ),
                     child: Row(
                       children: [
@@ -1633,7 +1633,7 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
                       () => _session = v == 1 ? 'Evening' : 'Morning',
                     ),
                   ),
-                  const SizedBox(height: Gold.s8),
+                  const SizedBox(height: Space.s8),
                   _InsetGroup(
                     children: [
                       ListTile(
@@ -1678,8 +1678,8 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
                   if (_regular) ...[
                     _label(bi('DAYS', 'நாட்கள்')),
                     Wrap(
-                      spacing: Gold.s8,
-                      runSpacing: Gold.s8,
+                      spacing: Space.s8,
+                      runSpacing: Space.s8,
                       children: [
                         for (final day in marketWeekdays)
                           FilterChip(
@@ -1717,10 +1717,10 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: Gold.s16),
+                  const SizedBox(height: Space.s16),
                   _InsetGroup(
                     children: [
-                      SwitchListTile.adaptive(
+                      SoundSwitchListTile(
                         value: _shareHome,
                         onChanged: (v) => setState(() => _shareHome = v),
                         title: AppText(
@@ -1738,7 +1738,7 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: Gold.s16),
+                  const SizedBox(height: Space.s16),
                   TextField(
                     controller: _note,
                     maxLength: 200,
@@ -1844,7 +1844,7 @@ class _MarketReviewSheetState extends State<_MarketReviewSheet> {
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: Gold.s13),
+            const SizedBox(height: Space.s12),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1853,7 +1853,7 @@ class _MarketReviewSheetState extends State<_MarketReviewSheet> {
                     tooltip: '$i',
                     iconSize: 40,
                     onPressed: () {
-                      HapticFeedback.selectionClick();
+                      selectionFeedback();
                       setState(() => _stars = i);
                     },
                     icon: Icon(
@@ -1865,7 +1865,7 @@ class _MarketReviewSheetState extends State<_MarketReviewSheet> {
                   ),
               ],
             ),
-            const SizedBox(height: Gold.s13),
+            const SizedBox(height: Space.s12),
             TextField(
               controller: _text,
               maxLength: 300,
@@ -1875,7 +1875,7 @@ class _MarketReviewSheetState extends State<_MarketReviewSheet> {
                 bi('Your review · optional', 'உங்கள் கருத்து · விருப்பம்'),
               ),
             ),
-            const SizedBox(height: Gold.s8),
+            const SizedBox(height: Space.s8),
             LiquidButton(
               label: bi('Save review', 'மதிப்பீட்டைச் சேமி'),
               busy: _saving,
@@ -2052,7 +2052,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
     required ValueChanged<int> onEnd,
   }) => Column(
     children: [
-      SwitchListTile.adaptive(
+      SoundSwitchListTile(
         secondary: Icon(icon, color: Ink.amber),
         value: on,
         onChanged: onChanged,
@@ -2060,7 +2060,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
       ),
       if (on)
         Padding(
-          padding: const EdgeInsets.fromLTRB(54, 0, Gold.s16, Gold.s13),
+          padding: const EdgeInsets.fromLTRB(54, 0, Space.s16, Space.s12),
           child: Row(
             children: [
               Expanded(
@@ -2073,7 +2073,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Gold.s8),
+                padding: const EdgeInsets.symmetric(horizontal: Space.s8),
                 child: Text('–', style: TextStyle(color: Ink.muted)),
               ),
               Expanded(
@@ -2109,10 +2109,10 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                     ),
                     style: TextStyle(color: Ink.muted, fontSize: 14),
                   ),
-                  const SizedBox(height: Gold.s16),
+                  const SizedBox(height: Space.s16),
                   _InsetGroup(
                     children: [
-                      SwitchListTile.adaptive(
+                      SoundSwitchListTile(
                         value: _active,
                         onChanged: (v) => setState(() => _active = v),
                         title: AppText(
@@ -2122,7 +2122,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                           ),
                         ),
                       ),
-                      SwitchListTile.adaptive(
+                      SoundSwitchListTile(
                         value: _holiday,
                         onChanged: (v) => setState(() => _holiday = v),
                         title: AppText(bi('Holiday', 'விடுமுறை')),
@@ -2135,7 +2135,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   TextField(
                     controller: _name,
                     maxLength: 80,
@@ -2146,7 +2146,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                           : bi('Name', 'பெயர்'),
                     ),
                   ),
-                  const SizedBox(height: Gold.s8),
+                  const SizedBox(height: Space.s8),
                   TextField(
                     controller: _price,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -2157,7 +2157,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                       prefix: Text('${currencySymbol()} '),
                     ),
                   ),
-                  const SizedBox(height: Gold.s16),
+                  const SizedBox(height: Space.s16),
                   VendorLocationField(
                     value: _point,
                     name: shop
@@ -2171,7 +2171,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                         : CupertinoIcons.location_solid,
                     onChanged: (p) => setState(() => _point = p),
                   ),
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   _InsetGroup(
                     children: [
                       _hoursRow(
@@ -2200,14 +2200,14 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: Gold.s21),
+                  const SizedBox(height: Space.s20),
                   LiquidButton(
                     label: bi('Save', 'சேமி'),
                     busy: _saving,
                     onPressed: _save,
                   ),
                   if (_listed) ...[
-                    const SizedBox(height: Gold.s8),
+                    const SizedBox(height: Space.s8),
                     GhostButton(
                       label: bi(
                         'Remove from nearby search',
@@ -2216,7 +2216,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                       color: Ink.redText,
                       onPressed: _remove,
                     ),
-                    const SizedBox(height: Gold.s34),
+                    const SizedBox(height: Space.s32),
                     const _RequestsToMe(),
                   ],
                 ],
@@ -2251,7 +2251,7 @@ class _RequestsToMe extends StatelessWidget {
               letterSpacing: -.5,
             ),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
           if (docs.isEmpty)
             _MarketNote(bi('No requests yet', 'இன்னும் கோரிக்கைகள் இல்லை'))
           else
@@ -2393,7 +2393,7 @@ class _MarketRequestBannerState extends State<MarketRequestBanner> {
       }
     } else {
       setState(() => _answering.add(id));
-      HapticFeedback.selectionClick();
+      selectionFeedback();
       try {
         if (answer == 'accept') {
           await MarketService.accept(id);
@@ -2431,7 +2431,7 @@ class _MarketRequestBannerState extends State<MarketRequestBanner> {
 
   Future<void> _buyerAnswer(String id, bool agree) async {
     setState(() => _answering.add(id));
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     try {
       agree ? await MarketService.agree(id) : await MarketService.cancel(id);
     } catch (error) {
@@ -2471,14 +2471,14 @@ class _MarketRequestBannerState extends State<MarketRequestBanner> {
               onPressed: () => _vendorAnswer(incoming.first, 'decline'),
             ),
           ),
-          const SizedBox(width: Gold.s8),
+          const SizedBox(width: Space.s8),
           Expanded(
             child: GhostButton(
               label: bi('Change', 'மாற்று'),
               onPressed: () => _vendorAnswer(incoming.first, 'offer'),
             ),
           ),
-          const SizedBox(width: Gold.s8),
+          const SizedBox(width: Space.s8),
           Expanded(
             child: LiquidButton(
               label: bi('Accept', 'ஏற்கவும்'),
@@ -2514,7 +2514,7 @@ class _MarketRequestBannerState extends State<MarketRequestBanner> {
               onPressed: () => _buyerAnswer(offers.first.id, false),
             ),
           ),
-          const SizedBox(width: Gold.s8),
+          const SizedBox(width: Space.s8),
           Expanded(
             child: LiquidButton(
               label: bi('Agree', 'சம்மதம்'),
@@ -2662,7 +2662,7 @@ class _MarketOfferSheetState extends State<_MarketOfferSheet> {
               marketRequestSummary(widget.request),
               style: TextStyle(color: Ink.muted),
             ),
-            const SizedBox(height: Gold.s16),
+            const SizedBox(height: Space.s16),
             _InsetGroup(
               children: [
                 ListTile(
@@ -2686,7 +2686,7 @@ class _MarketOfferSheetState extends State<_MarketOfferSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: Gold.s16),
+            const SizedBox(height: Space.s16),
             TextField(
               controller: _price,
               keyboardType: const TextInputType.numberWithOptions(
@@ -2697,7 +2697,7 @@ class _MarketOfferSheetState extends State<_MarketOfferSheet> {
                 prefix: Text('${currencySymbol()} '),
               ),
             ),
-            const SizedBox(height: Gold.s16),
+            const SizedBox(height: Space.s16),
             LiquidButton(
               label: bi('Send to buyer', 'வாங்குபவருக்கு அனுப்பு'),
               icon: CupertinoIcons.paperplane_fill,
