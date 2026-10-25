@@ -1562,6 +1562,10 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
       _paid = TextEditingController(text: '0');
   bool _busy = false;
   bool _payment = false;
+  bool _allHistory = false;
+
+  /// Milk paid: 0 later, 1 in full now, 2 in part.
+  late int _settle = widget.person['paymentCycle'] == 'Daily' ? 1 : 0;
   String _session = vendorSessionNow();
   String _entryId = '';
   Timer? _timer;
@@ -1690,64 +1694,247 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                 final sessions = ((p['sessions'] as List?) ?? const [])
                     .whereType<String>()
                     .toList();
+                final history = _allHistory ? rows : rows.take(5).toList();
+                final paidNow = _settleAmount(entryTotal);
                 return ListView(
-                  padding: const EdgeInsets.fromLTRB(21, 8, 21, 40),
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
                   children: [
-                    // Back and edit sit beside the portrait instead of in an
-                    // empty app bar row above it.
-                    Stack(
+                    // One compact header row: back, who, edit.
+                    Row(
                       children: [
-                        Center(
-                          child: GlassPortrait(
-                            image: personPhoto(p),
-                            title: txt(p, 'name'),
-                            subtitle: txt(
-                              p,
-                              'place',
-                              supplier
-                                  ? bi('Milk provider', 'பால் வழங்குநர்')
-                                  : bi('Milk buyer', 'பால் வாங்குபவர்'),
-                            ),
-                            size: 150,
-                          ),
+                        IconButton(
+                          tooltip: MaterialLocalizations.of(
+                            context,
+                          ).backButtonTooltip,
+                          icon: const Icon(CupertinoIcons.chevron_back),
+                          onPressed: () => Navigator.of(context).maybePop(),
                         ),
-                        PositionedDirectional(
-                          top: 0,
-                          start: -8,
-                          child: IconButton(
-                            tooltip: MaterialLocalizations.of(
-                              context,
-                            ).backButtonTooltip,
-                            icon: const Icon(CupertinoIcons.chevron_back),
-                            onPressed: () => Navigator.of(context).maybePop(),
+                        GlassAvatar(
+                          image: personPhoto(p),
+                          label: txt(p, 'name'),
+                          radius: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                txt(p, 'name'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -.3,
+                                ),
+                              ),
+                              Text(
+                                txt(
+                                  p,
+                                  'place',
+                                  supplier
+                                      ? bi('Milk provider', 'பால் வழங்குநர்')
+                                      : bi('Milk buyer', 'பால் வாங்குபவர்'),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Ink.muted,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         if (canRecordEntries)
-                          PositionedDirectional(
-                            top: 0,
-                            end: -8,
-                            child: IconButton(
-                              tooltip: ui('Edit person'),
-                              icon: const Icon(CupertinoIcons.pencil),
-                              onPressed: () async {
-                                final result = await push<String>(
-                                  context,
-                                  VendorPersonForm(
-                                    kind: txt(p, 'kind'),
-                                    person: p,
-                                  ),
-                                );
-                                // Deleted from the edit form: this page
-                                // closes too.
-                                if (result == 'deleted' && context.mounted) {
-                                  Navigator.of(context).maybePop();
-                                }
-                              },
-                            ),
+                          IconButton(
+                            tooltip: ui('Edit person'),
+                            icon: const Icon(CupertinoIcons.pencil),
+                            onPressed: () async {
+                              final result = await push<String>(
+                                context,
+                                VendorPersonForm(
+                                  kind: txt(p, 'kind'),
+                                  person: p,
+                                ),
+                              );
+                              // Deleted from the edit form: this page
+                              // closes too.
+                              if (result == 'deleted' && context.mounted) {
+                                Navigator.of(context).maybePop();
+                              }
+                            },
                           ),
                       ],
                     ),
                     const SizedBox(height: 16),
+                    // The one number that matters: what is owed.
+                    Glass(
+                      radius: 24,
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  due > .001
+                                      ? supplier
+                                            ? bi('To pay', 'கொடுக்கவேண்டியது')
+                                            : bi('To collect', 'பெறவேண்டியது')
+                                      : bi('Balance', 'நிலுவை'),
+                                  style: TextStyle(
+                                    color: Ink.muted,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                FlowText(
+                                  due > .001
+                                      ? money(due)
+                                      : bi('Settled', 'தீர்ந்தது'),
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -.8,
+                                    color: due > .001
+                                        ? supplier
+                                              ? Ink.amberText
+                                              : Ink.redText
+                                        : Ink.greenText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${vendorFieldNumber(monthLitres)} L',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                bi('this month', 'இந்த மாதம்'),
+                                style: TextStyle(
+                                  color: Ink.muted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (canRecordEntries) ...[
+                      const SizedBox(height: 20),
+                      LiquidSegmentBar(
+                        labels: [
+                          supplier
+                              ? widget.intakeKind == 'collection'
+                                    ? bi('Collect milk', 'பால் சேகரிப்பு')
+                                    : bi('Buy milk', 'பால் வாங்கு')
+                              : bi('Deliver milk', 'பால் விற்பனை'),
+                          supplier
+                              ? bi('Pay', 'பணம் கொடு')
+                              : bi('Receive money', 'பணம் பெறு'),
+                        ],
+                        index: _payment ? 1 : 0,
+                        onChanged: (v) {
+                          if (_busy) return;
+                          setState(() {
+                            _payment = v == 1;
+                            _entryId = '';
+                            _paid.text = _payment && due > .001
+                                ? vendorFieldNumber(due)
+                                : '0';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Glass(
+                        radius: 24,
+                        padding: const EdgeInsets.all(16),
+                        child: _payment
+                            ? _paymentForm(due, supplier)
+                            : _milkForm(entryTotal, paidNow, supplier),
+                      ),
+                      const SizedBox(height: 16),
+                      LiquidButton(
+                        label: _payment
+                            ? supplier
+                                  ? bi(
+                                      'Pay ${money(toDouble(_paid.text))}',
+                                      '${money(toDouble(_paid.text))} கொடு',
+                                    )
+                                  : bi(
+                                      'Receive ${money(toDouble(_paid.text))}',
+                                      '${money(toDouble(_paid.text))} பெறு',
+                                    )
+                            : bi(
+                                'Save ${vendorFieldNumber(qty)} L · ${money(entryTotal)}',
+                                '${vendorFieldNumber(qty)} லி · ${money(entryTotal)} சேமி',
+                              ),
+                        icon: CupertinoIcons.checkmark_alt,
+                        busy: _busy,
+                        height: 56,
+                        radius: 28,
+                        onPressed: _busy
+                            ? null
+                            : () {
+                                if (!_payment) {
+                                  _paid.text = vendorFieldNumber(paidNow);
+                                }
+                                _save(p, supplier);
+                              },
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    // Less frequent actions, quietly together.
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (contact.isNotEmpty) ...[
+                          _QuickAction(
+                            icon: CupertinoIcons.phone_fill,
+                            label: bi('Call', 'அழை'),
+                            onTap: () => _contact('tel:$contact'),
+                          ),
+                          _QuickAction(
+                            icon: CupertinoIcons.chat_bubble_fill,
+                            label: 'WhatsApp',
+                            onTap: () => _contact(
+                              'https://wa.me/${contact.replaceAll('+', '')}',
+                            ),
+                          ),
+                        ],
+                        _QuickAction(
+                          icon: CupertinoIcons.chart_bar_alt_fill,
+                          label: bi('Report', 'அறிக்கை'),
+                          onTap: () => push(
+                            context,
+                            CustomerMonthlyReportScreen(person: p),
+                          ),
+                        ),
+                        if (personPoint(p) case final home?)
+                          _QuickAction(
+                            icon: CupertinoIcons.location_fill,
+                            label: bi('Map', 'வரைபடம்'),
+                            onTap: () => _contact(
+                              'https://www.google.com/maps/search/?api=1&query=${home.latitude},${home.longitude}',
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Wrap(
                       alignment: WrapAlignment.center,
                       spacing: 8,
@@ -1771,323 +1958,30 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                           ),
                       ],
                     ),
-                    if (contact.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () => _contact('tel:$contact'),
-                            icon: const Icon(
-                              CupertinoIcons.phone_fill,
-                              size: 18,
-                            ),
-                            label: Text(bi('Call', 'அழை')),
-                          ),
-                          const SizedBox(width: 10),
-                          OutlinedButton.icon(
-                            onPressed: () => _contact(
-                              'https://wa.me/${contact.replaceAll('+', '')}',
-                            ),
-                            icon: const Icon(
-                              CupertinoIcons.chat_bubble_fill,
-                              size: 18,
-                            ),
-                            label: const AppText('WhatsApp'),
-                          ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () => push(
-                            context,
-                            CustomerMonthlyReportScreen(person: p),
-                          ),
-                          icon: const Icon(
-                            CupertinoIcons.chart_bar_alt_fill,
-                            size: 18,
-                          ),
-                          label: Text(bi('Monthly report', 'மாத அறிக்கை')),
-                        ),
-                        if (personPoint(p) case final home?) ...[
-                          const SizedBox(width: 10),
-                          OutlinedButton.icon(
-                            onPressed: () => _contact(
-                              'https://www.google.com/maps/search/?api=1&query=${home.latitude},${home.longitude}',
-                            ),
-                            icon: const Icon(
-                              CupertinoIcons.location_fill,
-                              size: 18,
-                            ),
-                            label: Text(bi('Home on map', 'வீடு வரைபடத்தில்')),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    if (canRecordEntries) ...[
-                      SegmentedButton<bool>(
-                        showSelectedIcon: false,
-                        segments: [
-                          ButtonSegment(
-                            value: false,
-                            label: Text(
-                              supplier
-                                  ? widget.intakeKind == 'collection'
-                                        ? bi('Collect milk', 'பால் சேகரிப்பு')
-                                        : bi('Buy milk', 'பால் வாங்கு')
-                                  : bi('Deliver milk', 'பால் விற்பனை'),
-                            ),
-                          ),
-                          ButtonSegment(
-                            value: true,
-                            label: Text(bi('Payment', 'பணம்')),
-                          ),
-                        ],
-                        selected: {_payment},
-                        onSelectionChanged: _busy
-                            ? null
-                            : (v) => setState(() {
-                                _payment = v.first;
-                                _entryId = '';
-                                _paid.text = _payment && due > .001
-                                    ? vendorFieldNumber(due)
-                                    : '0';
-                              }),
-                      ),
-                      const SizedBox(height: 20),
-                      if (!_payment) ...[
-                        TextField(
-                          controller: _qty,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: fieldStyle(
-                            bi('Milk quantity (litres)', 'பால் அளவு (லிட்டர்)'),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _price,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: fieldStyle(
-                            bi('Price per litre', 'ஒரு லிட்டர் விலை'),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      TextField(
-                        controller: _paid,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: fieldStyle(
-                          _payment
-                              ? supplier
-                                    ? bi('Amount paid', 'செலுத்திய தொகை')
-                                    : bi('Amount received', 'பெற்ற தொகை')
-                              : bi(
-                                  supplier
-                                      ? 'Amount paid now (0 for later)'
-                                      : 'Amount received now (0 for later)',
-                                  supplier
-                                      ? 'இப்போது செலுத்தியது (பிறகு என்றால் 0)'
-                                      : 'இப்போது பெற்றது (பிறகு என்றால் 0)',
-                                ),
-                        ),
-                      ),
-                      if (!_payment && entryTotal > 0) ...[
-                        const SizedBox(height: 12),
-                        Glass(
-                          radius: 22,
-                          padding: const EdgeInsets.all(16),
-                          tint: Ink.violetDeep.withValues(alpha: .05),
-                          child: Column(
-                            children: [
-                              _TotalLine(
-                                label: due > .001
-                                    ? bi('This entry', 'இந்தப் பதிவு')
-                                    : bi('Total', 'மொத்தம்'),
-                                strong: due <= .001,
-                                value: money(entryTotal),
-                              ),
-                              if (due > .001) ...[
-                                const SizedBox(height: 6),
-                                _TotalLine(
-                                  label: bi(
-                                    'Previous balance',
-                                    'முந்தைய நிலுவை',
-                                  ),
-                                  value: money(due),
-                                ),
-                                const Divider(height: 18),
-                                _TotalLine(
-                                  label: supplier
-                                      ? bi('Total to pay', 'மொத்தம் கொடுக்க')
-                                      : bi('Total to collect', 'மொத்தம் பெற'),
-                                  value: money(entryTotal + due),
-                                  strong: true,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      LiquidButton(
-                        label: bi('Save entry', 'பதிவைச் சேமி'),
-                        busy: _busy,
-                        height: 56,
-                        radius: 28,
-                        onPressed: _busy ? null : () => _save(p, supplier),
-                      ),
-                    ],
-                    const SizedBox(height: 28),
-                    Glass(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 16,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _PersonStat(
-                              label: due > .001
-                                  ? supplier
-                                        ? bi('To pay', 'கொடுக்கவேண்டியது')
-                                        : bi('To collect', 'பெறவேண்டியது')
-                                  : bi('Balance', 'நிலுவை'),
-                              value: due > .001
-                                  ? money(due)
-                                  : bi('Settled', 'தீர்ந்தது'),
-                              color: due > .001
-                                  ? supplier
-                                        ? Ink.amberText
-                                        : Ink.redText
-                                  : Ink.greenText,
-                            ),
-                          ),
-                          const _StatDivider(),
-                          Expanded(
-                            child: _PersonStat(
-                              label: bi('This month', 'இந்த மாதம்'),
-                              value: '${vendorFieldNumber(monthLitres)} L',
-                            ),
-                          ),
-                          const _StatDivider(),
-                          Expanded(
-                            child: _PersonStat(
-                              label: bi('Price / L', 'விலை / லி'),
-                              value: money(
-                                numv(p, 'price', defaultMilkPrice()),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 24),
                     Text(
                       bi('History', 'பரிவர்த்தனைகள்'),
                       style: const TextStyle(
-                        fontSize: 22,
+                        fontSize: 20,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     if (rows.isEmpty)
                       Text(
                         bi('No transactions yet.', 'பரிவர்த்தனைகள் இல்லை.'),
                         style: TextStyle(color: Ink.muted),
                       ),
-                    for (final r in rows)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Glass(
-                          radius: 22,
-                          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color:
-                                      (r['kind'] == 'payment'
-                                              ? Ink.green
-                                              : Ink.violetDeep)
-                                          .withValues(alpha: .1),
-                                ),
-                                child: Icon(
-                                  r['kind'] == 'payment'
-                                      ? Icons.currency_rupee_rounded
-                                      : CupertinoIcons.drop_fill,
-                                  size: 20,
-                                  color: r['kind'] == 'payment'
-                                      ? Ink.greenText
-                                      : Ink.violetDeep,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      vendorEntryLabel(txt(r, 'kind')),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    Text(
-                                      [
-                                        '${txt(r, 'date')} · ${txt(r, 'time')}',
-                                        if (r['kind'] != 'payment')
-                                          '${vendorFieldNumber(numv(r, 'quantity'))} L',
-                                        if (txt(r, 'notes').isNotEmpty)
-                                          txt(r, 'notes'),
-                                      ].join('\n'),
-                                      style: TextStyle(
-                                        color: Ink.muted,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                money(numv(r, 'amount')),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              if (withinEntryEditWindow(r, DateTime.now()) &&
-                                  canRecordEntries &&
-                                  (!firebaseReady ||
-                                      r['createdByUid'] ==
-                                          FirebaseAuth
-                                              .instance
-                                              .currentUser
-                                              ?.uid))
-                                IconButton(
-                                  tooltip: bi(
-                                    'Edit note',
-                                    'குறிப்பைத் திருத்து',
-                                  ),
-                                  icon: const Icon(CupertinoIcons.pencil),
-                                  onPressed: () => _editNote(r),
-                                )
-                              else
-                                const SizedBox(width: 8),
-                            ],
+                    for (final r in history) _historyRow(r),
+                    if (rows.length > history.length)
+                      Center(
+                        child: TextButton(
+                          onPressed: () => setState(() => _allHistory = true),
+                          child: Text(
+                            bi(
+                              'Show all ${rows.length}',
+                              'அனைத்தும் காட்டு (${rows.length})',
+                            ),
                           ),
                         ),
                       ),
@@ -2100,6 +1994,238 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
       );
     },
   );
+
+  /// How much is paid right now for the milk being saved.
+  double _settleAmount(double entryTotal) => switch (_settle) {
+    1 => entryTotal,
+    2 => toDouble(_paid.text),
+    _ => 0,
+  };
+
+  /// Buy or deliver: litres with a stepper, the price as one quiet line,
+  /// and whether it is paid now, later or in part.
+  Widget _milkForm(double entryTotal, double paidNow, bool supplier) {
+    final qty = toDouble(_qty.text);
+    void step(double by) {
+      final next = math.max(0.0, ((qty + by) * 2).round() / 2);
+      _qty.text = vendorFieldNumber(next);
+      selectionFeedback();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            _LitreStepButton(
+              icon: CupertinoIcons.minus,
+              label: bi('Less milk', 'குறைவு'),
+              onTap: qty <= 0 ? null : () => step(-.5),
+            ),
+            Expanded(
+              child: TextField(
+                controller: _qty,
+                textAlign: TextAlign.center,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: const TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -1,
+                ),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  suffixText: 'L',
+                  hintText: '0',
+                  labelText: bi('Litres', 'லிட்டர்'),
+                  floatingLabelBehavior: FloatingLabelBehavior.always,
+                  floatingLabelAlignment: FloatingLabelAlignment.center,
+                ),
+              ),
+            ),
+            _LitreStepButton(
+              icon: CupertinoIcons.plus,
+              label: bi('More milk', 'அதிகம்'),
+              onTap: () => step(.5),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: TextButton.icon(
+            onPressed: _changePrice,
+            icon: const Icon(CupertinoIcons.pencil, size: 16),
+            label: Text(
+              bi(
+                '${money(toDouble(_price.text))} per litre',
+                'லிட்டருக்கு ${money(toDouble(_price.text))}',
+              ),
+            ),
+          ),
+        ),
+        const Divider(height: 24),
+        LiquidSegmentBar(
+          labels: [
+            bi('Pay later', 'பிறகு'),
+            supplier
+                ? bi('Paid now', 'இப்போது கொடுத்தேன்')
+                : bi('Paid now', 'இப்போது பெற்றேன்'),
+            bi('Part', 'பகுதி'),
+          ],
+          index: _settle,
+          onChanged: (v) => setState(() {
+            _settle = v;
+            if (v == 2) _paid.text = '';
+          }),
+        ),
+        if (_settle == 2) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _paid,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: fieldStyle(
+              supplier
+                  ? bi('Amount paid now', 'இப்போது கொடுத்தது')
+                  : bi('Amount received now', 'இப்போது பெற்றது'),
+              prefix: Text('${currencySymbol()} '),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Payment only: one amount, with the full balance one tap away.
+  Widget _paymentForm(double due, bool supplier) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      TextField(
+        controller: _paid,
+        textAlign: TextAlign.center,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -1,
+        ),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          prefixText: '${currencySymbol()} ',
+          labelText: supplier
+              ? bi('Amount paid', 'செலுத்திய தொகை')
+              : bi('Amount received', 'பெற்ற தொகை'),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          floatingLabelAlignment: FloatingLabelAlignment.center,
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+      if (due > .001)
+        Center(
+          child: ActionChip(
+            label: Text(
+              supplier
+                  ? bi('Pay all ${money(due)}', 'முழுவதும் ${money(due)}')
+                  : bi('Full ${money(due)}', 'முழுவதும் ${money(due)}'),
+            ),
+            onPressed: () {
+              selectionFeedback();
+              setState(() => _paid.text = vendorFieldNumber(due));
+            },
+          ),
+        ),
+    ],
+  );
+
+  Future<void> _changePrice() async {
+    final controller = TextEditingController(text: _price.text);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AppleAlert(
+        title: Text(bi('Price per litre', 'ஒரு லிட்டர் விலை')),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(prefixText: '${currencySymbol()} '),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const AppText('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const AppText('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null && double.tryParse(value) != null && mounted) {
+      setState(() => _price.text = value);
+    }
+  }
+
+  Widget _historyRow(Map<String, dynamic> r) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Glass(
+      radius: 20,
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      child: Row(
+        children: [
+          Icon(
+            r['kind'] == 'payment'
+                ? Icons.currency_rupee_rounded
+                : CupertinoIcons.drop_fill,
+            size: 20,
+            color: r['kind'] == 'payment' ? Ink.greenText : Ink.violetDeep,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  [
+                    vendorEntryLabel(txt(r, 'kind')),
+                    if (r['kind'] != 'payment')
+                      '${vendorFieldNumber(numv(r, 'quantity'))} L',
+                  ].join(' · '),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  [
+                    '${txt(r, 'date')} · ${txt(r, 'time')}',
+                    if (txt(r, 'notes').isNotEmpty) txt(r, 'notes'),
+                  ].join('\n'),
+                  style: TextStyle(color: Ink.muted, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            money(numv(r, 'amount')),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          ),
+          if (withinEntryEditWindow(r, DateTime.now()) &&
+              canRecordEntries &&
+              (!firebaseReady ||
+                  r['createdByUid'] == FirebaseAuth.instance.currentUser?.uid))
+            IconButton(
+              tooltip: bi('Edit note', 'குறிப்பைத் திருத்து'),
+              icon: const Icon(CupertinoIcons.pencil),
+              onPressed: () => _editNote(r),
+            )
+          else
+            const SizedBox(width: 8),
+        ],
+      ),
+    ),
+  );
+
   Future<void> _editNote(Map<String, dynamic> row) async {
     final controller = TextEditingController(text: txt(row, 'notes'));
     final note = await showDialog<String>(
@@ -2179,46 +2305,6 @@ class _InfoChip extends StatelessWidget {
   );
 }
 
-class _PersonStat extends StatelessWidget {
-  final String label, value;
-  final Color? _color;
-  Color get color => _color ?? Ink.navy;
-  const _PersonStat({required this.label, required this.value, this._color});
-  @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      FittedBox(
-        fit: BoxFit.scaleDown,
-        child: AppText(
-          value,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-      ),
-      const SizedBox(height: 3),
-      AppText(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: Ink.muted, fontSize: 13),
-      ),
-    ],
-  );
-}
-
-class _StatDivider extends StatelessWidget {
-  const _StatDivider();
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 1,
-    height: 34,
-    color: Ink.violetDeep.withValues(alpha: .12),
-  );
-}
-
 class _TotalLine extends StatelessWidget {
   final String label, value;
   final bool strong;
@@ -2248,5 +2334,75 @@ class _TotalLine extends StatelessWidget {
         ),
       ),
     ],
+  );
+}
+
+/// A round − / + button beside the litres, 44 pt.
+class _LitreStepButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  const _LitreStepButton({required this.icon, required this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    child: SizedBox.square(
+      dimension: 48,
+      child: IconButton.filledTonal(
+        onPressed: onTap,
+        icon: Icon(icon),
+        style: IconButton.styleFrom(
+          backgroundColor: Ink.lavender,
+          foregroundColor: Ink.violetDeep,
+        ),
+      ),
+    ),
+  );
+}
+
+/// A small labelled round action (Call, WhatsApp, Report, Map).
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    excludeSemantics: true,
+    child: Pressable(
+      radius: 22,
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: ShapeDecoration(
+          shape: const StadiumBorder(),
+          color: Ink.surface,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 17, color: Ink.violetDeep),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: Ink.violetDeep,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }

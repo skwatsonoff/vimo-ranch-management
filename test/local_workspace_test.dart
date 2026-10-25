@@ -264,14 +264,9 @@ void main() {
     final fields = tester
         .widgetList<TextField>(find.byType(TextField))
         .toList();
-    expect(
-      fields.map((f) => f.decoration?.labelText),
-      containsAll([
-        'Milk quantity (litres)',
-        'Price per litre',
-        'Amount paid now (0 for later)',
-      ]),
-    );
+    // One clean entry: litres (with − / +), the price as one line, and
+    // paid now / later / part instead of an always-open amount field.
+    expect(fields.map((f) => f.decoration?.labelText), contains('Litres'));
     expect(
       fields.every(
         (f) =>
@@ -279,13 +274,12 @@ void main() {
       ),
       true,
     );
+    expect(find.text('₹60 per litre'), findsOneWidget);
+    expect(find.text('Pay later'), findsOneWidget);
+    expect(find.text('Part'), findsOneWidget);
     expect(find.byType(ChoiceChip), findsNothing);
-    expect(
-      tester
-          .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
-          .showSelectedIcon,
-      false,
-    );
+    // Weekly payers default to paying later.
+    expect(find.textContaining('Save 1 L'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
