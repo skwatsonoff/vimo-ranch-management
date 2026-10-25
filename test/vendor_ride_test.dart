@@ -366,6 +366,9 @@ void main() {
     tester,
   ) async {
     await mountApp(tester);
+    // Home now opens with Today's milk card, so the Reports tile sits lower.
+    await tester.ensureVisible(find.text('Reports'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Reports'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Milk Collected'));

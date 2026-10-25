@@ -316,7 +316,7 @@ class _PlaceBubble extends StatelessWidget {
                     count,
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       color: selected ? Colors.white : Ink.violetDeep,
                     ),
                   ),
@@ -531,7 +531,7 @@ class _MilkClearanceSheetState extends State<_MilkClearanceSheet> {
                 ),
                 style: const TextStyle(
                   fontSize: 22,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                 ),
                 decoration: fieldStyle(
                   bi('Litres to clear', 'கிளியர் செய்யும் அளவு (லி)'),
@@ -964,7 +964,7 @@ class _CustomerReportRow extends StatelessWidget {
                 due > .001 ? money(due) : bi('Settled', 'தீர்ந்தது'),
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   color: due > .001 ? Ink.redText : Ink.greenText,
                 ),
               ),
@@ -1284,7 +1284,7 @@ class _ReportFigure extends StatelessWidget {
             value,
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               color: Ink.navy,
               letterSpacing: -.3,
             ),
@@ -1335,7 +1335,7 @@ class _ReportDay extends StatelessWidget {
                   day == null ? date : '${day.day}',
                   style: TextStyle(
                     fontSize: 20,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     color: Ink.navy,
                   ),
                 ),
@@ -1382,7 +1382,7 @@ class _ReportDay extends StatelessWidget {
               money(amount),
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 color: Ink.navy,
               ),
             ),

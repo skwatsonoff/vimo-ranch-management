@@ -1983,7 +1983,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                               Text(
                                 money(numv(r, 'amount')),
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight: FontWeight.w700,
                                   fontSize: 16,
                                 ),
                               ),
@@ -2111,7 +2111,7 @@ class _PersonStat extends StatelessWidget {
           value,
           style: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
             color: color,
           ),
         ),
@@ -2161,7 +2161,7 @@ class _TotalLine extends StatelessWidget {
         value,
         style: TextStyle(
           fontSize: strong ? 20 : 16,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w700,
           color: Ink.navy,
         ),
       ),

@@ -797,7 +797,7 @@ class _HomePin extends StatelessWidget {
                     '$number',
                     style: TextStyle(
                       color: Colors.white,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       fontSize: current ? 17 : 14,
                     ),
                   ),
@@ -5185,7 +5185,7 @@ class _StopChip extends StatelessWidget {
             else
               Text(
                 '$number',
-                style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                style: TextStyle(color: color, fontWeight: FontWeight.w700),
               ),
             const SizedBox(width: 6),
             Text(
@@ -5248,7 +5248,7 @@ class _HomeCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 22,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color: Ink.navy,
                         letterSpacing: -.4,
                       ),
@@ -5287,7 +5287,7 @@ class _HomeCard extends StatelessWidget {
                         key: ValueKey(litres),
                         style: TextStyle(
                           fontSize: 43,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           color: Ink.violetDeep,
                           letterSpacing: -1,
                         ),

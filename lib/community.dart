@@ -930,7 +930,14 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
   @override
   Widget build(BuildContext context) {
     final me = signedInUid;
-    if (me.isEmpty) return Center(child: Text(ui('Please sign in again')));
+    if (me.isEmpty) {
+      return SignInStatePanel(
+        message: bi(
+          'Sign in to see your chats.',
+          'உங்கள் உரையாடல்களைப் பார்க்க உள்நுழையவும்.',
+        ),
+      );
+    }
     final db = FirebaseFirestore.instance;
     // Edge to edge: the chat lists pad themselves by the bottom inset.
     return Shell(

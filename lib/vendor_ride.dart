@@ -1688,7 +1688,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                     '${vendorFieldNumber(vendorMilkOnHand(rows))} L',
                     style: const TextStyle(
                       fontSize: 34,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       letterSpacing: -.6,
                     ),
                   ),
@@ -1915,7 +1915,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                       vendorFieldNumber(qty),
                       style: TextStyle(
                         fontSize: 20,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color: Ink.violetDeep,
                       ),
                     ),
@@ -1970,7 +1970,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                         money(amount),
                         style: const TextStyle(
                           fontSize: 22,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: -.3,
                         ),
                       ),
@@ -2573,7 +2573,7 @@ class VendorProvidersScreen extends StatelessWidget {
                             money(due),
                             style: const TextStyle(
                               fontSize: 17,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                           Text(
@@ -3312,7 +3312,7 @@ class VendorRideSummary extends StatelessWidget {
                           money(item.amount),
                           style: const TextStyle(
                             fontSize: 17,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],

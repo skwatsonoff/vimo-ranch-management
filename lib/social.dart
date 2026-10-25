@@ -304,12 +304,10 @@ class _SocialScreenState extends State<SocialScreen> {
   Widget build(BuildContext context) {
     if (!_signedIn) {
       return Shell(
-        child: Center(
-          child: Text(
-            bi(
-              'Sign in to connect with the community.',
-              'சமூகத்துடன் இணைய உள்நுழையவும்.',
-            ),
+        child: SignInStatePanel(
+          message: bi(
+            'Sign in to connect with the community.',
+            'சமூகத்துடன் இணைய உள்நுழையவும்.',
           ),
         ),
       );

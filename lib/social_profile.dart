@@ -195,7 +195,12 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
     body: Shell(
       edgeToEdge: true,
       child: uid.isEmpty
-          ? Center(child: Text(ui('Please sign in again')))
+          ? SignInStatePanel(
+              message: bi(
+                'Sign in to see your profile.',
+                'உங்கள் சுயவிவரத்தைப் பார்க்க உள்நுழையவும்.',
+              ),
+            )
           : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance
                   .collection('profiles')
@@ -260,7 +265,7 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               fontSize: 22,
-                                              fontWeight: FontWeight.w800,
+                                              fontWeight: FontWeight.w700,
                                               letterSpacing: .2,
                                               color: Ink.navy,
                                             ),
@@ -795,7 +800,7 @@ class _ProfileCount extends StatelessWidget {
                     count == null ? '–' : compact(count),
                     style: TextStyle(
                       fontSize: 20,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       color: Ink.navy,
                     ),
                   ),

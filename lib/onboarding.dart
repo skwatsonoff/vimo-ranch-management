@@ -112,7 +112,7 @@ class _IntroFlowState extends State<IntroFlow> {
                 child: Column(
                   children: [
                     SizedBox(
-                      height: Gold.s55,
+                      height: Space.s56,
                       child: Row(
                         children: [
                           if (_step > 0)
@@ -205,10 +205,10 @@ class _StepFrame extends StatelessWidget {
       Expanded(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            Gold.s21,
-            Gold.s13,
-            Gold.s21,
-            Gold.s21,
+            Space.s20,
+            Space.s12,
+            Space.s20,
+            Space.s20,
           ),
           children: [
             Text(
@@ -221,7 +221,7 @@ class _StepFrame extends StatelessWidget {
                 height: 1.15,
               ),
             ),
-            const SizedBox(height: Gold.s8),
+            const SizedBox(height: Space.s8),
             Text(
               subtitle,
               style: TextStyle(
@@ -230,17 +230,17 @@ class _StepFrame extends StatelessWidget {
                 height: 1.4,
               ),
             ),
-            const SizedBox(height: Gold.s34),
+            const SizedBox(height: Space.s32),
             child,
           ],
         ),
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(
-          Gold.s21,
-          Gold.s8,
-          Gold.s21,
-          Gold.s34,
+          Space.s20,
+          Space.s8,
+          Space.s20,
+          Space.s32,
         ),
         child: LiquidButton(label: action, onPressed: onNext),
       ),
@@ -254,12 +254,12 @@ class _Welcome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(Gold.s21, 0, Gold.s21, Gold.s34),
+    padding: const EdgeInsets.fromLTRB(Space.s20, 0, Space.s20, Space.s32),
     child: Column(
       children: [
         const Spacer(flex: 3),
-        const Reveal(index: 0, child: BrandMark(size: Gold.s89 + Gold.s34)),
-        const SizedBox(height: Gold.s34),
+        const Reveal(index: 0, child: BrandMark(size: Space.s88 + Space.s32)),
+        const SizedBox(height: Space.s32),
         Reveal(
           index: 1,
           child: Text(
@@ -273,7 +273,7 @@ class _Welcome extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: Gold.s8),
+        const SizedBox(height: Space.s8),
         Reveal(
           index: 2,
           child: Text(
@@ -286,7 +286,7 @@ class _Welcome extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         Reveal(
           index: 3,
           child: Text(
@@ -340,7 +340,7 @@ class _LanguageStep extends StatelessWidget {
         child: Column(
           children: [
             for (final (i, l) in appLanguages.indexed) ...[
-              if (i > 0) const SizedBox(height: Gold.s13),
+              if (i > 0) const SizedBox(height: Space.s12),
               _ChoiceCard(
                 selected: current == l.mode,
                 title: l.native,
@@ -401,7 +401,7 @@ class _PurposeStep extends StatelessWidget {
             ),
             onTap: () => onChanged(kind),
           ),
-          const SizedBox(height: Gold.s13),
+          const SizedBox(height: Space.s12),
         ],
       ],
     ),
@@ -431,7 +431,7 @@ class _ChoiceCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: Gold.base,
         curve: Gold.ease,
-        padding: const EdgeInsets.all(Gold.s16),
+        padding: const EdgeInsets.all(Space.s16),
         decoration: ShapeDecoration(
           shape: SquircleBorder(
             radius: Gold.r27,
@@ -444,16 +444,16 @@ class _ChoiceCard extends StatelessWidget {
           shadows: [
             BoxShadow(
               color: Ink.violetDeep.withValues(alpha: selected ? .22 : .06),
-              blurRadius: Gold.s21,
-              offset: const Offset(0, Gold.s8),
+              blurRadius: Space.s20,
+              offset: const Offset(0, Space.s8),
             ),
           ],
         ),
         child: Row(
           children: [
             Container(
-              width: Gold.s55 - Gold.s8,
-              height: Gold.s55 - Gold.s8,
+              width: Space.s56 - Space.s8,
+              height: Space.s56 - Space.s8,
               alignment: Alignment.center,
               decoration: ShapeDecoration(
                 shape: const SquircleBorder(radius: Gold.r13),
@@ -468,7 +468,7 @@ class _ChoiceCard extends StatelessWidget {
                 child: leading,
               ),
             ),
-            const SizedBox(width: Gold.s13),
+            const SizedBox(width: Space.s12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -481,7 +481,7 @@ class _ChoiceCard extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: Gold.s2),
+                  const SizedBox(height: Space.s2),
                   Text(
                     subtitle,
                     style: TextStyle(
@@ -509,7 +509,7 @@ Future<void> promptRanchSetup(BuildContext context) async {
     showDragHandle: true,
     builder: (sheet) => SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(Gold.s21, 0, Gold.s21, Gold.s21),
+        padding: const EdgeInsets.fromLTRB(Space.s20, 0, Space.s20, Space.s20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -522,7 +522,7 @@ Future<void> promptRanchSetup(BuildContext context) async {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: Gold.s5),
+            const SizedBox(height: Space.s4),
             Text(
               bi(
                 'Create a new ranch or join one with its Ranch ID.',
@@ -530,19 +530,19 @@ Future<void> promptRanchSetup(BuildContext context) async {
               ),
               style: TextStyle(color: Ink.muted, height: 1.4),
             ),
-            const SizedBox(height: Gold.s21),
+            const SizedBox(height: Space.s20),
             LiquidButton(
               label: bi('Create a ranch', 'புதிய தொழுவம் உருவாக்கு'),
               icon: CupertinoIcons.house_alt,
               onPressed: () => Navigator.pop(sheet, 0),
             ),
-            const SizedBox(height: Gold.s13),
+            const SizedBox(height: Space.s12),
             GhostButton(
               label: bi('Join with Ranch ID', 'Ranch ID மூலம் சேர்'),
               icon: Icons.key_rounded,
               onPressed: () => Navigator.pop(sheet, 1),
             ),
-            const SizedBox(height: Gold.s8),
+            const SizedBox(height: Space.s8),
             TextButton(
               onPressed: () => Navigator.pop(sheet),
               child: Text(bi('Later', 'பிறகு')),
@@ -575,16 +575,16 @@ class RanchSetupPrompt extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: Gold.contentWidth),
           child: ListView(
             shrinkWrap: true,
-            padding: const EdgeInsets.all(Gold.s21),
+            padding: const EdgeInsets.all(Space.s20),
             children: [
               Glass(
                 radius: Gold.r34,
-                padding: const EdgeInsets.all(Gold.s27),
+                padding: const EdgeInsets.all(Space.s28),
                 elevation: 1.1,
                 child: Column(
                   children: [
-                    const CowMark(size: Gold.s89),
-                    const SizedBox(height: Gold.s16),
+                    const CowMark(size: Space.s88),
+                    const SizedBox(height: Space.s16),
                     Text(
                       bi('Set up your ranch', 'உங்கள் தொழுவத்தை அமைக்கவும்'),
                       textAlign: TextAlign.center,
@@ -594,7 +594,7 @@ class RanchSetupPrompt extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: Gold.s8),
+                    const SizedBox(height: Space.s8),
                     Text(
                       bi(
                         'Create a new ranch, or enter an existing Ranch ID to join it.',
@@ -603,7 +603,7 @@ class RanchSetupPrompt extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Ink.muted, height: 1.45),
                     ),
-                    const SizedBox(height: Gold.s21),
+                    const SizedBox(height: Space.s20),
                     LiquidButton(
                       label: bi('Create a ranch', 'புதிய தொழுவம் உருவாக்கு'),
                       icon: CupertinoIcons.house_alt,
@@ -612,7 +612,7 @@ class RanchSetupPrompt extends StatelessWidget {
                         const RanchOnboardingScreen(pageMode: true),
                       ),
                     ),
-                    const SizedBox(height: Gold.s13),
+                    const SizedBox(height: Space.s12),
                     GhostButton(
                       label: bi('Join with Ranch ID', 'Ranch ID மூலம் சேர்'),
                       icon: Icons.key_rounded,
@@ -808,7 +808,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const size = Gold.s89 + Gold.s13;
+    const size = Space.s88 + Space.s12;
     return FormPage(
       title: 'Create Account',
       children: [
@@ -820,8 +820,8 @@ class _SignupScreenState extends State<SignupScreen> {
               radius: size,
               onTap: _pickPhoto,
               child: SizedBox(
-                width: size + Gold.s5,
-                height: size + Gold.s5,
+                width: size + Space.s4,
+                height: size + Space.s4,
                 child: Stack(
                   children: [
                     Center(
@@ -840,7 +840,7 @@ class _SignupScreenState extends State<SignupScreen> {
                               child: Icon(
                                 CupertinoIcons.person_fill,
                                 color: Ink.violet,
-                                size: Gold.s55,
+                                size: Space.s56,
                               ),
                             )
                           : profileAvatar(_photo, radius: size / 2),
@@ -849,8 +849,8 @@ class _SignupScreenState extends State<SignupScreen> {
                       right: 0,
                       bottom: 0,
                       child: Container(
-                        width: Gold.s34 + Gold.s5,
-                        height: Gold.s34 + Gold.s5,
+                        width: Space.s32 + Space.s4,
+                        height: Space.s32 + Space.s4,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Ink.violetDeep,
@@ -858,7 +858,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                         child: _picking
                             ? const Padding(
-                                padding: EdgeInsets.all(Gold.s8),
+                                padding: EdgeInsets.all(Space.s8),
                                 child: CupertinoActivityIndicator(
                                   color: Colors.white,
                                 ),
@@ -876,13 +876,13 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
           ),
         ),
-        const SizedBox(height: Gold.s8),
+        const SizedBox(height: Space.s8),
         Text(
           bi('Profile photo (optional)', 'ப்ரொஃபைல் படம் (விருப்பம்)'),
           textAlign: TextAlign.center,
           style: TextStyle(color: Ink.muted, fontSize: Gold.t13),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         TextField(
           controller: _fullName,
           textCapitalization: TextCapitalization.words,
@@ -893,9 +893,9 @@ class _SignupScreenState extends State<SignupScreen> {
             icon: CupertinoIcons.person,
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         UsernameField(controller: _username),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _phone,
           keyboardType: TextInputType.phone,
@@ -906,7 +906,7 @@ class _SignupScreenState extends State<SignupScreen> {
             icon: CupertinoIcons.device_phone_portrait,
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _place,
           textCapitalization: TextCapitalization.words,
@@ -916,7 +916,7 @@ class _SignupScreenState extends State<SignupScreen> {
             icon: CupertinoIcons.location,
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _email,
           keyboardType: TextInputType.emailAddress,
@@ -924,7 +924,7 @@ class _SignupScreenState extends State<SignupScreen> {
           textInputAction: TextInputAction.next,
           decoration: fieldStyle('Email', icon: CupertinoIcons.mail),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _password,
           obscureText: _obscure,
@@ -941,7 +941,7 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
           ),
         ),
-        const SizedBox(height: Gold.s13),
+        const SizedBox(height: Space.s12),
         TextField(
           controller: _confirm,
           obscureText: _obscure,
@@ -953,7 +953,7 @@ class _SignupScreenState extends State<SignupScreen> {
             icon: CupertinoIcons.checkmark_shield,
           ),
         ),
-        const SizedBox(height: Gold.s21),
+        const SizedBox(height: Space.s20),
         LiquidButton(
           label: 'Create Account',
           icon: CupertinoIcons.person_badge_plus_fill,
