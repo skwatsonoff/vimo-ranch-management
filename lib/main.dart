@@ -59,6 +59,9 @@ part 'design_tokens.dart';
 part 'polish.dart';
 part 'ui_sound.dart';
 part 'google_account.dart';
+part 'shop.dart';
+part 'shop_screens.dart';
+part 'shop_orders.dart';
 part 'account.dart';
 part 'social_profile.dart';
 part 'requested_updates.dart';
@@ -9640,6 +9643,11 @@ class NotificationHistoryScreen extends StatelessWidget {
                               }
                               n['readBy'] = read;
                               await box.put(e.key, n);
+                              final order = txt(n, 'orderId');
+                              if (order.isNotEmpty && context.mounted) {
+                                await push(context, OrderScreen(id: order));
+                                return;
+                              }
                               final peer = txt(n, 'chatPeer');
                               if (peer.isNotEmpty && context.mounted) {
                                 await push(
@@ -19845,8 +19853,7 @@ class AppSettingsScreen extends StatelessWidget {
                   label: 'Preferences',
                   onTap: () => push(context, const PreferencesScreen()),
                 ),
-                if ((workspaceEnabled('Vendor') ||
-                        workspaceEnabled('Ranch')) &&
+                if ((workspaceEnabled('Vendor') || workspaceEnabled('Ranch')) &&
                     MarketService.available)
                   _ActionRow(
                     icon: CupertinoIcons.bag,

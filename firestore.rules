@@ -351,6 +351,169 @@ service cloud.firestore {
       allow delete: if routeOwner();
     }
 
+    // Shop products a person lists from their profile. Anyone signed in can
+    // read; only the seller writes. Photos live one per document beside it.
+    match /shop_products/{productId} {
+      function jpeg(v, max) {
+        return v is string && v.size() <= max
+          && v.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$');
+      }
+      function validProduct(d) {
+        return d.keys().hasOnly(['sellerUid', 'sellerName', 'title', 'description', 'features', 'category', 'condition', 'brand', 'tags', 'searchTerms', 'price', 'mrp', 'unit', 'unitSize', 'stock', 'sku', 'weightGrams', 'origin', 'manufacturer', 'gstPercent', 'hsn', 'delivery', 'returns', 'cover', 'photoCount', 'status', 'createdAt', 'updatedAt'])
+          && d.sellerUid == request.auth.uid
+          && d.sellerName is string && d.sellerName.size() > 0 && d.sellerName.size() <= 80
+          && d.title is string && d.title.size() >= 3 && d.title.size() <= 80
+          && d.description is string && d.description.size() <= 2000
+          && d.features is list && d.features.size() <= 5
+          && d.category in ['dairy', 'ghee', 'feed', 'animals', 'equipment', 'produce', 'grains', 'organic', 'home', 'clothing', 'electronics', 'other']
+          && d.condition in ['new', 'like_new', 'good', 'fair', 'poor']
+          && d.brand is string && d.brand.size() <= 60
+          && d.tags is list && d.tags.size() <= 5
+          && d.searchTerms is list && d.searchTerms.size() <= 60
+          && d.price is number && d.price > 0 && d.price <= 10000000
+          && d.mrp is number && (d.mrp == 0 || d.mrp >= d.price)
+          && d.unit in ['piece', 'litre', 'kg', 'pack', 'dozen']
+          && d.unitSize is string && d.unitSize.size() <= 20
+          && d.stock is int && d.stock >= 0 && d.stock <= 100000
+          && d.sku is string && d.sku.size() <= 40
+          && d.weightGrams is int && d.weightGrams >= 0 && d.weightGrams <= 1000000
+          && d.origin is string && d.origin.size() <= 40
+          && d.manufacturer is string && d.manufacturer.size() <= 120
+          && d.gstPercent in [0, 5, 12, 18, 28]
+          && d.hsn is string && d.hsn.matches('^([0-9]{4,8})?$')
+          && d.delivery is map && d.delivery.keys().hasOnly(['methods', 'payer', 'fee', 'days', 'shipsFrom'])
+          && d.delivery.methods is list && d.delivery.methods.size() >= 1 && d.delivery.methods.size() <= 3
+          && d.delivery.methods.hasOnly(['pickup', 'seller_delivery', 'courier'])
+          && d.delivery.payer in ['seller', 'buyer']
+          && d.delivery.fee is number && d.delivery.fee >= 0 && d.delivery.fee <= 100000
+          && d.delivery.days in ['1-2', '2-3', '4-7']
+          && d.delivery.shipsFrom is string && d.delivery.shipsFrom.size() <= 80
+          && d.returns in ['none', '7days']
+          && jpeg(d.cover, 80000)
+          && d.photoCount is int && d.photoCount >= 1 && d.photoCount <= 5
+          && d.status in ['active', 'paused']
+          && d.updatedAt == request.time;
+      }
+      allow read: if signedIn();
+      allow create: if signedIn() && validProduct(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && resource.data.sellerUid == request.auth.uid
+        && validProduct(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if signedIn() && resource.data.sellerUid == request.auth.uid;
+
+      match /photos/{index} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && index in ['0', '1', '2', '3', '4']
+          && getAfter(/databases/$(database)/documents/shop_products/$(productId)).data.sellerUid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['data'])
+          && jpeg(request.resource.data.data, 450000);
+        allow delete: if signedIn()
+          && get(/databases/$(database)/documents/shop_products/$(productId)).data.sellerUid == request.auth.uid;
+      }
+    }
+
+    // Orders, Mercari style. The buyer orders at the product's own price,
+    // fee and stock; then each side may take only its own next step:
+    // seller accepts and sends, buyer confirms receipt and rates, seller
+    // rates and completes. Either may cancel before it is sent (the buyer
+    // only before the seller accepts). Money never passes through VIMO.
+    match /shop_orders/{orderId} {
+      function product() {
+        return get(/databases/$(database)/documents/shop_products/$(request.resource.data.productId)).data;
+      }
+      function validAddress(a) {
+        return a is map && (a.size() == 0 || (a.keys().hasOnly(['name', 'phone', 'line', 'city', 'pincode'])
+          && a.name is string && a.name.size() > 0 && a.name.size() <= 80
+          && a.phone is string && a.phone.matches('^[+]?[0-9]{10,13}$')
+          && a.line is string && a.line.size() >= 5 && a.line.size() <= 300
+          && a.city is string && a.city.size() > 0 && a.city.size() <= 80
+          && a.pincode is string && a.pincode.matches('^[1-9][0-9]{5}$')));
+      }
+      function validRating(r) {
+        return r is map && r.keys().hasOnly(['score', 'text'])
+          && r.score in ['good', 'bad'] && r.text is string && r.text.size() <= 300;
+      }
+      function validOrder(d) {
+        return d.keys().hasOnly(['productId', 'sellerUid', 'buyerUid', 'sellerName', 'buyerName', 'title', 'cover', 'unitPrice', 'quantity', 'deliveryMethod', 'deliveryFee', 'total', 'payment', 'address', 'note', 'status', 'createdAt', 'updatedAt'])
+          && d.buyerUid == request.auth.uid
+          && d.sellerUid == product().sellerUid
+          && d.sellerUid != request.auth.uid
+          && product().status == 'active'
+          && d.quantity is int && d.quantity >= 1 && d.quantity <= product().stock
+          && d.unitPrice == product().price
+          && d.deliveryMethod in product().delivery.methods
+          && d.deliveryFee == ((d.deliveryMethod == 'pickup' || product().delivery.payer != 'buyer') ? 0 : product().delivery.fee)
+          && d.total == d.unitPrice * d.quantity + d.deliveryFee
+          && d.payment in ['cod', 'upi']
+          && validAddress(d.address)
+          && (d.deliveryMethod == 'pickup' || d.address.size() > 0)
+          && d.title == product().title && d.cover == product().cover
+          && d.sellerName is string && d.sellerName.size() > 0 && d.sellerName.size() <= 80
+          && d.buyerName is string && d.buyerName.size() > 0 && d.buyerName.size() <= 80
+          && d.note is string && d.note.size() <= 300
+          && d.status == 'ordered'
+          && d.createdAt == request.time && d.updatedAt == request.time;
+      }
+      function changed(keys) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+      }
+      function moves(from, to) {
+        return resource.data.status == from && request.resource.data.status == to
+          && request.resource.data.updatedAt == request.time;
+      }
+      function isSeller() { return request.auth.uid == resource.data.sellerUid; }
+      function isBuyer() { return request.auth.uid == resource.data.buyerUid; }
+      function cancels(from, by) {
+        return moves(from, 'cancelled')
+          && changed(['status', 'updatedAt', 'cancelledAt', 'cancelledBy', 'cancelReason'])
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.cancelledBy == by
+          && request.resource.data.cancelReason is string && request.resource.data.cancelReason.size() <= 200;
+      }
+      allow read: if signedIn()
+        && (resource.data.buyerUid == request.auth.uid || resource.data.sellerUid == request.auth.uid);
+      allow create: if signedIn() && validOrder(request.resource.data);
+      allow update: if signedIn() && (
+        (isSeller() && moves('ordered', 'accepted')
+          && changed(['status', 'updatedAt', 'acceptedAt', 'sellerUpi'])
+          && request.resource.data.acceptedAt == request.time
+          && request.resource.data.sellerUpi is string && request.resource.data.sellerUpi.size() <= 60)
+        || (isSeller() && moves('accepted', 'shipped')
+          && changed(['status', 'updatedAt', 'shippedAt', 'tracking'])
+          && request.resource.data.shippedAt == request.time
+          && request.resource.data.tracking is string && request.resource.data.tracking.size() <= 200)
+        || (isBuyer() && moves('shipped', 'received')
+          && changed(['status', 'updatedAt', 'receivedAt', 'buyerRating'])
+          && request.resource.data.receivedAt == request.time
+          && validRating(request.resource.data.buyerRating))
+        || (isSeller() && moves('received', 'completed')
+          && changed(['status', 'updatedAt', 'completedAt', 'sellerRating'])
+          && request.resource.data.completedAt == request.time
+          && validRating(request.resource.data.sellerRating))
+        || (isBuyer() && cancels('ordered', 'buyer'))
+        || (isSeller() && (cancels('ordered', 'seller') || cancels('accepted', 'seller')))
+      );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        function order() {
+          return get(/databases/$(database)/documents/shop_orders/$(orderId)).data;
+        }
+        function party() {
+          return request.auth.uid == order().buyerUid || request.auth.uid == order().sellerUid;
+        }
+        allow read: if signedIn() && party();
+        allow create: if signedIn() && party()
+          && request.resource.data.keys().hasOnly(['senderUid', 'text', 'createdAt'])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
     // Nearby milk search. A vendor or shop chooses to be listed; the place is
     // stored only as a ~220 m grid square (gridLat/gridLng = degrees x 500),
     // never the exact spot. "cell" is the ~5.5 km square used to find

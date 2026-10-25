@@ -69,6 +69,8 @@ class SocialActivityService {
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _followers;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _allFollowers;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chats;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _selling;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _buying;
   static final Map<
     String,
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
@@ -188,12 +190,87 @@ class SocialActivityService {
     );
   }
 
+  /// Order steps the other person took: a new order or a received / cancel
+  /// for the seller; accepted, sent, completed or cancelled for the buyer.
+  /// Each order's last seen status is kept on this device, so the first
+  /// sight of an order only records it.
+  static Future<void> _ordersChanged(
+    String uid,
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required bool selling,
+  }) async {
+    if (uid != signedInUid || !Hive.isBoxOpen('notifications')) return;
+    final key = selling ? 'orderNoticesSelling' : 'orderNoticesBuying';
+    final seen = asMap(settingValue(key, {}));
+    final firstRun = !seen.containsKey('_primed');
+    final next = {...seen, '_primed': true};
+    for (final doc in snapshot.docs) {
+      final o = doc.data();
+      final status = txt(o, 'status');
+      final before = txt(seen, doc.id);
+      next[doc.id] = status;
+      if (firstRun || before == status) continue;
+      final title = txt(o, 'title');
+      final who = selling ? txt(o, 'buyerName') : txt(o, 'sellerName');
+      final (String en, String ta)? notice = switch ((selling, status)) {
+        (true, 'ordered') => (
+          '$who ordered $title',
+          '$who $title ஆர்டர் செய்தார்',
+        ),
+        (true, 'received') => (
+          '$who received $title. Rate them to finish.',
+          '$who $title பெற்றார். முடிக்க மதிப்பிடவும்.',
+        ),
+        (true, 'cancelled') when txt(o, 'cancelledBy') == 'buyer' => (
+          '$who cancelled the order for $title',
+          '$who $title ஆர்டரை ரத்து செய்தார்',
+        ),
+        (false, 'accepted') => (
+          '$who accepted your order for $title',
+          '$who உங்கள் $title ஆர்டரை ஏற்றார்',
+        ),
+        (false, 'shipped') => ('$title is on the way', '$title வழியில் உள்ளது'),
+        (false, 'completed') => (
+          '$who rated you. Order complete.',
+          '$who உங்களை மதிப்பிட்டார். ஆர்டர் முடிந்தது.',
+        ),
+        (false, 'cancelled') when txt(o, 'cancelledBy') == 'seller' => (
+          '$who cancelled your order for $title',
+          '$who உங்கள் $title ஆர்டரை ரத்து செய்தார்',
+        ),
+        _ => null,
+      };
+      if (notice == null) continue;
+      await addRanchNotification(
+        title: notice.$1,
+        titleTa: notice.$2,
+        message: 'Tap to open the order',
+        messageTa: 'ஆர்டரைத் திறக்கத் தொடவும்',
+        type: 'message',
+        sourceId: 'order-${doc.id}-$status',
+        localOnly: true,
+        extra: {'orderId': doc.id},
+      );
+      _browserRuntime.showNotification(
+        title: bi(notice.$1, notice.$2),
+        body: bi(
+          'Open VIMO to see the order',
+          'VIMO-வில் ஆர்டரைப் பார்க்கவும்',
+        ),
+        tag: 'order-${doc.id}',
+      );
+    }
+    await setSetting(key, next);
+  }
+
   static void start() {
     final uid = signedInUid;
     if (uid.isEmpty || (uid == _uid && _followers != null)) return;
     unawaited(_followers?.cancel());
     unawaited(_allFollowers?.cancel());
     unawaited(_chats?.cancel());
+    unawaited(_selling?.cancel());
+    unawaited(_buying?.cancel());
     for (final watch in _chatLatest.values) {
       unawaited(watch.cancel());
     }
@@ -207,6 +284,14 @@ class SocialActivityService {
           (snapshot) => unawaited(_checkUnfollows(uid, snapshot)),
           onError: (_) {},
         );
+    _selling = ShopService.selling().listen(
+      (s) => unawaited(_ordersChanged(uid, s, selling: true)),
+      onError: (_) {},
+    );
+    _buying = ShopService.buying().listen(
+      (s) => unawaited(_ordersChanged(uid, s, selling: false)),
+      onError: (_) {},
+    );
     _chats = FirebaseFirestore.instance
         .collection('direct_chats')
         .where('participants', arrayContains: uid)
@@ -287,6 +372,10 @@ class SocialActivityService {
     await _followers?.cancel();
     await _allFollowers?.cancel();
     await _chats?.cancel();
+    await _selling?.cancel();
+    await _buying?.cancel();
+    _selling = null;
+    _buying = null;
     for (final watch in _chatLatest.values) {
       await watch.cancel();
     }
@@ -360,14 +449,20 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                 final showRanch = own
                     ? workspaceEnabled('Ranch')
                     : data['shareRanch'] == true;
+                final shop = data['shareShop'] == true;
                 final showVendor = own
-                    ? workspaceEnabled('Vendor')
-                    : data['shareShop'] == true;
+                    ? workspaceEnabled('Vendor') || shop
+                    : shop;
                 final sections = [
                   (0, bi('Post', 'பதிவுகள்'), CupertinoIcons.doc_text),
                   if (showRanch)
                     (1, bi('Ranch', 'பண்ணை'), CupertinoIcons.house),
-                  if (showVendor) (2, bi('Vendor', 'கடை'), CupertinoIcons.bag),
+                  if (showVendor)
+                    (
+                      2,
+                      shop ? bi('Shop', 'கடை') : bi('Vendor', 'கடை'),
+                      CupertinoIcons.bag,
+                    ),
                 ];
                 // A hidden section falls back to the posts.
                 final tab = sections.any((s) => s.$1 == _tab) ? _tab : 0;
@@ -764,30 +859,24 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                     if (sections.length > 1) const SizedBox(height: 20),
                     if (tab == 0) ProfilePostList(uid: uid, own: own),
                     if (tab == 1) PublicRanchView(uid: uid, profile: data),
+                    // The shop: products to buy, and for the owner a
+                    // pencil to list more (once Show my shop is on).
                     if (tab == 2)
-                      Glass(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              data['shareShop'] == true
-                                  ? txt(data, 'shopName')
-                                  : bi(
-                                      'This shop is private.',
-                                      'இந்தக் கடை தனிப்பட்டது.',
-                                    ),
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
+                      shop
+                          ? ProfileShop(uid: uid, own: own, profile: data)
+                          : Glass(
+                              child: Text(
+                                own
+                                    ? bi(
+                                        'Turn on Show my shop in Edit profile to list products.',
+                                        'பொருட்களைப் பட்டியலிட, Edit profile-ல் என் கடையைக் காட்டு என்பதை இயக்கவும்.',
+                                      )
+                                    : bi(
+                                        'This shop is private.',
+                                        'இந்தக் கடை தனிப்பட்டது.',
+                                      ),
                               ),
                             ),
-                            if (data['shareShop'] == true) ...[
-                              const SizedBox(height: 12),
-                              Text(txt(data, 'shopDetails')),
-                            ],
-                          ],
-                        ),
-                      ),
                   ],
                 );
               },
@@ -1284,12 +1373,11 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
               ? (v) => setState(() => _shareRanch = v)
               : null,
         ),
-      if (workspaceEnabled('Vendor') || _shareShop)
-        SoundSwitchListTile(
-          value: _shareShop,
-          title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
-          onChanged: (v) => setState(() => _shareShop = v),
-        ),
+      SoundSwitchListTile(
+        value: _shareShop,
+        title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
+        onChanged: (v) => setState(() => _shareShop = v),
+      ),
       if (_shareShop) ...[
         TextField(
           controller: _shop,

@@ -989,8 +989,8 @@ class _NearbyScreenState extends State<NearbyScreen> {
             CupertinoSearchTextField(
               controller: _search,
               placeholder: bi(
-                'Search ranches, vendors, shops',
-                'பண்ணை, வியாபாரி, கடையைத் தேடு',
+                'Search ranches, sellers, products',
+                'பண்ணை, விற்பவர், பொருளைத் தேடு',
               ),
               onChanged: _onSearch,
               style: TextStyle(color: Ink.navy),
@@ -1018,6 +1018,8 @@ class _NearbyScreenState extends State<NearbyScreen> {
                       ),
                   ],
                 ),
+              const SizedBox(height: Space.s24),
+              MarketProducts(query: _search.text),
             ] else ...[
               if (workspaceEnabled('Ranch') && _listed == false) ...[
                 Glass(
@@ -1177,6 +1179,8 @@ class _NearbyScreenState extends State<NearbyScreen> {
                     ],
                   ),
               ],
+              const SizedBox(height: Space.s32),
+              const MarketProducts(query: ''),
             ],
           ],
         ),
