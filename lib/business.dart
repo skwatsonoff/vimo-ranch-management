@@ -1853,6 +1853,8 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                             _entryId = '';
                             _paid.text = _payment && due > .001
                                 ? vendorFieldNumber(due)
+                                : _payment
+                                ? ''
                                 : '0';
                           });
                         },
@@ -1885,7 +1887,12 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                         busy: _busy,
                         height: 56,
                         radius: 28,
-                        onPressed: _busy
+                        // Nothing to save until there is milk or money.
+                        onPressed:
+                            _busy ||
+                                (_payment
+                                    ? toDouble(_paid.text) <= 0
+                                    : qty <= 0)
                             ? null
                             : () {
                                 if (!_payment) {
@@ -2036,6 +2043,7 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                 ),
                 decoration: InputDecoration(
                   border: InputBorder.none,
+                  filled: false,
                   suffixText: 'L',
                   hintText: '0',
                   labelText: bi('Litres', 'லிட்டர்'),
@@ -2113,6 +2121,8 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
         ),
         decoration: InputDecoration(
           border: InputBorder.none,
+          filled: false,
+          hintText: '0',
           prefixText: '${currencySymbol()} ',
           labelText: supplier
               ? bi('Amount paid', 'செலுத்திய தொகை')

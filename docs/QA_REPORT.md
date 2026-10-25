@@ -67,3 +67,21 @@
 - **Sounds** were rendered by `tools/render_ui_sounds.py` because the
   earshot toolkit is on the laptop, not in this container. Listen and
   replace if wanted (see `assets/sounds/`).
+
+## Round 3 — Market, shop and orders (branch `claude/market-shop-orders`)
+
+| Check | Result |
+| --- | --- |
+| `flutter analyze` | 0 errors · 0 warnings · 10 infos (pre-existing) |
+| `flutter test` | 167 passed (7 new in `test/shop_test.dart`) |
+| Firestore emulator rules | all suites pass; 51 new in `test/shop_orders_rules_test.cjs`, market rules now 72 |
+| `flutter build web --release` | passes (preview and production) |
+
+Found and fixed in this round: the "More details" row on the product form
+lost its press highlight (ListTile on a coloured card, caught by the new
+widget test); the vendor Pay button could save ₹0 (now disabled until there
+is an amount).
+
+Not exercised end to end here: Firestore writes for products and orders
+from the running app (no signed-in account in this container); they are
+covered by the emulator rule checks and widget tests.
