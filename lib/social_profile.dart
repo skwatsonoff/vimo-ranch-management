@@ -210,6 +210,20 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
               builder: (context, snap) {
                 final data = snap.data?.data() ?? <String, dynamic>{};
                 final name = txt(data, 'username', own ? accountUsername : '');
+                final showRanch = own
+                    ? workspaceEnabled('Ranch')
+                    : data['shareRanch'] == true;
+                final showVendor = own
+                    ? workspaceEnabled('Vendor')
+                    : data['shareShop'] == true;
+                final sections = [
+                  (0, bi('Post', 'பதிவுகள்'), CupertinoIcons.doc_text),
+                  if (showRanch)
+                    (1, bi('Ranch', 'பண்ணை'), CupertinoIcons.house),
+                  if (showVendor) (2, bi('Vendor', 'கடை'), CupertinoIcons.bag),
+                ];
+                // A hidden section falls back to the posts.
+                final tab = sections.any((s) => s.$1 == _tab) ? _tab : 0;
                 return ListView(
                   padding: EdgeInsets.fromLTRB(
                     20,
@@ -552,60 +566,58 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
                         child: Text(accountError(snap.error!)),
                       ),
                     const SizedBox(height: 20),
-                    Glass(
-                      radius: 28,
-                      padding: const EdgeInsets.all(5),
-                      child: Row(
-                        children: [
-                          for (final item in [
-                            (
-                              0,
-                              bi('Post', 'பதிவுகள்'),
-                              CupertinoIcons.doc_text,
-                            ),
-                            (1, bi('Ranch', 'பண்ணை'), CupertinoIcons.house),
-                            (2, bi('Vendor', 'கடை'), CupertinoIcons.bag),
-                          ])
-                            Expanded(
-                              child: TextButton(
-                                onPressed: () => setState(() => _tab = item.$1),
-                                style: TextButton.styleFrom(
-                                  shape: const StadiumBorder(),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
+                    // Ranch and Vendor appear only for people who use them:
+                    // your own switched-on workspaces, or what another
+                    // person shares. Someone who uses VIMO only for the
+                    // market sees just their posts.
+                    if (sections.length > 1)
+                      Glass(
+                        radius: 28,
+                        padding: const EdgeInsets.all(5),
+                        child: Row(
+                          children: [
+                            for (final item in sections)
+                              Expanded(
+                                child: TextButton(
+                                  onPressed: () =>
+                                      setState(() => _tab = item.$1),
+                                  style: TextButton.styleFrom(
+                                    shape: const StadiumBorder(),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    backgroundColor: tab == item.$1
+                                        ? Ink.tint
+                                        : Colors.transparent,
+                                    foregroundColor: tab == item.$1
+                                        ? Colors.white
+                                        : Ink.muted,
                                   ),
-                                  backgroundColor: _tab == item.$1
-                                      ? Ink.tint
-                                      : Colors.transparent,
-                                  foregroundColor: _tab == item.$1
-                                      ? Colors.white
-                                      : Ink.muted,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (item.$1 == 1)
-                                      CowMark(
-                                        size: 25,
-                                        color: _tab == 1
-                                            ? Colors.white
-                                            : Ink.violetDeep,
-                                      )
-                                    else
-                                      Icon(item.$3, size: 21),
-                                    const SizedBox(width: 6),
-                                    Flexible(child: Text(item.$2)),
-                                  ],
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (item.$1 == 1)
+                                        CowMark(
+                                          size: 25,
+                                          color: tab == 1
+                                              ? Colors.white
+                                              : Ink.violetDeep,
+                                        )
+                                      else
+                                        Icon(item.$3, size: 21),
+                                      const SizedBox(width: 6),
+                                      Flexible(child: Text(item.$2)),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    if (_tab == 0) ProfilePostList(uid: uid, own: own),
-                    if (_tab == 1) PublicRanchView(uid: uid, profile: data),
-                    if (_tab == 2)
+                    if (sections.length > 1) const SizedBox(height: 20),
+                    if (tab == 0) ProfilePostList(uid: uid, own: own),
+                    if (tab == 1) PublicRanchView(uid: uid, profile: data),
+                    if (tab == 2)
                       Glass(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1109,24 +1121,28 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
           ),
         ),
       ),
-      SoundSwitchListTile(
-        value: _shareRanch,
-        title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
-        subtitle: Text(
-          bi(
-            'Only cow photos, names and breeds are shared.',
-            'மாட்டுப் படங்கள், பெயர்கள், இனங்கள் மட்டும் பகிரப்படும்.',
+      // Sharing a ranch or a shop is offered only to people who use them;
+      // a value already on stays editable so it can be switched off.
+      if (workspaceEnabled('Ranch') || _shareRanch)
+        SoundSwitchListTile(
+          value: _shareRanch,
+          title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
+          subtitle: Text(
+            bi(
+              'Only cow photos, names and breeds are shared.',
+              'மாட்டுப் படங்கள், பெயர்கள், இனங்கள் மட்டும் பகிரப்படும்.',
+            ),
           ),
+          onChanged: CloudSyncService.ready
+              ? (v) => setState(() => _shareRanch = v)
+              : null,
         ),
-        onChanged: CloudSyncService.ready
-            ? (v) => setState(() => _shareRanch = v)
-            : null,
-      ),
-      SoundSwitchListTile(
-        value: _shareShop,
-        title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
-        onChanged: (v) => setState(() => _shareShop = v),
-      ),
+      if (workspaceEnabled('Vendor') || _shareShop)
+        SoundSwitchListTile(
+          value: _shareShop,
+          title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
+          onChanged: (v) => setState(() => _shareShop = v),
+        ),
       if (_shareShop) ...[
         TextField(
           controller: _shop,
