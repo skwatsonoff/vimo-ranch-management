@@ -1097,7 +1097,17 @@ class _NearbyScreenState extends State<NearbyScreen> {
     // results at once and never asks for location by itself.
     // Kept for the phone, not the account, which may still be loading at
     // launch; the search itself starts once Market is available (build).
-    final saved = asMap(settingValue('marketHere', {}));
+    var saved = asMap(settingValue('marketHere', {}));
+    // A place saved per account by the previous version still counts.
+    if (saved.isEmpty && Hive.isBoxOpen('settings')) {
+      final box = Hive.box('settings');
+      for (final k in box.keys) {
+        if (k is String && k.startsWith('acct_') && k.endsWith('_marketHere')) {
+          saved = asMap(box.get(k));
+          if (saved.isNotEmpty) break;
+        }
+      }
+    }
     if (saved['lat'] is num && saved['lng'] is num) {
       _here = ll.LatLng(
         (saved['lat'] as num).toDouble(),
