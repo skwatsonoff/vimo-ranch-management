@@ -35,6 +35,7 @@ const fs = require('node:fs');
     await assertFails(setDoc(pRef(seller), product({hsn: '12'}))); checks++;
     await assertFails(setDoc(pRef(seller), product({delivery: {methods: [], payer: 'buyer', fee: 0, days: '1-2', shipsFrom: ''}}))); checks++;
     await assertFails(setDoc(pRef(seller), product({extra: true}))); checks++;
+    await assertFails(setDoc(pRef(seller), product({category: 'electronics'}))); checks++; // farm items only
     const batch = writeBatch(seller);
     batch.set(pRef(seller), product());
     batch.set(doc(seller, 'shop_products/p1/photos/0'), {data: jpeg});

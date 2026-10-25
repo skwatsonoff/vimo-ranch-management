@@ -10,11 +10,26 @@ class MarketLocation {
   /// Location was allowed once for this account on this phone. After that
   /// Market never asks again by itself: browsers (Safari above all) forget
   /// a site's permission, and asking on every open is what people hate.
-  static bool get remembered =>
-      settingValue(accountSetting('locationOk'), false) == true;
+  ///
+  /// Kept for the phone, not the account: at launch the account is still
+  /// loading, and a per-account key read then looked like "never allowed",
+  /// so Market asked again on every open.
+  static bool get remembered {
+    if (settingValue('locationOk', false) == true) return true;
+    // Allowed before this was kept per phone (per account, or a place
+    // already searched from): count it, so nobody is asked again.
+    if (!Hive.isBoxOpen('settings')) return false;
+    final box = Hive.box('settings');
+    return box.keys.any(
+      (k) =>
+          k is String &&
+          ((k.endsWith('_locationOk') && box.get(k) == true) ||
+              k == 'marketHere' ||
+              (k.startsWith('acct_') && k.endsWith('_marketHere'))),
+    );
+  }
 
-  static Future<void> remember() =>
-      setSetting(accountSetting('locationOk'), true);
+  static Future<void> remember() => setSetting('locationOk', true);
 
   /// Whether Market may use location now. A platform without location
   /// (tests, some desktops) is not held up.
@@ -167,20 +182,21 @@ class _LocationPrimerState extends State<_LocationPrimer> {
           ),
         ),
         const SizedBox(height: Space.s20),
+        // HIG privacy.md: one button, titled Continue (not "Allow"), that
+        // opens the system prompt; the choice itself is made there.
         LiquidButton(
-          label: bi('Allow location', 'Location அனுமதி'),
-          icon: CupertinoIcons.location_fill,
+          label: bi('Continue', 'தொடரவும்'),
           busy: _busy,
           onPressed: _busy
               ? null
               : () async {
                   setState(() => _busy = true);
+                  final messenger = ScaffoldMessenger.maybeOf(context);
                   final ok = await MarketLocation.request();
                   if (!context.mounted) return;
                   setState(() => _busy = false);
                   if (ok) {
                     UiSound.play(UiSoundKind.success);
-                    Navigator.pop(context, true);
                   } else {
                     snack(
                       context,
@@ -189,17 +205,11 @@ class _LocationPrimerState extends State<_LocationPrimer> {
                         'சந்தைக்கு location தேவை. தயாரானதும் Settings-ல் இயக்கவும்.',
                       ),
                       tone: SnackTone.error,
+                      messenger: messenger,
                     );
                   }
+                  Navigator.pop(context, ok);
                 },
-        ),
-        const SizedBox(height: Space.s8),
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: Text(
-            bi('Not now', 'இப்போது வேண்டாம்'),
-            style: TextStyle(color: Ink.muted),
-          ),
         ),
       ],
     ),
@@ -288,7 +298,7 @@ class _MarketLocationGateState extends State<MarketLocationGate>
                   ),
                   const SizedBox(height: Space.s20),
                   LiquidButton(
-                    label: bi('Allow location', 'Location அனுமதி'),
+                    label: bi('Continue', 'தொடரவும்'),
                     icon: CupertinoIcons.location_fill,
                     onPressed: () async {
                       final ok = await MarketLocation.request();

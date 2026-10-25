@@ -1968,156 +1968,75 @@ class _OrderMessages extends StatelessWidget {
 
 /// Products in Market: categories to browse, search results when searching,
 /// and a way to the buyer's own orders.
+/// Products in Market: newest first, or the search results. Category,
+/// sort and "on sale only" come from Market's filters; this only lists.
 class MarketProducts extends StatefulWidget {
   final String query;
-  const MarketProducts({super.key, required this.query});
+  final String category;
+  final String sort;
+  final bool available;
+  const MarketProducts({
+    super.key,
+    required this.query,
+    this.category = '',
+    this.sort = 'new',
+    this.available = false,
+  });
 
   @override
   State<MarketProducts> createState() => _MarketProductsState();
 }
 
 class _MarketProductsState extends State<MarketProducts> {
-  String _category = '';
-  String _sort = 'new';
-  bool _available = false;
   late Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _load =
       _fetch();
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _fetch() =>
       widget.query.trim().length >= 2
-      ? ShopService.search(widget.query, category: _category)
-      : ShopService.recent(category: _category);
+      ? ShopService.search(widget.query, category: widget.category)
+      : ShopService.recent(category: widget.category);
 
   @override
   void didUpdateWidget(MarketProducts old) {
     super.didUpdateWidget(old);
-    if (old.query != widget.query) _load = _fetch();
+    if (old.query != widget.query || old.category != widget.category) {
+      _load = _fetch();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (!ShopService.available) return const SizedBox.shrink();
     final searching = widget.query.trim().length >= 2;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                searching
-                    ? bi('Products', 'பொருட்கள்')
-                    : bi('New in Market', 'சந்தையில் புதியவை'),
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -.5,
-                ),
-              ),
+    return FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      future: _load,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const SkeletonList(rows: 2, padding: EdgeInsets.zero);
+        }
+        if (snap.hasError) {
+          return _MarketNote(
+            bi(
+              'Could not load products. Pull down to try again.',
+              'பொருட்களை ஏற்ற முடியவில்லை. கீழே இழுத்து மீண்டும் முயற்சிக்கவும்.',
             ),
-            IconButton(
-              tooltip: bi('Liked', 'விரும்பியவை'),
-              onPressed: () => push(context, const LikedScreen()),
-              icon: Icon(CupertinoIcons.heart, color: Ink.violetDeep),
-            ),
-            PopupMenuButton<String>(
-              tooltip: bi('Sort', 'வரிசை'),
-              icon: Icon(
-                CupertinoIcons.arrow_up_arrow_down,
-                color: Ink.violetDeep,
-              ),
-              onSelected: (v) => setState(() {
-                if (v == 'available') {
-                  _available = !_available;
-                } else {
-                  _sort = v;
-                }
-              }),
-              itemBuilder: (_) => [
-                for (final s in shopSorts)
-                  CheckedPopupMenuItem(
-                    value: s.$1,
-                    checked: _sort == s.$1,
-                    child: Text(bi(s.$2, s.$3)),
-                  ),
-                const PopupMenuDivider(),
-                CheckedPopupMenuItem(
-                  value: 'available',
-                  checked: _available,
-                  child: Text(bi('On sale only', 'விற்பனையில் மட்டும்')),
-                ),
-              ],
-            ),
-            TextButton.icon(
-              onPressed: () => push(context, const OrdersScreen()),
-              icon: const Icon(CupertinoIcons.bag),
-              label: Text(bi('My orders', 'என் ஆர்டர்கள்')),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              for (final c in [('', 'All', 'அனைத்தும்'), ...shopCategories])
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(bi(c.$2, c.$3)),
-                    selected: _category == c.$1,
-                    showCheckmark: false,
-                    selectedColor: Ink.tint,
-                    labelStyle: TextStyle(
-                      color: _category == c.$1 ? Colors.white : Ink.navy,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    onSelected: (_) {
-                      selectionFeedback();
-                      setState(() {
-                        _category = c.$1;
-                        _load = _fetch();
-                      });
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-          future: _load,
-          builder: (context, snap) {
-            if (snap.connectionState != ConnectionState.done) {
-              return const SkeletonList(rows: 2, padding: EdgeInsets.zero);
-            }
-            if (snap.hasError) {
-              return _MarketNote(
-                bi(
-                  'Could not load products. Pull down to try again.',
-                  'பொருட்களை ஏற்ற முடியவில்லை. கீழே இழுத்து மீண்டும் முயற்சிக்கவும்.',
-                ),
-              );
-            }
-            final docs = sortShopProducts(
-              snap.data ??
-                  const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
-              (d) => d.data(),
-              sort: _sort,
-              available: _available,
-            );
-            if (docs.isEmpty) {
-              return _MarketNote(
-                searching
-                    ? bi('No products match.', 'பொருந்தும் பொருட்கள் இல்லை.')
-                    : bi('No products listed yet.', 'இன்னும் பொருட்கள் இல்லை.'),
-              );
-            }
-            return ProductGrid(docs: docs);
-          },
-        ),
-      ],
+          );
+        }
+        final docs = sortShopProducts(
+          snap.data ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+          (d) => d.data(),
+          sort: widget.sort,
+          available: widget.available,
+        );
+        if (docs.isEmpty) {
+          return _MarketNote(
+            searching
+                ? bi('No products match.', 'பொருந்தும் பொருட்கள் இல்லை.')
+                : bi('No products listed yet.', 'இன்னும் பொருட்கள் இல்லை.'),
+          );
+        }
+        return ProductGrid(docs: docs);
+      },
     );
   }
 }

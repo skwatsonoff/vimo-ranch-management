@@ -15,7 +15,7 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  test('Automatic follows the phone; a choice in Settings wins', () async {
+  test('Effects always follow the phone', () async {
     final settings = Hive.box('settings');
     await settings.clear();
     expect(DevicePerformance.mode, 'auto');
@@ -24,15 +24,12 @@ void main() {
     await settings.put('lowEndDevice', true);
     expect(DevicePerformance.fast, isTrue);
 
+    // A choice saved by an older version is ignored.
     await settings.put('performanceMode', 'full');
-    expect(DevicePerformance.fast, isFalse);
-
-    await settings.put('performanceMode', 'fast');
-    await settings.put('lowEndDevice', false);
     expect(DevicePerformance.fast, isTrue);
-
-    await settings.put('performanceMode', 'something else');
-    expect(DevicePerformance.mode, 'auto');
+    await settings.put('lowEndDevice', false);
+    await settings.put('performanceMode', 'fast');
+    expect(DevicePerformance.fast, isFalse);
   });
 
   test('The effects choice stays on this phone and never syncs', () {

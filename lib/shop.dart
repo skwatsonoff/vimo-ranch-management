@@ -35,11 +35,15 @@ const List<ShopChoice> shopCategories = [
   ('produce', 'Vegetables & fruits', 'காய்கறி & பழங்கள்'),
   ('grains', 'Grains, pulses & oils', 'தானியம், பருப்பு & எண்ணெய்'),
   ('organic', 'Manure & organic', 'உரம் & இயற்கை'),
-  ('home', 'Home & kitchen', 'வீடு & சமையலறை'),
-  ('clothing', 'Clothing & accessories', 'உடை & அணிகலன்கள்'),
-  ('electronics', 'Electronics & mobiles', 'மின்னணு & மொபைல்'),
-  ('other', 'Other', 'மற்றவை'),
+  ('vet', 'Animal health & care', 'கால்நடை நலம் & பராமரிப்பு'),
+  ('other', 'Other farm items', 'மற்ற பண்ணைப் பொருட்கள்'),
 ];
+
+/// Market shows cow, farm and ranch items only: anything listed under a
+/// category that is no longer offered (home, clothing, electronics) stays
+/// out of search and browsing.
+bool shopFarmItem(Map<String, dynamic> product) =>
+    shopCategories.any((c) => c.$1 == product['category']);
 
 /// Mercari's condition scale.
 const List<ShopChoice> shopConditions = [
@@ -342,11 +346,12 @@ class ShopService {
     final rest = words.skip(1).toList();
     return [
       for (final d in snap.docs)
-        if (rest.every(
-          (w) => ((d.data()['searchTerms'] as List?) ?? const []).any(
-            (t) => '$t'.startsWith(w),
-          ),
-        ))
+        if (shopFarmItem(d.data()) &&
+            rest.every(
+              (w) => ((d.data()['searchTerms'] as List?) ?? const []).any(
+                (t) => '$t'.startsWith(w),
+              ),
+            ))
           d,
     ];
   }
@@ -365,6 +370,7 @@ class ShopService {
         .where(
           (d) =>
               d.data()['status'] == 'active' &&
+              shopFarmItem(d.data()) &&
               d.data()['sellerUid'] != signedInUid &&
               (category.isEmpty || d.data()['category'] == category),
         )

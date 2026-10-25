@@ -187,6 +187,13 @@ void main() {
       );
     });
 
+    test('only farm categories show in Market', () {
+      expect(shopFarmItem({'category': 'animals'}), isTrue);
+      expect(shopFarmItem({'category': 'vet'}), isTrue);
+      expect(shopFarmItem({'category': 'electronics'}), isFalse);
+      expect(shopFarmItem({'category': 'clothing'}), isFalse);
+    });
+
     test('order statuses read in plain words', () {
       expect(shopOrderStatusLabel('shipped'), 'On the way');
       expect(shopOrderStatusLabel('cancelled'), 'Cancelled');

@@ -539,20 +539,25 @@ void main() {
     expect(find.byIcon(CupertinoIcons.checkmark_circle_fill), findsOneWidget);
   });
 
-  testWidgets('The Sounds switch is on by default and remembers off', (
+  testWidgets('App Settings leaves theme, effects and sounds to the phone', (
     tester,
   ) async {
+    // An old saved choice no longer overrides the phone.
+    await tester.runAsync(() async {
+      await Hive.box('settings').putAll({
+        UiSound.settingKey: false,
+        'appearance': 'dark',
+        'performanceMode': 'fast',
+      });
+    });
     expect(UiSound.enabled, isTrue);
+    expect(appearanceMode(), 'system');
+    expect(DevicePerformance.mode, 'auto');
     await tester.pumpWidget(app(const AppSettingsScreen()));
     await tester.pumpAndSettle();
-    final sounds = find.byType(SoundSwitch);
-    expect(sounds, findsOneWidget);
-    await tester.runAsync(() async {
-      await tester.tap(sounds);
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
-    await tester.pumpAndSettle();
-    expect(UiSound.enabled, isFalse);
-    expect(settingValue(UiSound.settingKey, true), isFalse);
+    expect(find.byType(SoundSwitch), findsNothing);
+    expect(find.text('Appearance'), findsNothing);
+    expect(find.text('Effects'), findsNothing);
+    expect(find.text('Language'), findsOneWidget);
   });
 }
