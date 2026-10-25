@@ -398,7 +398,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          CupertinoSwitch(
+          SoundSwitch(
             value: on,
             activeTrackColor: Ink.tint,
             onChanged: (v) => _toggleWorkspace(kind, v),
@@ -735,7 +735,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                               ),
                             ),
                           ),
-                          CupertinoSwitch(
+                          SoundSwitch(
                             value: CloudSyncService.sharedDataEnabled,
                             activeTrackColor: Ink.tint,
                             onChanged: (value) async {

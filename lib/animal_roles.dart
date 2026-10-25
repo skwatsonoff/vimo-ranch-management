@@ -1324,7 +1324,7 @@ class UnknownToggleField extends StatelessWidget {
             const SizedBox(width: Space.s4),
             Transform.scale(
               scale: .82,
-              child: CupertinoSwitch(
+              child: SoundSwitch(
                 value: unknown,
                 activeTrackColor: Ink.tint,
                 onChanged: onUnknownChanged,

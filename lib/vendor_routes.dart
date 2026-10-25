@@ -2733,6 +2733,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
     unawaited(_stream?.cancel());
     unawaited(_recorder.cancel().catchError((Object _) {}));
     unawaited(_recorder.dispose().catchError((Object _) {}));
+    UiSound.release(this);
     _text.dispose();
     super.dispose();
   }
@@ -2778,6 +2779,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
       _audio = BytesBuilder(copy: false);
       final done = Completer<void>();
       _done = done;
+      UiSound.hold(this);
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -2809,6 +2811,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
         if (_seconds >= _maxSeconds) unawaited(_stop());
       });
     } catch (_) {
+      UiSound.release(this);
       if (mounted) snack(context, ui('Unable to record. Try again.'));
     }
   }
@@ -2819,6 +2822,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
     setState(() => _recording = false);
     try {
       await _recorder.stop();
+      UiSound.release(this);
       await _done?.future.timeout(const Duration(seconds: 3));
       await _stream?.cancel();
       final pcm = _audio.takeBytes();

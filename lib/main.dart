@@ -57,6 +57,7 @@ part 'social_feed.dart';
 part 'liquid_design.dart';
 part 'design_tokens.dart';
 part 'polish.dart';
+part 'ui_sound.dart';
 part 'account.dart';
 part 'social_profile.dart';
 part 'requested_updates.dart';
@@ -215,9 +216,12 @@ Future<void> main() async {
   await loadAppLanguage();
 
   runApp(const VimoApp());
-  WidgetsBinding.instance.addPostFrameCallback(
-    (_) => _browserRuntime.markAppReady(),
-  );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _browserRuntime.markAppReady();
+    // Load the interface sounds once the first frame is up, so launch never
+    // waits on audio.
+    unawaited(UiSound.preload());
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -1934,8 +1938,10 @@ class LiquidRoute<T> extends PageRoute<T>
   }
 }
 
-Future<T?> push<T>(BuildContext context, Widget page) =>
-    Navigator.of(context).push<T>(LiquidRoute<T>(builder: (_) => page));
+Future<T?> push<T>(BuildContext context, Widget page) {
+  UiSound.play(UiSoundKind.whoosh);
+  return Navigator.of(context).push<T>(LiquidRoute<T>(builder: (_) => page));
+}
 
 Future<T?> guardedPush<T>(
   BuildContext context, {
@@ -2098,7 +2104,12 @@ class LiquidButton extends StatelessWidget {
       label: busy ? null : label,
       child: Pressable(
         radius: height / 2,
-        onTap: enabled ? onPressed : null,
+        onTap: enabled
+            ? () {
+                UiSound.play(UiSoundKind.tap);
+                onPressed!();
+              }
+            : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
@@ -2507,8 +2518,10 @@ void snack(
   switch (tone) {
     case SnackTone.success:
       HapticFeedback.lightImpact();
+      UiSound.play(UiSoundKind.success);
     case SnackTone.error:
       HapticFeedback.mediumImpact();
+      UiSound.play(UiSoundKind.error);
     case SnackTone.info:
       break;
   }
@@ -8399,7 +8412,7 @@ class _RanchOnboardingScreenState extends State<RanchOnboardingScreen> {
                               ],
                             ),
                           ),
-                          CupertinoSwitch(
+                          SoundSwitch(
                             value: _sameNumber && accountPhone.isNotEmpty,
                             activeTrackColor: Ink.tint,
                             onChanged: accountPhone.isEmpty
@@ -9132,11 +9145,36 @@ String notificationText(Map<String, dynamic> row, String field) {
 class RanchNotificationService {
   const RanchNotificationService._();
   static Timer? _timer;
+  static StreamSubscription<BoxEvent>? _arrivals;
 
   static void start() {
     _timer?.cancel();
     _tick();
     _timer = Timer.periodic(const Duration(minutes: 1), (_) => _tick());
+    _arrivals?.cancel();
+    _arrivals = Hive.box('notifications').watch().listen(_chimeIfNew);
+  }
+
+  /// A soft chime when a notification meant for this person arrives: one
+  /// from a family member (via sync), a join request or the daily reminder.
+  /// Notes this person creates by their own action stay silent; the action
+  /// already confirmed itself.
+  static void _chimeIfNew(BoxEvent event) {
+    if (event.deleted || event.value is! Map) return;
+    final row = asMap(event.value);
+    final created = DateTime.tryParse(txt(row, 'createdAt'));
+    if (created == null ||
+        DateTime.now().difference(created) > const Duration(minutes: 2)) {
+      return;
+    }
+    final me = currentUserName();
+    final fromSomeoneElse = txt(row, 'addedBy') != me;
+    final prompt = const {'join', 'reminder'}.contains(txt(row, 'type'));
+    if ((fromSomeoneElse || prompt) &&
+        notificationForMe(row, me) &&
+        !notificationRead(row)) {
+      UiSound.play(UiSoundKind.notification);
+    }
   }
 
   static Future<void> _tick() async {
@@ -14265,7 +14303,7 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
                     ),
                   ),
                 ),
-                CupertinoSwitch(
+                SoundSwitch(
                   value: _outsideService,
                   activeTrackColor: Ink.tint,
                   onChanged: (v) => setState(() => _outsideService = v),
@@ -19326,6 +19364,7 @@ class AppSettingsScreen extends StatelessWidget {
         'performanceMode',
         'lowEndDevice',
         'purposeProfiles',
+        UiSound.settingKey,
       ],
     ),
     builder: (_, _, _) => Scaffold(
@@ -19429,6 +19468,27 @@ class AppSettingsScreen extends StatelessWidget {
                     ],
                     onChanged: (v) =>
                         Hive.box('settings').put('performanceMode', v),
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(CupertinoIcons.speaker_2, color: _blue),
+                  title: AppText(bi('Sounds', 'ஒலிகள்')),
+                  subtitle: AppText(
+                    bi(
+                      'Soft sounds for saving, switches and alerts. '
+                          'Silent mode keeps them quiet.',
+                      'சேமித்தல், மாற்றிகள், அறிவிப்புகளுக்கு மென்மையான ஒலிகள். '
+                          'சைலண்ட் முறையில் ஒலிக்காது.',
+                    ),
+                    style: TextStyle(fontSize: 13, color: Ink.muted),
+                  ),
+                  trailing: Semantics(
+                    label: bi('Sounds', 'ஒலிகள்'),
+                    child: SoundSwitch(
+                      value: UiSound.enabled,
+                      activeTrackColor: Ink.tint,
+                      onChanged: UiSound.setEnabled,
+                    ),
                   ),
                 ),
                 _ActionRow(
