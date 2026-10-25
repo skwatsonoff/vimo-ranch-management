@@ -274,6 +274,7 @@ class _SkeletonListState extends State<SkeletonList>
             child: ListView.separated(
               padding: widget.padding,
               physics: const NeverScrollableScrollPhysics(),
+              shrinkWrap: true,
               itemCount: widget.rows,
               separatorBuilder: (_, _) => const SizedBox(height: Space.s12),
               itemBuilder: (_, i) => Glass(

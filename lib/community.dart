@@ -1369,9 +1369,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
               if (snap.hasError) {
                 return Center(child: Text(accountError(snap.error!)));
               }
-              if (!snap.hasData) {
-                return const Center(child: CupertinoActivityIndicator());
-              }
+              if (!snap.hasData) return const SkeletonList();
               return ValueListenableBuilder(
                 valueListenable: Hive.box('community_outbox').listenable(),
                 builder: (context, box, _) {

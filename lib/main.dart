@@ -1770,18 +1770,45 @@ class Pressable extends StatefulWidget {
   State<Pressable> createState() => _PressableState();
 }
 
-class _PressableState extends State<Pressable> {
+class _PressableState extends State<Pressable>
+    with SingleTickerProviderStateMixin {
   bool _down = false;
+
+  /// Press depth from 0 (rest) to 1 (fully pressed). Driven by a spring from
+  /// wherever it is, so a quick tap, a long hold and a press dragged away all
+  /// move continuously and can be interrupted at any point.
+  late final AnimationController _press = AnimationController.unbounded(
+    vsync: this,
+  );
 
   void _set(bool v) {
     if (widget.onTap == null || _down == v) return;
     setState(() => _down = v);
+    if (Motion.reduced(context)) {
+      _press.value = 0;
+      return;
+    }
+    // Pressing responds on touch-down with a snappy spring; release settles
+    // back on the house spring, carrying the current velocity.
+    _press.animateWith(
+      SpringSimulation(
+        v ? Motion.snappy : Motion.standard,
+        _press.value,
+        v ? 1 : 0,
+        _press.velocity,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    final reduce = MediaQuery.disableAnimationsOf(context);
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
       child: GestureDetector(
@@ -1791,14 +1818,15 @@ class _PressableState extends State<Pressable> {
         onTapUp: enabled ? (_) => _set(false) : null,
         onTapCancel: enabled ? () => _set(false) : null,
         child: AnimatedOpacity(
+          // The dim is the instant cue; it never waits for the spring.
           opacity: _down ? .72 : 1,
-          duration: _down ? Duration.zero : const Duration(milliseconds: 200),
-          child: AnimatedScale(
-            scale: _down && !reduce ? 1 - (0.02 * widget.depth) : 1,
-            duration: reduce
-                ? Duration.zero
-                : const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
+          duration: _down ? Duration.zero : Motion.short,
+          child: AnimatedBuilder(
+            animation: _press,
+            builder: (context, child) => Transform.scale(
+              scale: 1 - (0.025 * widget.depth) * _press.value.clamp(0, 1.2),
+              child: child,
+            ),
             child: widget.child,
           ),
         ),
@@ -1922,9 +1950,11 @@ Future<T?> guardedPush<T>(
   return push<T>(context, page);
 }
 
-/// Content appears in place, as in system apps. Lists and grids don't animate
-/// in on every visit (Apple: avoid motion on frequent interactions).
-class Reveal extends StatelessWidget {
+/// The launch moment: when the app opens, the first screen's blocks settle
+/// in one after another (a short rise and fade, 40 ms apart). After that,
+/// content appears in place, as in system apps — Apple advises against
+/// motion on interactions people repeat all day. Reduce Motion skips it.
+class Reveal extends StatefulWidget {
   final Widget child;
   final int index;
   final double rise;
@@ -1936,8 +1966,61 @@ class Reveal extends StatelessWidget {
     this.rise = 0.055,
   });
 
+  /// Launch choreography runs only in the app's first moments.
+  static final Stopwatch _sinceLaunch = Stopwatch()..start();
+  static bool get launching =>
+      _sinceLaunch.elapsed < const Duration(milliseconds: 2500);
+
   @override
-  Widget build(BuildContext context) => child;
+  State<Reveal> createState() => _RevealState();
+}
+
+class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
+  AnimationController? _c;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_c != null || !Reveal.launching || Motion.reduced(context)) return;
+    // The stagger is the start of an interval on one controller, so no timer
+    // outlives the widget.
+    final delay = 40 * math.min(widget.index, 8).toInt();
+    final total = Motion.medium.inMilliseconds + delay;
+    _c = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: total),
+    )..forward();
+    _curve = CurvedAnimation(
+      parent: _c!,
+      curve: Interval(delay / total, 1, curve: Motion.settle),
+    );
+  }
+
+  CurvedAnimation? _curve;
+
+  @override
+  void dispose() {
+    _curve?.dispose();
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _curve;
+    if (t == null) return widget.child;
+    return FadeTransition(
+      opacity: t,
+      child: AnimatedBuilder(
+        animation: t,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(0, 16 * (1 - t.value)),
+          child: child,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
 }
 
 /// A number that cross-fades when it changes, so a stat updating never snaps.
@@ -2394,26 +2477,72 @@ InputDecoration fieldStyle(
 
 /// A brief status message in a floating capsule, in the inverse of the
 /// current appearance so it stands apart from content.
-void snack(BuildContext context, String message) {
+/// What a snack bar reports: plain information, a completed action or a
+/// problem. Success and error carry a symbol (never colour alone), a haptic
+/// and a sound on the same frame.
+enum SnackTone { info, success, error }
+
+void snack(
+  BuildContext context,
+  String message, {
+  SnackTone tone = SnackTone.info,
+  String? actionLabel,
+  VoidCallback? onAction,
+}) {
   final messenger = ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return;
   messenger.clearSnackBars();
+  final symbol = switch (tone) {
+    SnackTone.success => CupertinoIcons.checkmark_circle_fill,
+    SnackTone.error => CupertinoIcons.exclamationmark_circle_fill,
+    SnackTone.info => null,
+  };
+  final symbolColor = switch (tone) {
+    SnackTone.success => Ink.dark ? const Color(0xFF248A3D) : Ink.green,
+    _ => Ink.dark ? const Color(0xFFD70015) : Ink.red,
+  };
+  switch (tone) {
+    case SnackTone.success:
+      HapticFeedback.lightImpact();
+    case SnackTone.error:
+      HapticFeedback.mediumImpact();
+    case SnackTone.info:
+      break;
+  }
   messenger.showSnackBar(
     SnackBar(
-      content: AppText(
-        message,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
-          color: Ink.surface,
-        ),
+      content: Row(
+        children: [
+          if (symbol != null) ...[
+            Icon(symbol, size: 20, color: symbolColor),
+            const SizedBox(width: Space.s8),
+          ],
+          Expanded(
+            child: AppText(
+              message,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                color: Ink.surface,
+              ),
+            ),
+          ),
+        ],
       ),
+      action: actionLabel == null || onAction == null
+          ? null
+          : SnackBarAction(
+              label: ui(actionLabel),
+              textColor: Ink.dark ? Ink.brandRoyal : const Color(0xFFCDB8FA),
+              onPressed: onAction,
+            ),
       behavior: SnackBarBehavior.floating,
       backgroundColor: Ink.navy.withValues(alpha: 0.92),
       elevation: 0,
       margin: const EdgeInsets.all(Space.s16),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      duration: const Duration(milliseconds: 3200),
+      // A snack bar with an action stays long enough to reach the action.
+      duration: Duration(milliseconds: onAction == null ? 3200 : 5000),
       shape: const StadiumBorder(),
     ),
   );
@@ -10715,82 +10844,112 @@ class DashboardScreen extends StatelessWidget {
 
     return Shell(
       edgeToEdge: true,
-      child: ListView(
-        padding: EdgeInsets.fromLTRB(
-          Space.s20,
-          Space.s20,
-          Space.s20,
-          floatingBarClearance(context, addButton: true),
-        ),
-        children: [
-          if (canManageRanch) ...[
-            const PendingJoinRequestsBanner(),
-            const SizedBox(height: Space.s12),
-          ],
-          Reveal(
-            index: 0,
-            child: birthday == null
-                ? const _RanchHero()
-                : _BirthdayHero(animal: birthday),
-          ),
-          const SizedBox(height: Space.s16),
-          TodayMilkCard(
-            onOpen: () => onOpenCard('milk'),
-            onAdd: () => push(context, const AddEntryScreen()),
-          ),
+      child: RefreshIndicator.adaptive(
+        color: Ink.violetDeep,
+        onRefresh: () => _pullToSync(context),
+        child: _dashboardList(context, birthday, tiles, activity),
+      ),
+    );
+  }
+
+  /// Pull to refresh asks for a sync now and says how it went.
+  static Future<void> _pullToSync(BuildContext context) async {
+    try {
+      await AutoSyncService.run(reason: 'manual');
+      if (context.mounted) {
+        snack(
+          context,
+          bi('Up to date', 'புதுப்பிக்கப்பட்டது'),
+          tone: SnackTone.success,
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        final text = '$error'.replaceFirst('Bad state: ', '');
+        snack(context, text, tone: SnackTone.error);
+      }
+    }
+  }
+
+  Widget _dashboardList(
+    BuildContext context,
+    Map<String, dynamic>? birthday,
+    List<Widget> tiles,
+    List<Map<String, dynamic>> activity,
+  ) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        Space.s20,
+        Space.s20,
+        Space.s20,
+        floatingBarClearance(context, addButton: true),
+      ),
+      children: [
+        if (canManageRanch) ...[
+          const PendingJoinRequestsBanner(),
           const SizedBox(height: Space.s12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 800 ? 3 : 2;
-              return GridView.builder(
-                itemCount: tiles.length,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  mainAxisSpacing: Space.s12,
-                  crossAxisSpacing: Space.s12,
-                  // Fixed chrome plus the label and value lines, which grow
-                  // with the person's text size.
-                  mainAxisExtent:
-                      72 + 50 * MediaQuery.textScalerOf(context).scale(1),
-                ),
-                itemBuilder: (_, i) => Reveal(index: 1 + i, child: tiles[i]),
-              );
-            },
-          ),
-          if (activity.isNotEmpty) ...[
-            const SizedBox(height: Space.s32),
-            Reveal(
-              index: 7,
-              child: const SectionTitle(title: 'Recent Activity'),
-            ),
-            Reveal(
-              index: 8,
-              child: Glass(
-                radius: Gold.r27,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Space.s16,
-                  vertical: Space.s8,
-                ),
-                child: Column(
-                  children: [
-                    for (int i = 0; i < activity.length; i++) ...[
-                      if (i > 0)
-                        Divider(
-                          height: Space.s16,
-                          thickness: 1,
-                          color: Ink.violet.withValues(alpha: 0.08),
-                        ),
-                      _ActivityRow(entry: activity[i]),
-                    ],
+        ],
+        Reveal(
+          index: 0,
+          child: birthday == null
+              ? const _RanchHero()
+              : _BirthdayHero(animal: birthday),
+        ),
+        const SizedBox(height: Space.s16),
+        TodayMilkCard(
+          onOpen: () => onOpenCard('milk'),
+          onAdd: () => push(context, const AddEntryScreen()),
+        ),
+        const SizedBox(height: Space.s12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 800 ? 3 : 2;
+            return GridView.builder(
+              itemCount: tiles.length,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                mainAxisSpacing: Space.s12,
+                crossAxisSpacing: Space.s12,
+                // Fixed chrome plus the label and value lines, which grow
+                // with the person's text size.
+                mainAxisExtent:
+                    72 + 50 * MediaQuery.textScalerOf(context).scale(1),
+              ),
+              itemBuilder: (_, i) => Reveal(index: 1 + i, child: tiles[i]),
+            );
+          },
+        ),
+        if (activity.isNotEmpty) ...[
+          const SizedBox(height: Space.s32),
+          Reveal(index: 7, child: const SectionTitle(title: 'Recent Activity')),
+          Reveal(
+            index: 8,
+            child: Glass(
+              radius: Gold.r27,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.s16,
+                vertical: Space.s8,
+              ),
+              child: Column(
+                children: [
+                  for (int i = 0; i < activity.length; i++) ...[
+                    if (i > 0)
+                      Divider(
+                        height: Space.s16,
+                        thickness: 1,
+                        color: Ink.violet.withValues(alpha: 0.08),
+                      ),
+                    _ActivityRow(entry: activity[i]),
                   ],
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 }

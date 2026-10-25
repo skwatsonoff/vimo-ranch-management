@@ -259,7 +259,7 @@ class _SocialScreenState extends State<SocialScreen> {
     }
     final posts = _posts;
     if (posts == null) {
-      return const Center(child: CupertinoActivityIndicator(radius: 13));
+      return const SkeletonList();
     }
     if (posts.isEmpty) {
       return _message(
