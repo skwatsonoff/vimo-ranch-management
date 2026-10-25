@@ -1146,18 +1146,30 @@ class _OrderBodyState extends State<_OrderBody> {
     String title,
     String label, {
     String initial = '',
+    String note = '',
   }) async {
     final c = TextEditingController(text: initial);
+    final field = TextField(
+      controller: c,
+      autofocus: true,
+      maxLength: 200,
+      decoration: InputDecoration(labelText: label),
+    );
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AppleAlert(
         title: Text(title),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          maxLength: 200,
-          decoration: InputDecoration(labelText: label),
-        ),
+        content: note.isEmpty
+            ? field
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(note, style: TextStyle(color: Ink.muted)),
+                  const SizedBox(height: 8),
+                  field,
+                ],
+              ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1241,6 +1253,24 @@ class _OrderBodyState extends State<_OrderBody> {
     }
     final buyer = txt(o, 'buyerName', bi('the buyer', 'வாங்குபவர்'));
     final seller = txt(o, 'sellerName', bi('the seller', 'விற்பவர்'));
+    // An open request to cancel is answered before anything else moves.
+    final asked = asMap(o['cancelRequest']);
+    if (asked.isNotEmpty && const {'ordered', 'accepted'}.contains(status)) {
+      return [_cancelRequestCard(asked)];
+    }
+    if (_seller && ShopService.canRestock(o)) {
+      final qty = toInt(o['quantity']);
+      return [
+        GhostButton(
+          label: bi('Put $qty back on sale', '$qty-ஐ மீண்டும் விற்பனைக்கு வை'),
+          icon: CupertinoIcons.arrow_counterclockwise,
+          onPressed: () => _run(
+            () => ShopService.restock(widget.id, o),
+            bi('Back in stock', 'மீண்டும் இருப்பில் உள்ளது'),
+          ),
+        ),
+      ];
+    }
     if (_seller) {
       switch (status) {
         case 'ordered':
@@ -1291,7 +1321,7 @@ class _OrderBodyState extends State<_OrderBody> {
               },
             ),
             const SizedBox(height: 8),
-            _cancelButton(bySeller: true),
+            _askCancelButton(),
           ];
         case 'accepted':
           return [
@@ -1326,7 +1356,7 @@ class _OrderBodyState extends State<_OrderBody> {
               },
             ),
             const SizedBox(height: 8),
-            _cancelButton(bySeller: true),
+            _askCancelButton(),
           ];
         case 'received':
           return [
@@ -1346,8 +1376,8 @@ class _OrderBodyState extends State<_OrderBody> {
       }
     } else {
       switch (status) {
-        case 'ordered':
-          return [_cancelButton(bySeller: false)];
+        case 'ordered' || 'accepted':
+          return [_askCancelButton()];
         case 'shipped':
           return [
             LiquidButton(
@@ -1374,30 +1404,171 @@ class _OrderBodyState extends State<_OrderBody> {
     return const [];
   }
 
-  Widget _cancelButton({required bool bySeller}) => GhostButton(
-    label: bi('Cancel order', 'ஆர்டரை ரத்து செய்'),
+  String get _other => _seller
+      ? txt(o, 'buyerName', bi('the buyer', 'வாங்குபவர்'))
+      : txt(o, 'sellerName', bi('the seller', 'விற்பவர்'));
+
+  /// Cancelling takes both people: this only asks.
+  Widget _askCancelButton() => GhostButton(
+    label: bi('Ask to cancel', 'ரத்து செய்யக் கேள்'),
     icon: CupertinoIcons.xmark_circle,
     color: Ink.redText,
     onPressed: () async {
       final reason = await _ask(
-        bi('Cancel this order?', 'இந்த ஆர்டரை ரத்து செய்யவா?'),
-        bi(
-          'Reason (shared with the other person)',
-          'காரணம் (மற்றவருக்குத் தெரியும்)',
+        bi('Ask $_other to cancel?', '$_other-இடம் ரத்து செய்யக் கேட்கவா?'),
+        bi('Why? (both of you see this)', 'ஏன்? (இருவரும் பார்ப்பீர்கள்)'),
+        note: bi(
+          'An order is cancelled only when you both agree. $_other will be '
+              'asked; talk it over in the messages.',
+          'இருவரும் ஒப்புக்கொண்டால் மட்டுமே ஆர்டர் ரத்தாகும். $_other-இடம் '
+              'கேட்கப்படும்; செய்திகளில் பேசிக்கொள்ளுங்கள்.',
         ),
       );
       if (reason == null) return;
+      if (reason.isEmpty) {
+        if (mounted) {
+          snack(
+            context,
+            bi('Write a reason', 'காரணம் எழுதவும்'),
+            tone: SnackTone.error,
+          );
+        }
+        return;
+      }
       await _run(
-        () => ShopService.cancel(
-          widget.id,
-          o,
-          bySeller: bySeller,
-          reason: reason,
+        () async {
+          await ShopService.askCancel(
+            widget.id,
+            bySeller: _seller,
+            reason: reason,
+          );
+          // The reason opens the conversation in the order messages.
+          unawaited(
+            ShopService.sendMessage(
+              widget.id,
+              bi(
+                'I asked to cancel: $reason',
+                'ரத்து செய்யக் கேட்டேன்: $reason',
+              ),
+            ).catchError((_) {}),
+          );
+        },
+        bi(
+          'Asked. Waiting for $_other.',
+          'கேட்டாகிவிட்டது. $_other-க்காகக் காத்திருக்கிறது.',
         ),
-        bi('Order cancelled', 'ஆர்டர் ரத்து செய்யப்பட்டது'),
       );
     },
   );
+
+  Widget _cancelRequestCard(Map<String, dynamic> asked) {
+    final mine = txt(asked, 'by') == (_seller ? 'seller' : 'buyer');
+    final reason = txt(asked, 'reason');
+    return Glass(
+      radius: 20,
+      tint: Ink.orange.withValues(alpha: .10),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(CupertinoIcons.chat_bubble_2_fill, color: Ink.orange),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  [
+                    mine
+                        ? bi(
+                            'You asked to cancel. Waiting for $_other to agree.',
+                            'நீங்கள் ரத்து கேட்டீர்கள். $_other ஒப்புக்கொள்ளக் காத்திருக்கிறது.',
+                          )
+                        : bi(
+                            '$_other asks to cancel this order.',
+                            '$_other இந்த ஆர்டரை ரத்து செய்யக் கேட்கிறார்.',
+                          ),
+                    if (reason.isNotEmpty) '“$reason”',
+                  ].join('\n'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (mine)
+            GhostButton(
+              label: bi(
+                'Take back my request',
+                'என் கோரிக்கையைத் திரும்பப் பெறு',
+              ),
+              icon: CupertinoIcons.arrow_uturn_left,
+              onPressed: () => _run(() async {
+                await SocialActivityService.noteOwnOrderChange(
+                  widget.id,
+                  o,
+                  selling: _seller,
+                );
+                await ShopService.dropCancel(widget.id);
+              }, bi('The order goes on', 'ஆர்டர் தொடர்கிறது')),
+            )
+          else ...[
+            LiquidButton(
+              label: bi('Agree to cancel', 'ரத்து செய்ய ஒப்புக்கொள்'),
+              icon: CupertinoIcons.checkmark_alt,
+              onPressed: () async {
+                final sure = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AppleAlert(
+                    title: Text(
+                      bi('Cancel this order?', 'இந்த ஆர்டரை ரத்து செய்யவா?'),
+                    ),
+                    content: Text(
+                      bi(
+                        'Both of you agree, so it ends here. This cannot be undone.',
+                        'இருவரும் ஒப்புக்கொண்டதால் இங்கே முடிகிறது. இதைத் திரும்பப் பெற முடியாது.',
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(bi('Not now', 'இப்போது வேண்டாம்')),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text(
+                          bi('Cancel order', 'ஆர்டரை ரத்து செய்'),
+                          style: TextStyle(color: Ink.redText),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+                if (sure != true) return;
+                await _run(
+                  () =>
+                      ShopService.agreeCancel(widget.id, o, bySeller: _seller),
+                  bi('Order cancelled', 'ஆர்டர் ரத்து செய்யப்பட்டது'),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            GhostButton(
+              label: bi('Keep the order', 'ஆர்டரைத் தொடர்'),
+              icon: CupertinoIcons.arrow_right_circle,
+              onPressed: () => _run(
+                () => ShopService.dropCancel(widget.id),
+                bi(
+                  '$_other has been told.',
+                  '$_other-க்குத் தெரிவிக்கப்பட்டது.',
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1456,12 +1627,12 @@ class _OrderBodyState extends State<_OrderBody> {
                           [
                             txt(o, 'cancelledBy') == 'seller'
                                 ? bi(
-                                    'Cancelled by the seller',
-                                    'விற்பவர் ரத்து செய்தார்',
+                                    'Cancelled · the seller asked, the buyer agreed',
+                                    'ரத்தானது · விற்பவர் கேட்டார், வாங்குபவர் ஒப்புக்கொண்டார்',
                                   )
                                 : bi(
-                                    'Cancelled by the buyer',
-                                    'வாங்குபவர் ரத்து செய்தார்',
+                                    'Cancelled · the buyer asked, the seller agreed',
+                                    'ரத்தானது · வாங்குபவர் கேட்டார், விற்பவர் ஒப்புக்கொண்டார்',
                                   ),
                             if (txt(o, 'cancelReason').isNotEmpty)
                               txt(o, 'cancelReason'),

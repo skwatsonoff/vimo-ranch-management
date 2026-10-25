@@ -190,6 +190,27 @@ class SocialActivityService {
     );
   }
 
+  /// What a notice compares for an order: its step, plus who has an open
+  /// request to cancel ("ordered:buyer").
+  static String orderNoticeState(Map<String, dynamic> o) {
+    final asked = txt(asMap(o['cancelRequest']), 'by');
+    return asked.isEmpty ? txt(o, 'status') : '${txt(o, 'status')}:$asked';
+  }
+
+  /// Taking back your own cancel request is not news to you: record the
+  /// new state first so it raises no "said no" notice.
+  static Future<void> noteOwnOrderChange(
+    String id,
+    Map<String, dynamic> order, {
+    required bool selling,
+  }) async {
+    final key = selling ? 'orderNoticesSelling' : 'orderNoticesBuying';
+    await setSetting(key, {
+      ...asMap(settingValue(key, {})),
+      id: txt(order, 'status'),
+    });
+  }
+
   /// Order steps the other person took: a new order or a received / cancel
   /// for the seller; accepted, sent, completed or cancelled for the buyer.
   /// Each order's last seen status is kept on this device, so the first
@@ -204,15 +225,31 @@ class SocialActivityService {
     final seen = asMap(settingValue(key, {}));
     final firstRun = !seen.containsKey('_primed');
     final next = {...seen, '_primed': true};
+    final me = selling ? 'seller' : 'buyer';
     for (final doc in snapshot.docs) {
       final o = doc.data();
-      final status = txt(o, 'status');
+      final status = orderNoticeState(o);
       final before = txt(seen, doc.id);
       next[doc.id] = status;
       if (firstRun || before == status) continue;
       final title = txt(o, 'title');
       final who = selling ? txt(o, 'buyerName') : txt(o, 'sellerName');
+      final asked = asMap(o['cancelRequest']);
       final (String en, String ta)? notice = switch ((selling, status)) {
+        // Cancelling takes both: the other side asked, agreed or said no.
+        (_, 'cancelled') when txt(o, 'cancelledBy') == me => (
+          '$who agreed. The order for $title is cancelled.',
+          '$who ஒப்புக்கொண்டார். $title ஆர்டர் ரத்தானது.',
+        ),
+        _ when asked.isNotEmpty && txt(asked, 'by') != me => (
+          '$who asks to cancel $title. Talk it over and answer.',
+          '$who $title ரத்து செய்யக் கேட்கிறார். பேசிப் பதில் சொல்லவும்.',
+        ),
+        _ when before.endsWith(':$me') && asked.isEmpty => (
+          '$who said no to cancelling $title. The order goes on.',
+          '$who $title ரத்தை ஏற்கவில்லை. ஆர்டர் தொடர்கிறது.',
+        ),
+
         (true, 'ordered') => (
           '$who ordered $title',
           '$who $title ஆர்டர் செய்தார்',
@@ -220,10 +257,6 @@ class SocialActivityService {
         (true, 'received') => (
           '$who received $title. Rate them to finish.',
           '$who $title பெற்றார். முடிக்க மதிப்பிடவும்.',
-        ),
-        (true, 'cancelled') when txt(o, 'cancelledBy') == 'buyer' => (
-          '$who cancelled the order for $title',
-          '$who $title ஆர்டரை ரத்து செய்தார்',
         ),
         (false, 'accepted') => (
           '$who accepted your order for $title',
@@ -234,10 +267,6 @@ class SocialActivityService {
           '$who rated you. Order complete.',
           '$who உங்களை மதிப்பிட்டார். ஆர்டர் முடிந்தது.',
         ),
-        (false, 'cancelled') when txt(o, 'cancelledBy') == 'seller' => (
-          '$who cancelled your order for $title',
-          '$who உங்கள் $title ஆர்டரை ரத்து செய்தார்',
-        ),
         _ => null,
       };
       if (notice == null) continue;
@@ -247,7 +276,8 @@ class SocialActivityService {
         message: 'Tap to open the order',
         messageTa: 'ஆர்டரைத் திறக்கத் தொடவும்',
         type: 'message',
-        sourceId: 'order-${doc.id}-$status',
+        sourceId:
+            'order-${doc.id}-$status-${(o['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0}',
         localOnly: true,
         extra: {'orderId': doc.id},
       );

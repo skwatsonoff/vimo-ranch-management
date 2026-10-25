@@ -463,28 +463,77 @@ class ShopService {
       });
 
   /// Cancels; an accepted order gives its stock back.
-  static Future<void> cancel(
+  /// Cancelling takes both people, Mercari style: one asks with a reason,
+  /// they talk it over in the order messages, and the other agrees or
+  /// declines. Only before the item is sent; after that, report a problem.
+  static bool canAskCancel(Map<String, dynamic> order) =>
+      const {'ordered', 'accepted'}.contains(txt(order, 'status')) &&
+      asMap(order['cancelRequest']).isEmpty;
+
+  static Future<void> askCancel(
+    String id, {
+    required bool bySeller,
+    required String reason,
+  }) => orders.doc(id).update({
+    'cancelRequest': {
+      'by': bySeller ? 'seller' : 'buyer',
+      'reason': reason.trim(),
+      'at': FieldValue.serverTimestamp(),
+    },
+    'updatedAt': FieldValue.serverTimestamp(),
+  });
+
+  /// The asker takes the request back, or the other person declines it.
+  static Future<void> dropCancel(String id) => orders.doc(id).update({
+    'cancelRequest': FieldValue.delete(),
+    'updatedAt': FieldValue.serverTimestamp(),
+  });
+
+  /// The other person agrees. When the seller agrees after accepting, the
+  /// stock taken at acceptance goes back in the same step.
+  static Future<void> agreeCancel(
     String id,
     Map<String, dynamic> order, {
     required bool bySeller,
-    required String reason,
   }) async {
+    final ask = asMap(order['cancelRequest']);
+    final restock = bySeller && txt(order, 'status') == 'accepted';
     final batch = _db.batch();
     batch.update(orders.doc(id), {
       'status': 'cancelled',
       'cancelledAt': FieldValue.serverTimestamp(),
-      'cancelledBy': bySeller ? 'seller' : 'buyer',
-      'cancelReason': reason.trim(),
+      'cancelledBy': txt(ask, 'by'),
+      'cancelReason': txt(ask, 'reason'),
+      'cancelRequest': FieldValue.delete(),
+      if (restock) 'restocked': true,
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    if (bySeller && txt(order, 'status') == 'accepted') {
-      batch.update(products.doc(txt(order, 'productId')), {
-        'stock': FieldValue.increment(toInt(order['quantity'])),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    }
+    if (restock)
+      batch.update(products.doc(txt(order, 'productId')), _back(order));
     await batch.commit();
   }
+
+  /// A cancelled order the seller had accepted, where the buyer gave the
+  /// final yes: the seller chooses whether the item goes back on sale.
+  static bool canRestock(Map<String, dynamic> order) =>
+      txt(order, 'status') == 'cancelled' &&
+      order['acceptedAt'] != null &&
+      order['restocked'] != true;
+
+  static Future<void> restock(String id, Map<String, dynamic> order) async {
+    final batch = _db.batch();
+    batch.update(orders.doc(id), {
+      'restocked': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(products.doc(txt(order, 'productId')), _back(order));
+    await batch.commit();
+  }
+
+  static Map<String, dynamic> _back(Map<String, dynamic> order) => {
+    'stock': FieldValue.increment(toInt(order['quantity'])),
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
 
   static CollectionReference<Map<String, dynamic>> messagesOf(String id) =>
       orders.doc(id).collection('messages');

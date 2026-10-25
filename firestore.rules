@@ -418,8 +418,9 @@ service cloud.firestore {
     // Orders, Mercari style. The buyer orders at the product's own price,
     // fee and stock; then each side may take only its own next step:
     // seller accepts and sends, buyer confirms receipt and rates, seller
-    // rates and completes. Either may cancel before it is sent (the buyer
-    // only before the seller accepts). Money never passes through VIMO.
+    // rates and completes. Cancelling takes both: before it is sent, one
+    // asks with a reason and the other agrees (or declines); while a request
+    // is open the order does not move. Money never passes through VIMO.
     match /shop_orders/{orderId} {
       function product() {
         return get(/databases/$(database)/documents/shop_products/$(request.resource.data.productId)).data;
@@ -467,22 +468,54 @@ service cloud.firestore {
       }
       function isSeller() { return request.auth.uid == resource.data.sellerUid; }
       function isBuyer() { return request.auth.uid == resource.data.buyerUid; }
-      function cancels(from, by) {
-        return moves(from, 'cancelled')
-          && changed(['status', 'updatedAt', 'cancelledAt', 'cancelledBy', 'cancelReason'])
-          && request.resource.data.cancelledAt == request.time
-          && request.resource.data.cancelledBy == by
-          && request.resource.data.cancelReason is string && request.resource.data.cancelReason.size() <= 200;
+      function role() { return isSeller() ? 'seller' : 'buyer'; }
+      function isParty() { return isSeller() || isBuyer(); }
+      function asking() { return 'cancelRequest' in resource.data; }
+      function cancellable() { return resource.data.status in ['ordered', 'accepted']; }
+      function asksCancel() {
+        let r = request.resource.data.cancelRequest;
+        return cancellable() && !asking()
+          && changed(['cancelRequest', 'updatedAt'])
+          && request.resource.data.updatedAt == request.time
+          && r is map && r.keys().hasOnly(['by', 'reason', 'at'])
+          && r.by == role() && r.at == request.time
+          && r.reason is string && r.reason.size() > 0 && r.reason.size() <= 200;
+      }
+      // The asker takes it back, or the other person declines.
+      function dropsCancel() {
+        return asking() && !('cancelRequest' in request.resource.data)
+          && changed(['cancelRequest', 'updatedAt'])
+          && request.resource.data.updatedAt == request.time;
+      }
+      // Only the other person can agree; the seller then restocks at once.
+      function agreesCancel() {
+        let d = request.resource.data;
+        return asking() && resource.data.cancelRequest.by != role()
+          && cancellable() && d.status == 'cancelled' && d.updatedAt == request.time
+          && !('cancelRequest' in d)
+          && changed(['status', 'updatedAt', 'cancelledAt', 'cancelledBy', 'cancelReason', 'cancelRequest', 'restocked'])
+          && d.cancelledAt == request.time
+          && d.cancelledBy == resource.data.cancelRequest.by
+          && d.cancelReason == resource.data.cancelRequest.reason
+          && (!('restocked' in d) || (isSeller() && d.restocked == true && resource.data.status == 'accepted'));
+      }
+      // When the buyer gave the final yes, the seller may restock later.
+      function restocks() {
+        return resource.data.status == 'cancelled' && 'acceptedAt' in resource.data
+          && !('restocked' in resource.data)
+          && changed(['restocked', 'updatedAt'])
+          && request.resource.data.restocked == true
+          && request.resource.data.updatedAt == request.time;
       }
       allow read: if signedIn()
         && (resource.data.buyerUid == request.auth.uid || resource.data.sellerUid == request.auth.uid);
       allow create: if signedIn() && validOrder(request.resource.data);
       allow update: if signedIn() && (
-        (isSeller() && moves('ordered', 'accepted')
+        (isSeller() && !asking() && moves('ordered', 'accepted')
           && changed(['status', 'updatedAt', 'acceptedAt', 'sellerUpi'])
           && request.resource.data.acceptedAt == request.time
           && request.resource.data.sellerUpi is string && request.resource.data.sellerUpi.size() <= 60)
-        || (isSeller() && moves('accepted', 'shipped')
+        || (isSeller() && !asking() && moves('accepted', 'shipped')
           && changed(['status', 'updatedAt', 'shippedAt', 'tracking'])
           && request.resource.data.shippedAt == request.time
           && request.resource.data.tracking is string && request.resource.data.tracking.size() <= 200)
@@ -494,8 +527,8 @@ service cloud.firestore {
           && changed(['status', 'updatedAt', 'completedAt', 'sellerRating'])
           && request.resource.data.completedAt == request.time
           && validRating(request.resource.data.sellerRating))
-        || (isBuyer() && cancels('ordered', 'buyer'))
-        || (isSeller() && (cancels('ordered', 'seller') || cancels('accepted', 'seller')))
+        || (isParty() && (asksCancel() || dropsCancel() || agreesCancel()))
+        || (isSeller() && restocks())
       );
       allow delete: if false;
 

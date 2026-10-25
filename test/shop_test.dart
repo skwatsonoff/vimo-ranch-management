@@ -106,6 +106,46 @@ void main() {
       expect(shopDeliverySummary(product), '₹40 delivery');
     });
 
+    test('cancelling is asked for, once, and only before it is sent', () {
+      expect(ShopService.canAskCancel({'status': 'ordered'}), isTrue);
+      expect(ShopService.canAskCancel({'status': 'accepted'}), isTrue);
+      expect(ShopService.canAskCancel({'status': 'shipped'}), isFalse);
+      expect(
+        ShopService.canAskCancel({
+          'status': 'ordered',
+          'cancelRequest': {'by': 'buyer', 'reason': 'x'},
+        }),
+        isFalse,
+      );
+      expect(
+        SocialActivityService.orderNoticeState({
+          'status': 'accepted',
+          'cancelRequest': {'by': 'seller', 'reason': 'Sold out'},
+        }),
+        'accepted:seller',
+      );
+      expect(
+        SocialActivityService.orderNoticeState({'status': 'accepted'}),
+        'accepted',
+      );
+    });
+
+    test('only an accepted, cancelled order goes back on sale, once', () {
+      expect(
+        ShopService.canRestock({'status': 'cancelled', 'acceptedAt': 1}),
+        isTrue,
+      );
+      expect(ShopService.canRestock({'status': 'cancelled'}), isFalse);
+      expect(
+        ShopService.canRestock({
+          'status': 'cancelled',
+          'acceptedAt': 1,
+          'restocked': true,
+        }),
+        isFalse,
+      );
+    });
+
     test('order statuses read in plain words', () {
       expect(shopOrderStatusLabel('shipped'), 'On the way');
       expect(shopOrderStatusLabel('cancelled'), 'Cancelled');

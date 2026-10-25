@@ -1,7 +1,7 @@
 // Run with the demo-vimo emulator only. Never targets a production project.
 // Products and Mercari-style orders: who may write what, and every step.
 const {initializeTestEnvironment, assertSucceeds, assertFails} = require('@firebase/rules-unit-testing');
-const {doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs, writeBatch, increment, serverTimestamp} = require('firebase/firestore');
+const {doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs, writeBatch, increment, serverTimestamp, deleteField} = require('firebase/firestore');
 const fs = require('node:fs');
 
 (async () => {
@@ -80,7 +80,21 @@ const fs = require('node:fs');
     accept.update(oRef(seller), {status: 'accepted', acceptedAt: serverTimestamp(), sellerUpi: 'selvi@upi', updatedAt: serverTimestamp()});
     accept.update(pRef(seller), {stock: increment(-2), updatedAt: serverTimestamp()});
     await assertSucceeds(accept.commit()); checks++;
-    await assertFails(updateDoc(oRef(buyer), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'buyer', cancelReason: '', updatedAt: serverTimestamp()})); checks++; // too late for the buyer
+    // Nobody cancels alone, at any step.
+    await assertFails(updateDoc(oRef(buyer), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'buyer', cancelReason: '', updatedAt: serverTimestamp()})); checks++;
+    await assertFails(updateDoc(oRef(seller), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'seller', cancelReason: '', updatedAt: serverTimestamp()})); checks++;
+    // The buyer asks; while asked, the seller cannot send it.
+    const ask = (by, reason = 'Found it cheaper') => ({cancelRequest: {by, reason, at: serverTimestamp()}, updatedAt: serverTimestamp()});
+    await assertFails(updateDoc(oRef(buyer), ask('seller'))); checks++; // in someone else's name
+    await assertFails(updateDoc(oRef(buyer), ask('buyer', ''))); checks++; // a reason is needed
+    await assertFails(updateDoc(oRef(other), ask('buyer'))); checks++;
+    await assertSucceeds(updateDoc(oRef(buyer), ask('buyer'))); checks++;
+    await assertFails(updateDoc(oRef(seller), ask('seller'))); checks++; // one request at a time
+    await assertFails(updateDoc(oRef(seller), {status: 'shipped', shippedAt: serverTimestamp(), tracking: '', updatedAt: serverTimestamp()})); checks++;
+    await assertFails(updateDoc(oRef(buyer), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'buyer', cancelReason: 'Found it cheaper', cancelRequest: deleteField(), updatedAt: serverTimestamp()})); checks++; // the asker cannot agree with themself
+    await assertFails(updateDoc(oRef(seller), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'seller', cancelReason: 'Found it cheaper', cancelRequest: deleteField(), updatedAt: serverTimestamp()})); checks++; // agreeing keeps who asked
+    // The seller says no; the order goes on.
+    await assertSucceeds(updateDoc(oRef(seller), {cancelRequest: deleteField(), updatedAt: serverTimestamp()})); checks++;
     await assertSucceeds(updateDoc(oRef(seller), {status: 'shipped', shippedAt: serverTimestamp(), tracking: 'India Post EE1', updatedAt: serverTimestamp()})); checks++;
     await assertFails(updateDoc(oRef(seller), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {score: 'good', text: ''}, updatedAt: serverTimestamp()})); checks++;
     await assertFails(updateDoc(oRef(buyer), {status: 'received', receivedAt: serverTimestamp(), buyerRating: {score: 'great', text: ''}, updatedAt: serverTimestamp()})); checks++;
@@ -89,9 +103,28 @@ const fs = require('node:fs');
     await assertSucceeds(updateDoc(oRef(seller), {status: 'completed', completedAt: serverTimestamp(), sellerRating: {score: 'good', text: 'Paid on time'}, updatedAt: serverTimestamp()})); checks++;
     await assertFails(deleteDoc(oRef(seller))); checks++;
 
-    // Buyer can cancel before acceptance; seller after acceptance too.
-    await assertSucceeds(updateDoc(oRef(buyer, 'pickup'), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'buyer', cancelReason: 'Changed my mind', updatedAt: serverTimestamp()})); checks++;
-    await assertFails(updateDoc(oRef(buyer, 'pickup'), {status: 'ordered', updatedAt: serverTimestamp()})); checks++;
+    // Too late to ask once it is sent.
+    await assertFails(updateDoc(oRef(buyer), ask('buyer'))); checks++;
+
+    // Seller asks on an accepted order, buyer agrees; the seller restocks after.
+    await assertSucceeds(setDoc(oRef(buyer, 'o2'), order({quantity: 1, total: 490}))); checks++;
+    const accept2 = writeBatch(seller);
+    accept2.update(oRef(seller, 'o2'), {status: 'accepted', acceptedAt: serverTimestamp(), sellerUpi: '', updatedAt: serverTimestamp()});
+    accept2.update(pRef(seller), {stock: increment(-1), updatedAt: serverTimestamp()});
+    await assertSucceeds(accept2.commit()); checks++;
+    await assertSucceeds(updateDoc(oRef(seller, 'o2'), ask('seller', 'Sold out at the shop'))); checks++;
+    await assertFails(updateDoc(oRef(buyer, 'o2'), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'seller', cancelReason: 'Sold out at the shop', cancelRequest: deleteField(), restocked: true, updatedAt: serverTimestamp()})); checks++; // only the seller restocks
+    await assertSucceeds(updateDoc(oRef(buyer, 'o2'), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'seller', cancelReason: 'Sold out at the shop', cancelRequest: deleteField(), updatedAt: serverTimestamp()})); checks++;
+    await assertFails(updateDoc(oRef(buyer, 'o2'), {restocked: true, updatedAt: serverTimestamp()})); checks++;
+    await assertSucceeds(updateDoc(oRef(seller, 'o2'), {restocked: true, updatedAt: serverTimestamp()})); checks++;
+    await assertFails(updateDoc(oRef(seller, 'o2'), {restocked: false, updatedAt: serverTimestamp()})); checks++; // once only
+    await assertFails(updateDoc(oRef(buyer, 'o2'), {status: 'ordered', updatedAt: serverTimestamp()})); checks++;
+
+    // Buyer asks before acceptance, the seller agrees: nothing to restock.
+    await assertSucceeds(updateDoc(oRef(buyer, 'pickup'), ask('buyer', 'Changed my mind'))); checks++;
+    await assertFails(updateDoc(oRef(seller, 'pickup'), {status: 'accepted', acceptedAt: serverTimestamp(), sellerUpi: '', updatedAt: serverTimestamp()})); checks++; // answer first
+    await assertFails(updateDoc(oRef(seller, 'pickup'), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'buyer', cancelReason: 'Changed my mind', cancelRequest: deleteField(), restocked: true, updatedAt: serverTimestamp()})); checks++;
+    await assertSucceeds(updateDoc(oRef(seller, 'pickup'), {status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'buyer', cancelReason: 'Changed my mind', cancelRequest: deleteField(), updatedAt: serverTimestamp()})); checks++;
 
     // --- Order messages: the two parties only ---
     await assertSucceeds(setDoc(doc(buyer, 'shop_orders/o1/messages/m1'), {senderUid: 'buyer', text: 'Thanks!', createdAt: serverTimestamp()})); checks++;
