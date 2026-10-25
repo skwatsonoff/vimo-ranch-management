@@ -184,7 +184,8 @@ class _SocialProfileScreenState extends State<SocialProfileScreen> {
               return ShareCard.profile(uid, snap.data() ?? const {});
             }),
           ),
-        if (own)
+        // As the Profile tab, the app bar above already has Settings.
+        if (own && !(ModalRoute.of(context)?.isFirst ?? false))
           IconButton(
             tooltip: ui('Settings'),
             icon: const Icon(CupertinoIcons.gear),

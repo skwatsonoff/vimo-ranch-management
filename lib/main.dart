@@ -10386,7 +10386,7 @@ class _MainShellState extends State<MainShell> {
             if (order[tab] == 'Ranch' && ranchId().isNotEmpty)
               IconButton(
                 tooltip: bi('Ranch Settings', 'தொழுவ அமைப்புகள்'),
-                icon: const Icon(CupertinoIcons.gear),
+                icon: const Icon(CupertinoIcons.house),
                 onPressed: () => push(context, const RanchSettingsScreen()),
               ),
             // Chat is offered here only when it is not already a tab.
@@ -10402,6 +10402,12 @@ class _MainShellState extends State<MainShell> {
                 icon: const Icon(CupertinoIcons.search, size: 26),
                 onPressed: () => push(context, const CommunitySearchScreen()),
               ),
+            // Settings sits beside the bell on every tab, one tap away.
+            IconButton(
+              tooltip: ui('Settings'),
+              icon: const Icon(CupertinoIcons.gear),
+              onPressed: () => push(context, const SettingsScreen()),
+            ),
             const RanchNotificationButton(),
           ],
         ),
