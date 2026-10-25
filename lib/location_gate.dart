@@ -7,9 +7,19 @@ part of 'main.dart';
 class MarketLocation {
   const MarketLocation._();
 
+  /// Location was allowed once for this account on this phone. After that
+  /// Market never asks again by itself: browsers (Safari above all) forget
+  /// a site's permission, and asking on every open is what people hate.
+  static bool get remembered =>
+      settingValue(accountSetting('locationOk'), false) == true;
+
+  static Future<void> remember() =>
+      setSetting(accountSetting('locationOk'), true);
+
   /// Whether Market may use location now. A platform without location
   /// (tests, some desktops) is not held up.
   static Future<bool> granted() async {
+    if (remembered) return true;
     try {
       if (!await geo.Geolocator.isLocationServiceEnabled()) return false;
       final p = await geo.Geolocator.checkPermission();
@@ -38,8 +48,11 @@ class MarketLocation {
         await geo.Geolocator.openAppSettings();
         return await granted();
       }
-      return p == geo.LocationPermission.always ||
+      final ok =
+          p == geo.LocationPermission.always ||
           p == geo.LocationPermission.whileInUse;
+      if (ok) await remember();
+      return ok;
     } on MissingPluginException {
       return true;
     } catch (_) {
@@ -49,10 +62,17 @@ class MarketLocation {
 
   static String _askedKey() => 'locationAsked_$signedInUid';
 
-  /// Right after sign up or the first sign in on this phone: explain, then
-  /// let the system ask. Shown once per account.
-  static Future<void> askAfterSignIn(BuildContext context) async {
-    if (signedInUid.isEmpty || settingValue(_askedKey(), false) == true) {
+  /// Only when the account was just made: explain, then let the system ask.
+  /// Never on a later sign-in or app open; Market asks itself, once, if it
+  /// is opened without location.
+  static Future<void> askAfterSignUp(BuildContext context, User user) async {
+    final made = user.metadata.creationTime;
+    final fresh =
+        made != null &&
+        DateTime.now().difference(made) < const Duration(minutes: 10);
+    if (!fresh ||
+        signedInUid.isEmpty ||
+        settingValue(_askedKey(), false) == true) {
       return;
     }
     await setSetting(_askedKey(), true);

@@ -10355,7 +10355,9 @@ class _MainShellState extends State<MainShell> {
       _accounts = FirebaseAuth.instance.authStateChanges().listen((user) {
         if (user == null || !mounted) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(MarketLocation.askAfterSignIn(context));
+          if (mounted) {
+            unawaited(MarketLocation.askAfterSignUp(context, user));
+          }
         });
       });
     }
