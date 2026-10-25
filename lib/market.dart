@@ -1477,7 +1477,7 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
   }
 
   void _step(double by) {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() => _litres = (_litres + by).clamp(.25, 50).toDouble());
   }
 
@@ -1720,7 +1720,7 @@ class _MarketRequestSheetState extends State<_MarketRequestSheet> {
                   const SizedBox(height: Space.s16),
                   _InsetGroup(
                     children: [
-                      SwitchListTile.adaptive(
+                      SoundSwitchListTile(
                         value: _shareHome,
                         onChanged: (v) => setState(() => _shareHome = v),
                         title: AppText(
@@ -1853,7 +1853,7 @@ class _MarketReviewSheetState extends State<_MarketReviewSheet> {
                     tooltip: '$i',
                     iconSize: 40,
                     onPressed: () {
-                      HapticFeedback.selectionClick();
+                      selectionFeedback();
                       setState(() => _stars = i);
                     },
                     icon: Icon(
@@ -2052,7 +2052,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
     required ValueChanged<int> onEnd,
   }) => Column(
     children: [
-      SwitchListTile.adaptive(
+      SoundSwitchListTile(
         secondary: Icon(icon, color: Ink.amber),
         value: on,
         onChanged: onChanged,
@@ -2112,7 +2112,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                   const SizedBox(height: Space.s16),
                   _InsetGroup(
                     children: [
-                      SwitchListTile.adaptive(
+                      SoundSwitchListTile(
                         value: _active,
                         onChanged: (v) => setState(() => _active = v),
                         title: AppText(
@@ -2122,7 +2122,7 @@ class _MarketListingScreenState extends State<MarketListingScreen> {
                           ),
                         ),
                       ),
-                      SwitchListTile.adaptive(
+                      SoundSwitchListTile(
                         value: _holiday,
                         onChanged: (v) => setState(() => _holiday = v),
                         title: AppText(bi('Holiday', 'விடுமுறை')),
@@ -2393,7 +2393,7 @@ class _MarketRequestBannerState extends State<MarketRequestBanner> {
       }
     } else {
       setState(() => _answering.add(id));
-      HapticFeedback.selectionClick();
+      selectionFeedback();
       try {
         if (answer == 'accept') {
           await MarketService.accept(id);
@@ -2431,7 +2431,7 @@ class _MarketRequestBannerState extends State<MarketRequestBanner> {
 
   Future<void> _buyerAnswer(String id, bool agree) async {
     setState(() => _answering.add(id));
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     try {
       agree ? await MarketService.agree(id) : await MarketService.cancel(id);
     } catch (error) {

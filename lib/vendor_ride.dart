@@ -1478,7 +1478,7 @@ class _VendorRideScreenState extends State<VendorRideScreen>
                             }
                           : null,
                       onSelected: (key) {
-                        HapticFeedback.selectionClick();
+                        selectionFeedback();
                         setState(() => _place = key);
                       },
                     ),
@@ -2905,7 +2905,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
           Glass(
             radius: 27,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: SwitchListTile.adaptive(
+            child: SoundSwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _groups,
               activeTrackColor: Ink.violetDeep,
@@ -3013,7 +3013,7 @@ class _VendorCustomizeScreenState extends State<VendorCustomizeScreen> {
           ),
           const SizedBox(height: 12),
           Glass(
-            child: SwitchListTile.adaptive(
+            child: SoundSwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _volume,
               title: Text(bi('Volume buttons', 'Volume பொத்தான்கள்')),

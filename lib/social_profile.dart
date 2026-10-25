@@ -1108,7 +1108,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
           ),
         ),
       ),
-      SwitchListTile.adaptive(
+      SoundSwitchListTile(
         value: _shareRanch,
         title: Text(bi('Show my ranch cows', 'என் பண்ணை மாடுகளைக் காட்டு')),
         subtitle: Text(
@@ -1121,7 +1121,7 @@ class _EditSocialProfileScreenState extends State<EditSocialProfileScreen> {
             ? (v) => setState(() => _shareRanch = v)
             : null,
       ),
-      SwitchListTile.adaptive(
+      SoundSwitchListTile(
         value: _shareShop,
         title: Text(bi('Show my shop', 'என் கடையைக் காட்டு')),
         onChanged: (v) => setState(() => _shareShop = v),

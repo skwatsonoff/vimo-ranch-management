@@ -162,3 +162,54 @@ class SoundSwitch extends StatelessWidget {
     );
   }
 }
+
+/// A choice changed (tab, segment, picker row, chip): the selection haptic
+/// and the soft tap sound on the same frame.
+void selectionFeedback() {
+  HapticFeedback.selectionClick();
+  UiSound.play(UiSoundKind.tap);
+}
+
+/// [SwitchListTile.adaptive] with the toggle sound.
+class SoundSwitchListTile extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final Widget? title;
+  final Widget? subtitle;
+  final Widget? secondary;
+  final EdgeInsetsGeometry? contentPadding;
+  final Color? activeThumbColor;
+  final Color? activeTrackColor;
+
+  const SoundSwitchListTile({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.title,
+    this.subtitle,
+    this.secondary,
+    this.contentPadding,
+    this.activeThumbColor,
+    this.activeTrackColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final changed = onChanged;
+    return SwitchListTile.adaptive(
+      value: value,
+      title: title,
+      subtitle: subtitle,
+      secondary: secondary,
+      contentPadding: contentPadding,
+      activeThumbColor: activeThumbColor,
+      activeTrackColor: activeTrackColor,
+      onChanged: changed == null
+          ? null
+          : (on) {
+              UiSound.play(on ? UiSoundKind.toggleOn : UiSoundKind.toggleOff);
+              changed(on);
+            },
+    );
+  }
+}

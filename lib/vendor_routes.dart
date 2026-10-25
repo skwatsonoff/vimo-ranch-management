@@ -1692,7 +1692,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
     final from = _stops.where((s) => s['id'] == ids.first).firstOrNull;
     final to = _stops.where((s) => s['id'] == ids.last).firstOrNull;
     if (from == null || to == null) return;
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() {
       _route['legs'] = [
         for (final leg in routeLegs(_route))
@@ -1826,7 +1826,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
       });
       _dirty = true;
     });
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     unawaited(_syncLegs());
     // A home marked on the route also becomes the person's saved location.
     if (personPoint(person) == null && canRecordEntries) {
@@ -3801,7 +3801,7 @@ class _RouteShareSheetState extends State<_RouteShareSheet> {
                     horizontal: 16,
                     vertical: 4,
                   ),
-                  child: SwitchListTile.adaptive(
+                  child: SoundSwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     value: _collectLater,
                     activeTrackColor: Ink.violetDeep,

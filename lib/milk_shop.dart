@@ -395,7 +395,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
   }
 
   void _choose(String id) {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() {
       _others = false;
       _qty = const ShopQuantity();
@@ -405,7 +405,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
   }
 
   void _toggleOthers() {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() {
       _others = !_others || _selected != null;
       _selected = null;
@@ -415,7 +415,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
   }
 
   void _key(ShopQuantity next) {
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     setState(() => _qty = next);
   }
 
@@ -666,7 +666,7 @@ class _MilkShopScreenState extends State<MilkShopScreen> {
                             key: const ValueKey('others'),
                             items: others,
                             onPick: (id) {
-                              HapticFeedback.selectionClick();
+                              selectionFeedback();
                               setState(() {
                                 _selected = id;
                                 _others = false;
@@ -1581,7 +1581,7 @@ class _ShopItemSheetState extends State<_ShopItemSheet> {
           onTap: locked || _unitLocked
               ? null
               : () {
-                  HapticFeedback.selectionClick();
+                  selectionFeedback();
                   setState(() => _unit = unit);
                 },
           radius: Gold.r21,
@@ -2286,7 +2286,7 @@ class _ShopCustomizeScreenState extends State<ShopCustomizeScreen> {
   Future<void> _saveQuick(List<String> quick) async {
     try {
       await saveShopCatalog(shopItems(), quick);
-      HapticFeedback.selectionClick();
+      selectionFeedback();
     } catch (_) {
       if (mounted) snack(context, ui('Unable to save. Try again.'));
     }

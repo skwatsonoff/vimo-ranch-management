@@ -1413,7 +1413,57 @@ class Glass extends StatelessWidget {
     if (onTap != null) {
       surface = Pressable(radius: radius, onTap: onTap, child: surface);
     }
-    return surface;
+    return _CardEntrance(child: surface);
+  }
+}
+
+/// Every card arrives rather than pops in: when it is first built (a page
+/// opening, a row scrolling into view) it fades up from 97% scale on a short
+/// settle curve. It runs once per card; Reduce Motion and the fast effects
+/// mode show cards in place.
+class _CardEntrance extends StatefulWidget {
+  final Widget child;
+  const _CardEntrance({required this.child});
+
+  @override
+  State<_CardEntrance> createState() => _CardEntranceState();
+}
+
+class _CardEntranceState extends State<_CardEntrance>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _c;
+  Animation<double>? _t;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_c != null || Motion.reduced(context) || DevicePerformance.fast) {
+      return;
+    }
+    final c = AnimationController(vsync: this, duration: Motion.medium);
+    _c = c;
+    _t = CurvedAnimation(parent: c, curve: Motion.settle);
+    c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The wrapper stays in the tree after the entrance so the card's own
+    // state (text fields, scroll) is never rebuilt from scratch.
+    final t = _t ?? kAlwaysCompleteAnimation;
+    return FadeTransition(
+      opacity: t,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: .97, end: 1).animate(t),
+        child: widget.child,
+      ),
+    );
   }
 }
 
@@ -1817,7 +1867,12 @@ class _PressableState extends State<Pressable>
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
+        onTap: enabled
+            ? () {
+                UiSound.play(UiSoundKind.tap);
+                widget.onTap!();
+              }
+            : null,
         onTapDown: enabled ? (_) => _set(true) : null,
         onTapUp: enabled ? (_) => _set(false) : null,
         onTapCancel: enabled ? () => _set(false) : null,
@@ -1920,6 +1975,12 @@ class LiquidRoute<T> extends PageRoute<T>
   bool get maintainState => true;
 
   @override
+  bool didPop(T? result) {
+    UiSound.play(UiSoundKind.whoosh);
+    return super.didPop(result);
+  }
+
+  @override
   Widget buildTransitions(
     BuildContext context,
     Animation<double> animation,
@@ -1956,10 +2017,9 @@ Future<T?> guardedPush<T>(
   return push<T>(context, page);
 }
 
-/// The launch moment: when the app opens, the first screen's blocks settle
-/// in one after another (a short rise and fade, 40 ms apart). After that,
-/// content appears in place, as in system apps — Apple advises against
-/// motion on interactions people repeat all day. Reduce Motion skips it.
+/// A screen's blocks settle in one after another as it opens (a short rise
+/// and fade, 40 ms apart, capped so the last block is in place within about
+/// half a second). Reduce Motion and the fast effects mode skip it.
 class Reveal extends StatefulWidget {
   final Widget child;
   final int index;
@@ -1972,11 +2032,6 @@ class Reveal extends StatefulWidget {
     this.rise = 0.055,
   });
 
-  /// Launch choreography runs only in the app's first moments.
-  static final Stopwatch _sinceLaunch = Stopwatch()..start();
-  static bool get launching =>
-      _sinceLaunch.elapsed < const Duration(milliseconds: 2500);
-
   @override
   State<Reveal> createState() => _RevealState();
 }
@@ -1987,7 +2042,9 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_c != null || !Reveal.launching || Motion.reduced(context)) return;
+    if (_c != null || Motion.reduced(context) || DevicePerformance.fast) {
+      return;
+    }
     // The stagger is the start of an interval on one controller, so no timer
     // outlives the widget.
     final delay = 40 * math.min(widget.index, 8).toInt();
@@ -2036,8 +2093,40 @@ class FlowText extends StatelessWidget {
 
   const FlowText(this.value, {super.key, this.style});
 
+  static final RegExp _number = RegExp(r'^(\D*?)(-?[\d,]*\.?\d+)(\D*)$');
+
   @override
   Widget build(BuildContext context) {
+    // A figure ("₹1,250", "12.5 L", "3") counts from its last value to the
+    // new one; anything else cross-fades.
+    final match = _number.firstMatch(value);
+    if (match != null) {
+      final prefix = match.group(1)!;
+      final digits = match.group(2)!;
+      final suffix = match.group(3)!;
+      final grouped = digits.contains(',');
+      final decimals = digits.contains('.') ? digits.split('.').last.length : 0;
+      final number = double.tryParse(digits.replaceAll(',', ''));
+      if (number != null) {
+        return CountUpText(
+          key: ValueKey<String>('$prefix|$suffix'),
+          value: number,
+          style: style,
+          format: (v) {
+            var text = v.toStringAsFixed(decimals);
+            if (grouped) {
+              final parts = text.split('.');
+              final whole = parts.first.replaceAllMapped(
+                RegExp(r'(\d)(?=(\d{3})+$)'),
+                (m) => '${m[1]},',
+              );
+              text = parts.length > 1 ? '$whole.${parts[1]}' : whole;
+            }
+            return '$prefix$text$suffix';
+          },
+        );
+      }
+    }
     return AnimatedSwitcher(
       duration: Gold.base,
       switchInCurve: Gold.ease,
@@ -2104,12 +2193,7 @@ class LiquidButton extends StatelessWidget {
       label: busy ? null : label,
       child: Pressable(
         radius: height / 2,
-        onTap: enabled
-            ? () {
-                UiSound.play(UiSoundKind.tap);
-                onPressed!();
-              }
-            : null,
+        onTap: enabled ? onPressed : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
@@ -2240,7 +2324,7 @@ class Segment extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
-            if (!active) HapticFeedback.selectionClick();
+            if (!active) selectionFeedback();
             onTap();
           },
           child: AnimatedContainer(
@@ -2363,7 +2447,7 @@ class LiquidSegmentBar extends StatelessWidget {
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
                               if (i != selected) {
-                                HapticFeedback.selectionClick();
+                                selectionFeedback();
                               }
                               onChanged(i);
                             },
@@ -10300,7 +10384,10 @@ class _MainShellState extends State<MainShell> {
                 index: tab,
                 children: [
                   for (var i = 0; i < pages.length; i++)
-                    TickerMode(enabled: i == tab, child: pages[i]),
+                    TickerMode(
+                      enabled: i == tab,
+                      child: _TabEntrance(active: i == tab, child: pages[i]),
+                    ),
                 ],
               ),
               _ScrollEdgeEffect(visible: _topEdge),
@@ -10364,6 +10451,58 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
+}
+
+/// A tab page settles in when it is chosen: a quick fade with a short rise,
+/// so switching tabs reads as moving to a place rather than a cut. The page
+/// keeps its state and scroll position. Reduce Motion switches instantly.
+class _TabEntrance extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const _TabEntrance({required this.active, required this.child});
+
+  @override
+  State<_TabEntrance> createState() => _TabEntranceState();
+}
+
+class _TabEntranceState extends State<_TabEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+    value: 1,
+  );
+  late final Animation<double> _t = CurvedAnimation(
+    parent: _c,
+    curve: Motion.settle,
+  );
+
+  @override
+  void didUpdateWidget(_TabEntrance old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active && !Motion.reduced(context)) {
+      _c.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: _t,
+    child: AnimatedBuilder(
+      animation: _t,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, 10 * (1 - _t.value)),
+        child: child,
+      ),
+      child: widget.child,
+    ),
+  );
 }
 
 /// The scroll edge effect under the title bar: once content scrolls, it
@@ -10538,7 +10677,7 @@ class _NavBarState extends State<_NavBar> with SingleTickerProviderStateMixin {
   }
 
   void _select(int i) {
-    if (i != _selected) HapticFeedback.selectionClick();
+    if (i != _selected) selectionFeedback();
     widget.onChanged(i);
     _glide(i);
   }
@@ -10552,7 +10691,7 @@ class _NavBarState extends State<_NavBar> with SingleTickerProviderStateMixin {
     _lens.value = _positionAt(dx);
     final over = _lens.value.round();
     if (over != _scrub) {
-      if (_scrub != null) HapticFeedback.selectionClick();
+      if (_scrub != null) selectionFeedback();
       setState(() => _scrub = over);
     }
   }
@@ -10699,6 +10838,48 @@ class _NavItem {
   const _NavItem(this.id, this.label, this.active, this.idle);
 }
 
+/// The chosen tab's symbol gives a small spring pop, like a pressed key
+/// returning. Reduce Motion keeps it still.
+class _SelectPop extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const _SelectPop({required this.active, required this.child});
+
+  @override
+  State<_SelectPop> createState() => _SelectPopState();
+}
+
+class _SelectPopState extends State<_SelectPop>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _scale = AnimationController.unbounded(
+    vsync: this,
+    value: 1,
+  );
+
+  @override
+  void didUpdateWidget(_SelectPop old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active && !Motion.reduced(context)) {
+      _scale.value = .82;
+      _scale.animateWith(SpringSimulation(Motion.momentum, .82, 1, 0));
+    }
+  }
+
+  @override
+  void dispose() {
+    _scale.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _scale,
+    builder: (context, child) =>
+        Transform.scale(scale: _scale.value, child: child),
+    child: widget.child,
+  );
+}
+
 class _NavCell extends StatelessWidget {
   final _NavItem item;
   final bool active;
@@ -10727,15 +10908,18 @@ class _NavCell extends StatelessWidget {
           children: [
             SizedBox(
               height: 28,
-              child: item.id == 'Vendor' && !milkShopMode
-                  ? MilkVendorIcon(size: 30, color: color)
-                  : item.active == null
-                  ? CowHoofIcon(size: 26, color: color)
-                  : Icon(
-                      active ? item.active : item.idle,
-                      size: 24,
-                      color: color,
-                    ),
+              child: _SelectPop(
+                active: active,
+                child: item.id == 'Vendor' && !milkShopMode
+                    ? MilkVendorIcon(size: 30, color: color)
+                    : item.active == null
+                    ? CowHoofIcon(size: 26, color: color)
+                    : Icon(
+                        active ? item.active : item.idle,
+                        size: 24,
+                        color: color,
+                      ),
+              ),
             ),
             const SizedBox(height: 2),
             Padding(
@@ -11576,6 +11760,7 @@ class _StatTile extends StatelessWidget {
     return Semantics(
       button: true,
       label: '${ui(label)} ${format(number)}',
+      onTap: type.isEmpty ? null : () => onTap(type),
       excludeSemantics: true,
       child: Glass(
         radius: Gold.r27,
@@ -14908,7 +15093,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
               shape: const StadiumBorder(),
               materialTapTargetSize: MaterialTapTargetSize.padded,
               onPressed: () {
-                HapticFeedback.selectionClick();
+                selectionFeedback();
                 final text = last == last.roundToDouble()
                     ? last.toStringAsFixed(0)
                     : last.toString();
@@ -16430,7 +16615,7 @@ class _SellAnimalScreenState extends State<SellAnimalScreen> {
               vertical: Space.s4,
             ),
             elevation: 0.62,
-            child: SwitchListTile.adaptive(
+            child: SoundSwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _withCalves,
               activeThumbColor: Ink.violet,

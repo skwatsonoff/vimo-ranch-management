@@ -294,7 +294,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         _order[slot] = tab;
       }
     });
-    HapticFeedback.selectionClick();
+    selectionFeedback();
     unawaited(_persist());
   }
 
@@ -417,7 +417,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       child: InkWell(
         onTap: () async {
           if (selected) return;
-          HapticFeedback.selectionClick();
+          selectionFeedback();
           setState(() => _vendorMode = mode);
           try {
             await saveVendorMode(mode);

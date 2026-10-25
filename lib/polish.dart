@@ -415,6 +415,7 @@ class TodayMilkCard extends StatelessWidget {
     return Semantics(
       container: true,
       button: true,
+      onTap: onOpen,
       label: bi(
         "Today's milk ${_litres(total)}",
         'இன்றைய பால் ${_litres(total)}',
@@ -594,6 +595,7 @@ class _AddMilkButton extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     button: true,
     label: bi('Add milk', 'பால் பதிவு'),
+    onTap: onPressed,
     child: ExcludeSemantics(
       child: Pressable(
         radius: 22,

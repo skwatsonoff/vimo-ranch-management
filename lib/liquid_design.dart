@@ -800,7 +800,7 @@ Future<PickedValue<T>?> showPickerMenu<T>(
     ),
   );
   if (picked == null) return null;
-  HapticFeedback.selectionClick();
+  selectionFeedback();
   for (final item in items) {
     if (item.value == picked.value) item.onTap?.call();
   }
