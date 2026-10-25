@@ -769,6 +769,28 @@ class _VendorPersonFormState extends State<VendorPersonForm> {
                 ),
               ),
             ),
+            // Deleting lives with editing, away from the everyday actions.
+            if (widget.person != null && canRecordEntries) ...[
+              const SizedBox(height: 12),
+              GhostButton(
+                label: _kind == 'supplier'
+                    ? bi('Delete supplier', 'சப்ளையரை நீக்கு')
+                    : bi('Delete customer', 'வாடிக்கையாளரை நீக்கு'),
+                icon: CupertinoIcons.trash,
+                color: Ink.redText,
+                onPressed: _saving
+                    ? null
+                    : () async {
+                        final deleted = await confirmDeleteVendorPerson(
+                          context,
+                          widget.person!,
+                        );
+                        if (deleted && context.mounted) {
+                          Navigator.of(context).pop('deleted');
+                        }
+                      },
+              ),
+            ],
           ],
         ),
       ),

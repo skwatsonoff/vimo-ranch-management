@@ -811,6 +811,52 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 bool vendorPersonRemoved(Map<String, dynamic> person) =>
     person['removed'] == true;
 
+/// Asks before deleting [person] from the vendor's lists, then deletes with
+/// Undo. Returns true when deleted. Their deliveries and payments stay in
+/// reports.
+Future<bool> confirmDeleteVendorPerson(
+  BuildContext context,
+  Map<String, dynamic> person,
+) async {
+  final name = txt(person, 'name');
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AppleAlert(
+      title: Text(bi('Delete $name?', '$name-ஐ நீக்கவா?')),
+      content: Text(
+        bi(
+          'They leave your lists and rides. Past deliveries and payments stay in your reports.',
+          'உங்கள் பட்டியல்களிலிருந்தும் சவாரியிலிருந்தும் நீங்குவார். பழைய வழங்கல்களும் கட்டணங்களும் அறிக்கைகளில் இருக்கும்.',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(ui('Cancel')),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: Ink.red),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(bi('Delete', 'நீக்கு')),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return false;
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  await setVendorPersonRemoved(person, true);
+  if (!context.mounted) return true;
+  snack(
+    context,
+    bi('$name deleted', '$name நீக்கப்பட்டார்'),
+    tone: SnackTone.success,
+    messenger: messenger,
+    actionLabel: bi('Undo', 'திரும்பப் பெறு'),
+    onAction: () => unawaited(setVendorPersonRemoved(person, false)),
+  );
+  return true;
+}
+
 /// The vendor's people, without the ones they deleted.
 List<Map<String, dynamic>> activeVendorPeople() =>
     vendorRows('vendor_people').where((p) => !vendorPersonRemoved(p)).toList();
@@ -1511,48 +1557,6 @@ class VendorPersonScreen extends StatefulWidget {
 }
 
 class _VendorPersonScreenState extends State<VendorPersonScreen> {
-  /// Deletes this person from the lists, with Undo. Their deliveries and
-  /// payments stay in reports.
-  Future<void> _delete(Map<String, dynamic> person) async {
-    final name = txt(person, 'name');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AppleAlert(
-        title: Text(bi('Delete $name?', '$name-ஐ நீக்கவா?')),
-        content: Text(
-          bi(
-            'They leave your lists and rides. Past deliveries and payments stay in your reports.',
-            'உங்கள் பட்டியல்களிலிருந்தும் சவாரியிலிருந்தும் நீங்குவார். பழைய வழங்கல்களும் கட்டணங்களும் அறிக்கைகளில் இருக்கும்.',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(ui('Cancel')),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Ink.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(bi('Delete', 'நீக்கு')),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    await setVendorPersonRemoved(person, true);
-    if (!mounted) return;
-    Navigator.of(context).maybePop();
-    snack(
-      context,
-      bi('$name deleted', '$name நீக்கப்பட்டார்'),
-      tone: SnackTone.success,
-      messenger: messenger,
-      actionLabel: bi('Undo', 'திரும்பப் பெறு'),
-      onAction: () => unawaited(setVendorPersonRemoved(person, false)),
-    );
-  }
-
   final _qty = TextEditingController(),
       _price = TextEditingController(),
       _paid = TextEditingController(text: '0');
@@ -1722,34 +1726,23 @@ class _VendorPersonScreenState extends State<VendorPersonScreen> {
                           PositionedDirectional(
                             top: 0,
                             end: -8,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: p['kind'] == 'supplier'
-                                      ? bi('Delete supplier', 'சப்ளையரை நீக்கு')
-                                      : bi(
-                                          'Delete customer',
-                                          'வாடிக்கையாளரை நீக்கு',
-                                        ),
-                                  icon: Icon(
-                                    CupertinoIcons.trash,
-                                    color: Ink.redText,
+                            child: IconButton(
+                              tooltip: ui('Edit person'),
+                              icon: const Icon(CupertinoIcons.pencil),
+                              onPressed: () async {
+                                final result = await push<String>(
+                                  context,
+                                  VendorPersonForm(
+                                    kind: txt(p, 'kind'),
+                                    person: p,
                                   ),
-                                  onPressed: () => _delete(p),
-                                ),
-                                IconButton(
-                                  tooltip: ui('Edit person'),
-                                  icon: const Icon(CupertinoIcons.pencil),
-                                  onPressed: () => push(
-                                    context,
-                                    VendorPersonForm(
-                                      kind: txt(p, 'kind'),
-                                      person: p,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                );
+                                // Deleted from the edit form: this page
+                                // closes too.
+                                if (result == 'deleted' && context.mounted) {
+                                  Navigator.of(context).maybePop();
+                                }
+                              },
                             ),
                           ),
                       ],
