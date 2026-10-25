@@ -751,6 +751,35 @@ class DirectChatService {
   }
 
   static String idFor(String a, String b) => ([a, b]..sort()).join('_');
+
+  static CollectionReference<Map<String, dynamic>> get _hidden =>
+      FirebaseFirestore.instance
+          .collection('profiles')
+          .doc(signedInUid)
+          .collection('hidden_chats');
+
+  /// Deletes a conversation from this person's own list only. The other
+  /// person keeps theirs, and the chat comes back if a new message arrives.
+  static Future<void> hide(String peer) => _hidden
+      .doc(peer)
+      .set({'hiddenAt': FieldValue.serverTimestamp()})
+      .timeout(CloudSyncService.networkTimeout);
+
+  static Future<void> unhide(String peer) =>
+      _hidden.doc(peer).delete().timeout(CloudSyncService.networkTimeout);
+
+  static Stream<QuerySnapshot<Map<String, dynamic>>> hiddenChats() =>
+      _hidden.snapshots();
+
+  /// Moves a personal contact back to business chats.
+  static Future<void> removePersonal(String peer) => FirebaseFirestore.instance
+      .collection('profiles')
+      .doc(signedInUid)
+      .collection('contacts')
+      .doc(peer)
+      .delete()
+      .timeout(CloudSyncService.networkTimeout);
+
   static Future<void> addPersonal(String peer) async {
     if (signedInUid.isEmpty || peer == signedInUid) {
       throw StateError('Choose another person');
@@ -792,6 +821,137 @@ class CommunityChatsScreen extends StatefulWidget {
 class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
   int _tab = 0;
 
+  /// Conversations this person deleted from their list, and when.
+  final Map<String, DateTime> _hiddenAt = {};
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _hiddenWatch;
+
+  @override
+  void initState() {
+    super.initState();
+    if (signedInUid.isEmpty) return;
+    _hiddenWatch = DirectChatService.hiddenChats().listen((snap) {
+      if (!mounted) return;
+      setState(() {
+        _hiddenAt
+          ..clear()
+          ..addAll({
+            for (final d in snap.docs)
+              d.id:
+                  (d.data()['hiddenAt'] as Timestamp?)?.toDate() ??
+                  DateTime.now(),
+          });
+      });
+    }, onError: (Object _) {});
+  }
+
+  /// A deleted chat stays out of the list until a newer message arrives.
+  bool _hidden(String peer) {
+    final at = _hiddenAt[peer];
+    if (at == null) return false;
+    final latest = _latest(peer);
+    return latest == null || !latest.isAfter(at);
+  }
+
+  /// Long press on a person: delete the chat from this list, or move it
+  /// between Business and Personal.
+  Future<void> _actions(
+    String peer,
+    String name, {
+    required bool personal,
+    required bool ranchMember,
+  }) async {
+    selectionFeedback();
+    final choice = await showAppleSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  name,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (!personal)
+                _SheetAction(
+                  icon: CupertinoIcons.person_crop_circle_badge_checkmark,
+                  label: bi(
+                    'Move to Personal chat',
+                    'தனிப்பட்ட சாட்டுக்கு மாற்று',
+                  ),
+                  onTap: () => Navigator.of(sheet).pop('personal'),
+                ),
+              if (personal && !ranchMember)
+                _SheetAction(
+                  icon: CupertinoIcons.briefcase,
+                  label: bi('Move to Business chat', 'வணிக சாட்டுக்கு மாற்று'),
+                  onTap: () => Navigator.of(sheet).pop('business'),
+                ),
+              if (!ranchMember)
+                _SheetAction(
+                  icon: CupertinoIcons.trash,
+                  label: bi('Delete chat', 'சாட்டை நீக்கு'),
+                  destructive: true,
+                  onTap: () => Navigator.of(sheet).pop('delete'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    try {
+      switch (choice) {
+        case 'personal':
+          await DirectChatService.addPersonal(peer);
+          if (mounted) {
+            snack(
+              context,
+              bi(
+                'Moved to Personal chat',
+                'தனிப்பட்ட சாட்டுக்கு மாற்றப்பட்டது',
+              ),
+              tone: SnackTone.success,
+            );
+          }
+        case 'business':
+          await DirectChatService.removePersonal(peer);
+          if (mounted) {
+            snack(
+              context,
+              bi('Moved to Business chat', 'வணிக சாட்டுக்கு மாற்றப்பட்டது'),
+              tone: SnackTone.success,
+            );
+          }
+        case 'delete':
+          await DirectChatService.hide(peer);
+          if (mounted) {
+            snack(
+              context,
+              bi('Chat deleted', 'சாட் நீக்கப்பட்டது'),
+              tone: SnackTone.success,
+              actionLabel: bi('Undo', 'திரும்பப் பெறு'),
+              onAction: () => unawaited(
+                DirectChatService.unhide(peer).catchError((Object _) {}),
+              ),
+            );
+          }
+      }
+    } catch (e) {
+      if (mounted) snack(context, accountError(e), tone: SnackTone.error);
+    }
+  }
+
   /// Newest message time per person, so the latest conversations sit at the
   /// top, as in Messages. One small listener per chat (its last message).
   final Map<String, DateTime> _lastAt = {};
@@ -800,6 +960,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
 
   @override
   void dispose() {
+    _hiddenWatch?.cancel();
     for (final watch in _recency.values) {
       watch.cancel();
     }
@@ -899,34 +1060,44 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
     }
   }
 
-  Widget _person(String uid, {bool ranchMember = false, String when = ''}) =>
-      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('profiles')
-            .doc(uid)
-            .snapshots(),
-        builder: (context, snap) {
-          final data = snap.data?.data() ?? const <String, dynamic>{};
-          final displayName = txt(
-            data,
-            'displayName',
-            txt(data, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')),
-          );
-          return _ChatRow(
-            avatar: profileAvatar(
-              txt(data, 'photo'),
-              radius: 26,
-              label: displayName,
-            ),
-            title: displayName,
-            subtitle: ranchMember
-                ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
-                : txt(data, 'username'),
-            when: when,
-            onTap: () => _open(uid),
-          );
-        },
+  Widget _person(
+    String uid, {
+    bool ranchMember = false,
+    bool personal = false,
+    String when = '',
+  }) => StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    stream: FirebaseFirestore.instance
+        .collection('profiles')
+        .doc(uid)
+        .snapshots(),
+    builder: (context, snap) {
+      final data = snap.data?.data() ?? const <String, dynamic>{};
+      final displayName = txt(
+        data,
+        'displayName',
+        txt(data, 'username', bi('VIMO member', 'VIMO உறுப்பினர்')),
       );
+      return _ChatRow(
+        avatar: profileAvatar(
+          txt(data, 'photo'),
+          radius: 26,
+          label: displayName,
+        ),
+        title: displayName,
+        subtitle: ranchMember
+            ? bi('Ranch member', 'பண்ணை உறுப்பினர்')
+            : txt(data, 'username'),
+        when: when,
+        onTap: () => _open(uid),
+        onLongPress: () => _actions(
+          uid,
+          displayName,
+          personal: personal,
+          ranchMember: ranchMember,
+        ),
+      );
+    },
+  );
   @override
   Widget build(BuildContext context) {
     final me = signedInUid;
@@ -939,6 +1110,22 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
       );
     }
     final db = FirebaseFirestore.instance;
+    // Opened from another page (not as the Chat tab): give it a title bar
+    // with the back button.
+    final pushed = !(ModalRoute.of(context)?.isFirst ?? true);
+    final content = _chats(context, me, db);
+    if (!pushed) return content;
+    return Scaffold(
+      backgroundColor: Ink.canvasTop,
+      appBar: AppBar(
+        leading: const _BackButton(),
+        title: Text(bi('Chat', 'சாட்')),
+      ),
+      body: content,
+    );
+  }
+
+  Widget _chats(BuildContext context, String me, FirebaseFirestore db) {
     // Edge to edge: the chat lists pad themselves by the bottom inset.
     return Shell(
       edgeToEdge: true,
@@ -1018,7 +1205,9 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                         const ranchKey = '\u0000ranch';
                         final ordered = _byRecent<String>([
                           if (CloudSyncService.ready) ranchKey,
-                          ...personal,
+                          ...personal.where(
+                            (id) => memberIds.contains(id) || !_hidden(id),
+                          ),
                         ], (id) => id == ranchKey ? ranchAt : _latest(id));
                         return ListView(
                           children: [
@@ -1077,6 +1266,7 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                                 _person(
                                   id,
                                   ranchMember: memberIds.contains(id),
+                                  personal: true,
                                   when: _when(_latest(id)),
                                 ),
                             if (personal.isEmpty)
@@ -1128,13 +1318,41 @@ class _CommunityChatsScreenState extends State<CommunityChatsScreen> {
                             );
                           }
                           _watchRecency(peers);
+                          final shown = peers.where((p) => !_hidden(p));
+                          if (shown.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  bi(
+                                    'Community conversations appear here.',
+                                    'சமூகத்திலிருந்து வரும் உரையாடல்கள் இங்கே தோன்றும்.',
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
                           return ListView(
                             children: [
                               for (final peer in _byRecent<String>(
-                                peers.toList(),
+                                shown.toList(),
                                 _latest,
                               ))
                                 _person(peer, when: _when(_latest(peer))),
+                              Padding(
+                                padding: const EdgeInsets.all(20),
+                                child: Text(
+                                  bi(
+                                    'Press and hold a person to delete the chat or move it to Personal.',
+                                    'சாட்டை நீக்க அல்லது தனிப்பட்டதுக்கு மாற்ற, ஒருவரை அழுத்திப் பிடிக்கவும்.',
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Ink.muted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
                             ],
                           );
                         },
@@ -1157,16 +1375,19 @@ class _ChatRow extends StatelessWidget {
   /// Time of the latest message ("14:05", "Yesterday", "12/10").
   final String when;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   const _ChatRow({
     required this.avatar,
     required this.title,
     required this.subtitle,
     this.when = '',
     required this.onTap,
+    this.onLongPress,
   });
   @override
   Widget build(BuildContext context) => InkWell(
     onTap: onTap,
+    onLongPress: onLongPress,
     child: Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 16, 0),
       child: Row(
@@ -1659,6 +1880,53 @@ class _MilkMovementCard extends StatelessWidget {
               child: Text(txt(row, 'notes'), style: muted),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// One row of a long-press action sheet: a symbol and a label, red when it
+/// removes something.
+class _SheetAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool destructive;
+  final VoidCallback onTap;
+  const _SheetAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? Ink.redText : Ink.violetDeep;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Glass(
+        radius: Gold.r21,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        onTap: onTap,
+        child: Semantics(
+          button: true,
+          child: Row(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

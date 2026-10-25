@@ -1,6 +1,6 @@
 // Run with the demo-vimo emulator only. Never targets a production project.
 const {initializeTestEnvironment, assertSucceeds, assertFails} = require('@firebase/rules-unit-testing');
-const {doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, Timestamp, serverTimestamp, runTransaction} = require('firebase/firestore');
+const {doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs, Timestamp, serverTimestamp, runTransaction} = require('firebase/firestore');
 const fs = require('node:fs');
 (async () => {
   const env = await initializeTestEnvironment({projectId: 'demo-vimo', firestore: {host: '127.0.0.1', port: 8088, rules: fs.readFileSync('firestore.rules', 'utf8')}});
@@ -36,6 +36,14 @@ const fs = require('node:fs');
     }));
     await assertFails(updateDoc(doc(b, 'social_posts/scheduled'), {createdAt: future}));
     await assertFails(updateDoc(doc(a, 'social_posts/scheduled'), {authorUid: 'bob'}));
+    // Deleting a chat from one's own list: owner only, server time only.
+    await assertSucceeds(setDoc(doc(a, 'profiles/alice/hidden_chats/bob'), {hiddenAt: serverTimestamp()}));
+    await assertSucceeds(getDoc(doc(a, 'profiles/alice/hidden_chats/bob')));
+    await assertFails(getDoc(doc(b, 'profiles/alice/hidden_chats/bob')));
+    await assertFails(setDoc(doc(b, 'profiles/alice/hidden_chats/carol'), {hiddenAt: serverTimestamp()}));
+    await assertFails(setDoc(doc(a, 'profiles/alice/hidden_chats/alice'), {hiddenAt: serverTimestamp()}));
+    await assertFails(setDoc(doc(a, 'profiles/alice/hidden_chats/carol'), {hiddenAt: Timestamp.now(), extra: 1}));
+    await assertSucceeds(deleteDoc(doc(a, 'profiles/alice/hidden_chats/bob')));
     await assertSucceeds(setDoc(doc(a, 'direct_chats/alice_bob'), {participants: ['alice', 'bob']}));
     await assertSucceeds(setDoc(doc(a, 'direct_chats/alice_bob/messages/one'), {senderUid: 'alice', text: 'Hello', createdAt: serverTimestamp()}));
     await assertSucceeds(getDoc(doc(b, 'direct_chats/alice_bob/messages/one')));
