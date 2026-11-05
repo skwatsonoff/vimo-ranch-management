@@ -382,7 +382,15 @@ double? lastMilkQuantityFor(String cow, String session) {
 class TodayMilkCard extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onAdd;
-  const TodayMilkCard({super.key, required this.onOpen, required this.onAdd});
+
+  /// Opens voice milk mode ("Hey Vimo, Maina 5 litre").
+  final VoidCallback? onVoice;
+  const TodayMilkCard({
+    super.key,
+    required this.onOpen,
+    required this.onAdd,
+    this.onVoice,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -492,6 +500,10 @@ class TodayMilkCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: Space.s12),
+                if (canRecordEntries && onVoice != null) ...[
+                  VoiceMilkButton(onPressed: onVoice!),
+                  const SizedBox(width: Space.s8),
+                ],
                 if (canRecordEntries) _AddMilkButton(onPressed: onAdd),
               ],
             ),
@@ -588,6 +600,45 @@ class _SessionCell extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The round microphone that starts voice milk mode.
+class VoiceMilkButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  const VoiceMilkButton({super.key, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: bi('Voice milk mode', 'குரல் பால் பதிவு'),
+    onTap: onPressed,
+    child: ExcludeSemantics(
+      child: Tooltip(
+        message: bi('Voice milk mode', 'குரல் பால் பதிவு'),
+        child: Pressable(
+          radius: Space.target / 2,
+          onTap: onPressed,
+          child: Container(
+            width: Space.target,
+            height: Space.target,
+            decoration: ShapeDecoration(
+              shape: const CircleBorder(),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Ink.orange, Ink.tint],
+              ),
+            ),
+            child: const Icon(
+              CupertinoIcons.mic_fill,
+              size: 20,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _AddMilkButton extends StatelessWidget {

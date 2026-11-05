@@ -29,7 +29,9 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>VIMO uses your location to record milk delivery routes and to mark customer homes on the map.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VIMO uses the microphone to send voice messages to your ranch group.</string>
+	<string>VIMO uses the microphone for voice milk recording and to send voice messages to your ranch group.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>VIMO turns what you say, such as "Maina 5 litre", into milk entries.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

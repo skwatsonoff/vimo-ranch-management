@@ -110,6 +110,7 @@ String nameInLanguage(String input, bool tamil) {
       'oo': ('ஊ', 'ூ'),
       'ai': ('ஐ', 'ை'),
       'au': ('ஔ', 'ௌ'),
+      'ow': ('ஔ', 'ௌ'),
       'a': ('அ', ''),
       'i': ('இ', 'ி'),
       'u': ('உ', 'ு'),
@@ -128,7 +129,22 @@ String nameInLanguage(String input, bool tamil) {
         }
       }
       if (c != null) {
-        result.write(consonants[c]);
+        // Tamil writes the n sound as ந only at the start of a word or before
+        // த; elsewhere it is ன ("Maina" → மைனா, "Ponni" → பொன்னி).
+        final wordStart = i == 0 || source[i - 1] == ' ';
+        final beforeTh =
+            source.startsWith('th', i + 1) || source.startsWith('dh', i + 1);
+        final vowelNext =
+            i + c.length < source.length &&
+            'aeiou'.contains(source[i + c.length]);
+        result.write(switch (c) {
+          'n' when !wordStart && !beforeTh => 'ன',
+          // "Thanga" → தங்கா: a spoken ng before a vowel is ங்க.
+          'ng' when vowelNext => 'ங்க',
+          // Tamil names begin with ச, not ஸ: Selvi → செல்வி.
+          's' when wordStart => 'ச',
+          _ => consonants[c],
+        });
         i += c.length;
         String? v;
         for (final key in vowels.keys) {
@@ -140,8 +156,10 @@ String nameInLanguage(String input, bool tamil) {
         if (v == null) {
           result.write('்');
         } else {
-          result.write(vowels[v]!.$2);
           i += v.length;
+          // A name's final "a" is long in Tamil: Maina → மைனா, Rama → ராமா.
+          final wordEnd = i >= source.length || source[i] == ' ';
+          result.write(v == 'a' && wordEnd && i > 2 ? 'ா' : vowels[v]!.$2);
         }
       } else {
         String? v;

@@ -1,0 +1,2448 @@
+part of 'main.dart';
+
+// =============================================================================
+//  Voice milk mode.
+//
+//  The phone sits in a shirt pocket during milking. VIMO listens for its
+//  wake word ("Vimo" / "Hey Vimo"), answers "ம்ம்?", and takes sentences like
+//  "மைனா 5 லிட்டர்" or "Maina add 5 litre" in any mix of Tamil, English and
+//  Hindi. A clear sentence is added at once and read back; anything unclear
+//  (which cow, how many litres, a name that only sounds close) is asked like
+//  a person would ask. "முடிஞ்சது" / "finish" ends the session with an
+//  editable report, and nothing reaches the milk records until Save.
+//
+//  The understanding itself lives in voice_parser.dart and is unit tested.
+// =============================================================================
+
+/// One milk entry heard during a voice session (not yet saved).
+class VoiceMilkEntry {
+  final String id;
+  String cow;
+  double litres;
+  DateTime at;
+  final String heard;
+
+  /// "Morning" or "Evening" when it was said; otherwise taken from [at].
+  String? sessionOverride;
+
+  VoiceMilkEntry({
+    required this.id,
+    required this.cow,
+    required this.litres,
+    required this.at,
+    required this.heard,
+    String? session,
+  }) : sessionOverride = session;
+
+  String get session => sessionOverride ?? milkSessionForTime(at);
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'cow': cow,
+    'litres': litres,
+    'at': at.toIso8601String(),
+    'heard': heard,
+    if (sessionOverride != null) 'session': sessionOverride,
+  };
+
+  static VoiceMilkEntry? fromMap(dynamic raw) {
+    final m = asMap(raw);
+    final at = DateTime.tryParse(txt(m, 'at'));
+    if (at == null || txt(m, 'cow').isEmpty) return null;
+    return VoiceMilkEntry(
+      id: txt(m, 'id', at.microsecondsSinceEpoch.toString()),
+      cow: txt(m, 'cow'),
+      litres: numv(m, 'litres'),
+      at: at,
+      heard: txt(m, 'heard'),
+      session: txt(m, 'session').isEmpty ? null : txt(m, 'session'),
+    );
+  }
+}
+
+/// A recognition language VIMO can listen in.
+class VoiceLocale {
+  final String id, label, short;
+  const VoiceLocale(this.id, this.label, this.short);
+}
+
+const voiceLocales = <VoiceLocale>[
+  VoiceLocale('ta-IN', 'தமிழ் + English', 'தமிழ்'),
+  VoiceLocale('en-IN', 'English (India)', 'EN'),
+  VoiceLocale('hi-IN', 'हिन्दी', 'हि'),
+  VoiceLocale('te-IN', 'తెలుగు', 'తె'),
+  VoiceLocale('kn-IN', 'ಕನ್ನಡ', 'ಕ'),
+  VoiceLocale('ml-IN', 'മലയാളം', 'മ'),
+];
+
+const _voiceDraftKey = 'voiceMilkDraft';
+const _voiceLocaleKey = 'voiceMilkLocale';
+
+String _defaultVoiceLocale() {
+  final saved = settingText(_voiceLocaleKey, '');
+  if (voiceLocales.any((l) => l.id == saved)) return saved;
+  return switch (appLanguage.code) {
+    'ta' => 'ta-IN',
+    'hi' => 'hi-IN',
+    'te' => 'te-IN',
+    'kn' => 'kn-IN',
+    'ml' => 'ml-IN',
+    'en' => tamilUi ? 'ta-IN' : 'en-IN',
+    _ => 'en-IN',
+  };
+}
+
+List<VoiceMilkEntry> _loadVoiceDraft() {
+  final raw = settingValue(_voiceDraftKey, const []);
+  if (raw is! List) return [];
+  return raw.map(VoiceMilkEntry.fromMap).whereType<VoiceMilkEntry>().toList();
+}
+
+Future<void> _storeVoiceDraft(List<VoiceMilkEntry> entries) async {
+  try {
+    if (entries.isEmpty) {
+      if (Hive.isBoxOpen('settings')) {
+        await Hive.box('settings').delete(_voiceDraftKey);
+      }
+    } else {
+      await setSetting(_voiceDraftKey, entries.map((e) => e.toMap()).toList());
+    }
+  } catch (_) {}
+}
+
+/// Writes voice entries into the ranch's milk records, each with the time it
+/// was spoken and the milking session that time belongs to.
+Future<int> saveVoiceMilkEntries(List<VoiceMilkEntry> entries) async {
+  final box = Hive.box('milk_records');
+  int saved = 0;
+  for (final e in entries) {
+    if (e.cow.trim().isEmpty || e.litres <= 0) continue;
+    final at = e.at;
+    await box.add({
+      'cow': e.cow,
+      'date': _dayOf(at),
+      'time': '${two(at.hour)}:${two(at.minute)}',
+      'session': e.session,
+      'quantity': e.litres,
+      'notes': '',
+      'source': 'voice',
+      'voiceText': e.heard,
+      'addedBy': currentUserName(),
+      'createdAt': at.toIso8601String(),
+    });
+    saved++;
+  }
+  await _storeVoiceDraft(const []);
+  return saved;
+}
+
+// --- cow names -----------------------------------------------------------------
+
+/// Other spellings of each cow's name (its saved Tamil and English names),
+/// so "லட்சுமி" and "Lakshmi" both find the cow.
+Map<String, List<String>> cowNameAliases() {
+  final aliases = <String, List<String>>{};
+  if (!Hive.isBoxOpen('animals')) return aliases;
+  for (final animal in animals()) {
+    final name = txt(animal, 'name').trim();
+    if (name.isEmpty) continue;
+    final extra = [
+      txt(animal, 'nameTamil'),
+      txt(animal, 'nameEnglish'),
+    ].map((n) => n.trim()).where((n) => n.isNotEmpty && n != name);
+    if (extra.isNotEmpty) aliases[name] = extra.toList();
+  }
+  return aliases;
+}
+
+/// The cow's name in Tamil letters for speaking: its saved Tamil name, else
+/// a transliteration.
+String tamilCowName(String cow) {
+  if (Hive.isBoxOpen('animals')) {
+    for (final animal in animals()) {
+      if (txt(animal, 'name') != cow) continue;
+      final tamil = txt(animal, 'nameTamil').trim();
+      if (tamil.isNotEmpty) return tamil;
+    }
+  }
+  return nameInLanguage(cow, true);
+}
+
+// --- Tamil phrasing ------------------------------------------------------------
+
+/// "மைனா" → "மைனாவுக்கு", "பொன்னி" → "பொன்னிக்கு", "ராஜன்" → "ராஜனுக்கு".
+String tamilDative(String name) {
+  if (name.isEmpty) return name;
+  if (!RegExp(r'[஀-௿]$').hasMatch(name)) return '$name-க்கு';
+  if (name.endsWith('்')) {
+    return '${name.substring(0, name.length - 1)}ுக்கு';
+  }
+  if (RegExp('[ிீைெே]\$').hasMatch(name)) return '$nameக்கு';
+  return '$nameவுக்கு';
+}
+
+/// "மைனா" → "மைனாவா", "பொன்னி" → "பொன்னியா".
+String tamilQuestion(String name) {
+  if (name.isEmpty) return name;
+  if (!RegExp(r'[஀-௿]$').hasMatch(name)) return '$name-ஆ';
+  if (name.endsWith('்')) return '${name.substring(0, name.length - 1)}ா';
+  if (RegExp('[ிீைெே]\$').hasMatch(name)) return '$nameயா';
+  return '$nameவா';
+}
+
+String _litreWord(double v) {
+  final rounded = (v * 100).round() / 100;
+  return rounded == rounded.roundToDouble()
+      ? rounded.toStringAsFixed(0)
+      : rounded.toString();
+}
+
+/// What VIMO says: Tamil script, the same in Latin letters (for phones with
+/// no Tamil voice), and English.
+class _Say {
+  final String ta, tanglish, en;
+  const _Say(this.ta, this.tanglish, this.en);
+}
+
+enum _VoicePhase { sleeping, awake, askCow, askLitres, confirmAdd, confirmUndo }
+
+class _Pending {
+  String? cow;
+  double? litres;
+  bool cowSure = false;
+  List<String> choices = const [];
+  String? session;
+  bool yesterday = false;
+  final List<String> heard = [];
+}
+
+enum _LineKind { me, vimo, entry, note }
+
+class _Line {
+  final _LineKind kind;
+  final String text;
+  final String? entryId;
+  final DateTime at;
+  _Line(this.kind, this.text, {this.entryId}) : at = DateTime.now();
+}
+
+// --- the screen ----------------------------------------------------------------
+
+class VoiceMilkScreen extends StatefulWidget {
+  const VoiceMilkScreen({super.key});
+
+  @override
+  State<VoiceMilkScreen> createState() => _VoiceMilkScreenState();
+}
+
+class _VoiceMilkScreenState extends State<VoiceMilkScreen>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
+  final SpeechToText _stt = SpeechToText();
+  final FlutterTts _tts = FlutterTts();
+  final ScrollController _scroll = ScrollController();
+  late final AnimationController _breath = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  );
+
+  /// A beat each time new words arrive, so the orb answers the voice the
+  /// way Siri does, even where the browser reports no sound level.
+  late final AnimationController _hear = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 520),
+  );
+
+  String _locale = _defaultVoiceLocale();
+  _VoicePhase _phase = _VoicePhase.sleeping;
+  _Pending? _pending;
+  final List<VoiceMilkEntry> _entries = [];
+  final List<_Line> _lines = [];
+
+  bool _running = false;
+  bool _initialised = false;
+  bool _starting = false;
+  bool _listeningNow = false;
+  bool _speaking = false;
+  bool _report = false;
+  bool _saving = false;
+  bool _tamilVoice = false;
+  bool _finishAfterSpeech = false;
+  String? _micError;
+  String _partial = '';
+  double _level = 0;
+  String _lastFinal = '';
+  DateTime _lastFinalAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _errorStreak = 0;
+
+  Timer? _restart;
+  Timer? _sleep;
+
+  /// Ends a sentence once the words stop changing. Browsers mark nothing as
+  /// final until the microphone stops, so VIMO decides itself, as Siri does.
+  Timer? _settle;
+  List<String> _pendingAlternatives = const [];
+
+  /// The sentence already acted on in this listening session.
+  String _consumed = '';
+  Future<void> _speech = Future.value();
+
+  final Map<String, TextEditingController> _litreFields = {};
+
+  bool get _tamilReplies => _locale.startsWith('ta');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _entries.addAll(_loadVoiceDraft());
+    if (_entries.isNotEmpty) {
+      _lines.add(
+        _Line(
+          _LineKind.note,
+          bi(
+            '${_entries.length} unsaved entries restored',
+            'சேமிக்காத ${_entries.length} பதிவுகள் மீட்கப்பட்டன',
+          ),
+        ),
+      );
+      for (final e in _entries) {
+        _lines.add(_Line(_LineKind.entry, '', entryId: e.id));
+      }
+    }
+    if (!(WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .disableAnimations)) {
+      _breath.repeat(reverse: true);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _running = false;
+    _restart?.cancel();
+    _sleep?.cancel();
+    _settle?.cancel();
+    if (_stt.statusListener == _onStatus) _stt.statusListener = null;
+    if (_stt.errorListener == _onError) _stt.errorListener = null;
+    _quietly(_stt.cancel);
+    _quietly(_tts.stop);
+    _keepAwake(false);
+    _breath.dispose();
+    _hear.dispose();
+    _scroll.dispose();
+    for (final c in _litreFields.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_running && !_report) {
+        _scheduleListen(const Duration(milliseconds: 400));
+      }
+    } else if (state == AppLifecycleState.paused) {
+      _restart?.cancel();
+      _quietly(_stt.cancel);
+    }
+  }
+
+  // --- start, listen, speak ----------------------------------------------------
+
+  Future<void> _start() async {
+    if (!canRecordEntries) {
+      setState(
+        () => _micError = bi(
+          'Your ranch role does not allow adding entries',
+          'உங்கள் பொறுப்பில் பதிவு சேர்க்க அனுமதி இல்லை',
+        ),
+      );
+      return;
+    }
+    await _setupVoice();
+    bool ok = false;
+    try {
+      ok = await _stt.initialize(
+        onStatus: _onStatus,
+        onError: _onError,
+        finalTimeout: const Duration(milliseconds: 900),
+      );
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    // The recogniser is one shared object: a second visit must point its
+    // callbacks at this screen (initialize only binds them the first time).
+    _stt.statusListener = _onStatus;
+    _stt.errorListener = _onError;
+    if (!ok) {
+      setState(
+        () => _micError = bi(
+          'Microphone or speech recognition is not available. Allow the microphone, and on a computer use Google Chrome.',
+          'மைக் அல்லது குரல் அறிதல் கிடைக்கவில்லை. மைக் அனுமதி கொடுங்கள்; கணினியில் Google Chrome பயன்படுத்துங்கள்.',
+        ),
+      );
+      return;
+    }
+    _initialised = true;
+    _running = true;
+    _micError = null;
+    _keepAwake(true);
+    if (cowNames().isEmpty) {
+      _line(
+        _LineKind.note,
+        bi(
+          'Add a cow before recording milk.',
+          'பால் பதிவுக்கு முதலில் மாடு சேர்க்கவும்.',
+        ),
+      );
+    }
+    _say(
+      const _Say(
+        'தயார். ஹே விமோ சொல்லுங்க.',
+        'Ready. Hey Vimo sollunga.',
+        'Ready. Say Hey Vimo.',
+      ),
+    );
+  }
+
+  Future<void> _setupVoice() async {
+    try {
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.setPitch(1.0);
+      await _tts.setVolume(1.0);
+      final available = await _tts.isLanguageAvailable('ta-IN');
+      _tamilVoice = available == true || available == 1;
+    } catch (_) {
+      _tamilVoice = false;
+    }
+  }
+
+  void _keepAwake(bool on) =>
+      _quietly(on ? WakelockPlus.enable : WakelockPlus.disable);
+
+  /// Runs a plugin call whose failure must never reach the person.
+  static void _quietly(Future<dynamic> Function() call) {
+    try {
+      unawaited(call().catchError((_) => null));
+    } catch (_) {}
+  }
+
+  void _scheduleListen([Duration delay = const Duration(milliseconds: 300)]) {
+    _restart?.cancel();
+    if (!_running || _report) return;
+    _restart = Timer(delay, _listen);
+  }
+
+  Future<void> _listen() async {
+    if (!mounted || !_running || _report || _speaking || _starting) return;
+    if (_micError != null || _stt.isListening) return;
+    _starting = true;
+    _consumed = '';
+    try {
+      await _stt.listen(
+        onResult: _onResult,
+        onSoundLevelChange: (level) {
+          if (mounted) setState(() => _level = level);
+        },
+        listenOptions: SpeechListenOptions(
+          localeId: _locale,
+          partialResults: true,
+          cancelOnError: false,
+          listenMode: ListenMode.dictation,
+          // A long first wait so silence does not restart the microphone
+          // every second; shortened as soon as words arrive.
+          pauseFor: const Duration(seconds: 12),
+          listenFor: const Duration(seconds: 55),
+          contextualPhrases: ['Vimo', 'Hey Vimo', ...cowNames()],
+        ),
+      );
+    } catch (_) {
+      _scheduleListen(const Duration(seconds: 1));
+    } finally {
+      _starting = false;
+    }
+  }
+
+  void _onStatus(String status) {
+    if (!mounted) return;
+    final listening = status == SpeechToText.listeningStatus;
+    if (listening != _listeningNow) setState(() => _listeningNow = listening);
+    if (!listening && !_speaking) {
+      _scheduleListen(
+        Duration(milliseconds: 250 + 250 * _errorStreak.clamp(0, 8)),
+      );
+    }
+  }
+
+  void _onError(SpeechRecognitionError error) {
+    if (!mounted) return;
+    final message = error.errorMsg;
+    if (const {
+      'error_permission',
+      'not-allowed',
+      'service-not-allowed',
+      'error_insufficient_permissions',
+    }.contains(message)) {
+      _running = false;
+      setState(
+        () => _micError = bi(
+          'Microphone permission is off. Allow the microphone for VIMO and tap the mic.',
+          'மைக் அனுமதி இல்லை. VIMO-க்கு மைக் அனுமதி கொடுத்து மைக்கை தட்டுங்கள்.',
+        ),
+      );
+      return;
+    }
+    if (const {
+      'error_language_not_supported',
+      'language-not-supported',
+      'error_language_unavailable',
+    }.contains(message)) {
+      setState(
+        () => _micError = bi(
+          'This phone cannot listen in this language. Choose another language above.',
+          'இந்த மொழியில் கேட்க இந்த போனில் வசதி இல்லை. மேலே வேறு மொழியைத் தேர்வு செய்யுங்கள்.',
+        ),
+      );
+      return;
+    }
+    if (const {'error_network', 'network', 'error_server'}.contains(message)) {
+      _errorStreak++;
+      if (_errorStreak == 3) {
+        _line(
+          _LineKind.note,
+          bi(
+            'Voice needs the internet on this phone. Retrying…',
+            'குரல் அறிதலுக்கு இணையம் தேவை. மீண்டும் முயற்சிக்கிறது…',
+          ),
+        );
+      }
+    }
+  }
+
+  void _onResult(SpeechRecognitionResult result) {
+    if (!mounted || _speaking) return;
+    final words = result.recognizedWords.trim();
+    if (words.isEmpty || words == _consumed) return;
+    final alternatives = [
+      words,
+      for (final a in result.alternates) a.recognizedWords,
+    ];
+    if (!result.finalResult) {
+      try {
+        // Keep the microphone open past VIMO's own end-of-sentence pause.
+        _stt.changePauseFor(const Duration(milliseconds: 2600));
+      } catch (_) {}
+      if (words.length > _partial.length) {
+        // The first words of a sentence: a light tap, like Siri noticing.
+        if (_partial.isEmpty) HapticFeedback.selectionClick();
+        _hear.forward(from: 0);
+      }
+      setState(() => _partial = words);
+      _pendingAlternatives = alternatives;
+      _settle?.cancel();
+      _settle = Timer(
+        const Duration(milliseconds: 1250),
+        () => _sentence(_pendingAlternatives),
+      );
+      return;
+    }
+    _sentence(alternatives);
+  }
+
+  /// One finished sentence: act on it once, then listen afresh.
+  void _sentence(List<String> alternatives) {
+    _settle?.cancel();
+    if (!mounted || _speaking || alternatives.isEmpty) return;
+    final words = alternatives.first.trim();
+    if (words.isEmpty || words == _consumed) return;
+    _consumed = words;
+    setState(() => _partial = '');
+    final now = DateTime.now();
+    if (words == _lastFinal &&
+        now.difference(_lastFinalAt) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastFinal = words;
+    _lastFinalAt = now;
+    _errorStreak = 0;
+    // A fresh session for the next sentence: browsers would otherwise keep
+    // adding new words to this one.
+    _quietly(_stt.cancel);
+    _scheduleListen(const Duration(milliseconds: 200));
+    _handle(alternatives);
+  }
+
+  /// Queues [say]: speaking stops the microphone (so VIMO never hears itself)
+  /// and listening resumes when the voice ends.
+  void _say(_Say say, {bool show = true}) {
+    final text = _tamilReplies ? say.ta : say.en;
+    if (show) _line(_LineKind.vimo, text);
+    final spoken = _tamilReplies
+        ? (_tamilVoice ? say.ta : say.tanglish)
+        : say.en;
+    final language = _tamilReplies && _tamilVoice
+        ? 'ta-IN'
+        : (_locale.startsWith('hi') ? 'hi-IN' : 'en-IN');
+    _speech = _speech.then((_) => _speakNow(spoken, language));
+  }
+
+  Future<void> _speakNow(String text, String language) async {
+    if (!mounted || !_running) return;
+    _restart?.cancel();
+    _settle?.cancel();
+    setState(() {
+      _speaking = true;
+      _partial = '';
+    });
+    try {
+      await _stt.cancel();
+    } catch (_) {}
+    try {
+      await _tts.setLanguage(language);
+      await _tts.setSpeechRate(kIsWeb ? 1.0 : 0.5);
+      final limit = Duration(
+        milliseconds: (1200 + text.length * 90).clamp(1600, 9000),
+      );
+      // Some voices never report the end: the length of the text bounds it.
+      final ended = Completer<void>();
+      final timer = Timer(limit, () {
+        if (!ended.isCompleted) ended.complete();
+      });
+      await Future.any([_tts.speak(text), ended.future]);
+      timer.cancel();
+    } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 220));
+    if (!mounted) return;
+    setState(() => _speaking = false);
+    if (_finishAfterSpeech) {
+      _finishAfterSpeech = false;
+      _openReport();
+      return;
+    }
+    _scheduleListen(const Duration(milliseconds: 60));
+  }
+
+  // --- conversation --------------------------------------------------------------
+
+  void _line(_LineKind kind, String text, {String? entryId}) {
+    if (!mounted) return;
+    setState(() => _lines.add(_Line(kind, text, entryId: entryId)));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: Motion.medium,
+          curve: Motion.settle,
+        );
+      }
+    });
+  }
+
+  String _name(String cow) => _tamilReplies ? tamilCowName(cow) : cow;
+
+  void _armSleep([Duration after = const Duration(seconds: 14)]) {
+    _sleep?.cancel();
+    _sleep = Timer(after, _goToSleep);
+  }
+
+  void _goToSleep() {
+    if (!mounted || _report) return;
+    if (_speaking) {
+      _armSleep(const Duration(seconds: 4));
+      return;
+    }
+    final pending = _pending;
+    if (pending != null && (pending.cow != null || pending.litres != null)) {
+      _line(
+        _LineKind.note,
+        bi(
+          'Not confirmed, so nothing was added',
+          'உறுதி செய்யாததால் சேர்க்கவில்லை',
+        ),
+      );
+    }
+    _pending = null;
+    if (_phase != _VoicePhase.sleeping) {
+      UiSound.play(UiSoundKind.toggleOff);
+      setState(() => _phase = _VoicePhase.sleeping);
+    }
+  }
+
+  void _wake({bool silent = false}) {
+    _sleep?.cancel();
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _phase = _VoicePhase.awake;
+      _pending = null;
+    });
+    if (!silent) {
+      UiSound.play(UiSoundKind.toggleOn);
+      _say(const _Say('ம்ம்?', 'Hmm?', 'Hmm?'));
+    }
+    _armSleep();
+  }
+
+  void _handle(List<String> alternatives) {
+    if (_report) return;
+    final pending = _pending;
+    // When VIMO asked "Maina or Meena?", only those cows are possible.
+    final cows =
+        _phase == _VoicePhase.askCow &&
+            pending != null &&
+            pending.choices.length > 1
+        ? pending.choices
+        : cowNames();
+    final command = bestVoiceCommand(
+      alternatives,
+      cows,
+      aliases: cowNameAliases(),
+    );
+    if (command.isEmpty && !command.wake) return;
+
+    if (_phase == _VoicePhase.sleeping) {
+      if (!command.wake) return; // Not for VIMO: ordinary talk nearby.
+      _line(_LineKind.me, command.text);
+      final hasMore = command.hasEntryData || command.finish || command.cancel;
+      _wake(silent: hasMore);
+      if (hasMore) _process(command);
+      return;
+    }
+    _line(_LineKind.me, command.text);
+    _armSleep();
+    _process(command);
+  }
+
+  void _process(VoiceCommand c) {
+    if (c.finish && !c.hasEntryData) {
+      _finish();
+      return;
+    }
+    if (c.sale && !c.cowIsSure) {
+      _sayNotSale();
+      return;
+    }
+    // A correction with nothing pending fixes the entry just saved.
+    if (c.correction &&
+        _pending == null &&
+        (_phase == _VoicePhase.awake || _phase == _VoicePhase.sleeping) &&
+        _correctLast(c)) {
+      return;
+    }
+    switch (_phase) {
+      case _VoicePhase.confirmAdd:
+        if (c.hasEntryData) {
+          _merge(c);
+          _evaluate();
+        } else if (c.yes) {
+          _commit();
+        } else if (c.no || c.cancel) {
+          _pending = null;
+          setState(() => _phase = _VoicePhase.awake);
+          _say(
+            const _Say(
+              'சரி, சேர்க்கல. மறுபடியும் சொல்லுங்க.',
+              'Sari, add pannala. Marubadiyum sollunga.',
+              'Okay, not added. Please say it again.',
+            ),
+          );
+        } else {
+          _askConfirm();
+        }
+      case _VoicePhase.confirmUndo:
+        if (c.yes) {
+          _undo();
+        } else if (c.hasEntryData) {
+          setState(() => _phase = _VoicePhase.awake);
+          _merge(c);
+          _evaluate();
+        } else {
+          setState(() => _phase = _VoicePhase.awake);
+          _say(
+            const _Say(
+              'சரி, அப்படியே இருக்கு.',
+              'Sari, appadiye irukku.',
+              'Okay, kept as it is.',
+            ),
+          );
+        }
+      case _VoicePhase.sleeping:
+      case _VoicePhase.awake:
+      case _VoicePhase.askCow:
+      case _VoicePhase.askLitres:
+        if (!c.hasEntryData) {
+          if (c.cancel || (c.no && _pending == null)) {
+            _askUndo();
+          } else if (c.no && _pending != null) {
+            _pending = null;
+            setState(() => _phase = _VoicePhase.awake);
+            _say(
+              const _Say(
+                'சரி, விட்டுட்டேன்.',
+                'Sari, vittuten.',
+                'Okay, dropped it.',
+              ),
+            );
+          } else if (_phase == _VoicePhase.askCow) {
+            _askCow();
+          } else if (_phase == _VoicePhase.askLitres) {
+            _askLitres();
+          } else {
+            _notUnderstood(c);
+          }
+          return;
+        }
+        _merge(c);
+        _evaluate();
+    }
+    if (c.finish && c.hasEntryData) _finishAfterSpeech = true;
+  }
+
+  void _merge(VoiceCommand c) {
+    final pending = _pending ??= _Pending();
+    final cow = c.cow;
+    if (cow != null) {
+      pending.cow = cow.name;
+      pending.cowSure =
+          c.cowIsSure ||
+          (_phase == _VoicePhase.askCow && pending.choices.contains(cow.name));
+      pending.choices = c.cowIsClear ? const [] : c.closeCows;
+    }
+    if (c.litres != null) pending.litres = c.litres;
+    if (c.session != null) pending.session = c.session;
+    if (c.yesterday) pending.yesterday = true;
+    pending.heard.add(c.text);
+  }
+
+  /// "நேற்று மாலை " when the sentence named the day or milking.
+  _Say _when(_Pending p) {
+    final ta = [
+      if (p.yesterday) 'நேற்று',
+      if (p.session == 'Morning') 'காலை',
+      if (p.session == 'Evening') 'மாலை',
+    ].join(' ');
+    final en = [
+      if (p.yesterday) 'yesterday',
+      if (p.session == 'Morning') 'morning',
+      if (p.session == 'Evening') 'evening',
+    ].join(' ');
+    final tg = [
+      if (p.yesterday) 'nethu',
+      if (p.session == 'Morning') 'kaalai',
+      if (p.session == 'Evening') 'maalai',
+    ].join(' ');
+    return _Say(
+      ta.isEmpty ? '' : '$ta ',
+      tg.isEmpty ? '' : '$tg ',
+      en.isEmpty ? '' : ' $en',
+    );
+  }
+
+  /// Milk to a person is a sale: voice mode records milking only.
+  void _sayNotSale() {
+    _pending = null;
+    setState(() => _phase = _VoicePhase.awake);
+    _say(
+      const _Say(
+        'இது பால் விற்பனை போல இருக்கு. இங்கே கறந்த பால் மட்டும் பதிவாகும். மாடு பெயரும் லிட்டரும் சொல்லுங்க.',
+        'Idhu paal virpanai pola irukku. Inga karandha paal mattum. Maadu perum litre-um sollunga.',
+        'That sounds like a milk sale. Voice mode records milking only. Say the cow and the litres.',
+      ),
+    );
+  }
+
+  /// "5 இல்லை 9 லிட்டர்" after an entry: change that entry's litres.
+  bool _correctLast(VoiceCommand c) {
+    final litres = c.litres;
+    if (litres == null || _entries.isEmpty) return false;
+    final cow = c.cow?.name;
+    final target = cow == null
+        ? _entries.last
+        : _entries.lastWhere((e) => e.cow == cow, orElse: () => _entries.last);
+    if (cow != null && target.cow != cow) return false;
+    setState(() {
+      target.litres = litres;
+      _litreFields[target.id]?.text = _litreWord(litres);
+      _phase = _VoicePhase.awake;
+    });
+    unawaited(_storeVoiceDraft(_entries));
+    HapticFeedback.lightImpact();
+    final n = _litreWord(litres);
+    _say(
+      _Say(
+        'சரி, ${tamilDative(_name(target.cow))} $n லிட்டர் என்று மாற்றினேன்.',
+        'Sari, ${target.cow}-ku $n litre-nu maathiten.',
+        'Changed ${target.cow} to $n litres.',
+      ),
+    );
+    _armSleep();
+    return true;
+  }
+
+  void _evaluate() {
+    final pending = _pending;
+    if (pending == null) return;
+    if (pending.cow == null) {
+      _askCow();
+      return;
+    }
+    if (pending.choices.length > 1 && !pending.cowSure) {
+      setState(() => _phase = _VoicePhase.askCow);
+      final names = pending.choices.map(_name).toList();
+      _say(
+        _Say(
+          '${names.map(tamilQuestion).join(' ')}?',
+          '${pending.choices.join(' illa ')}?',
+          '${pending.choices.join(' or ')}?',
+        ),
+      );
+      return;
+    }
+    if (pending.litres == null) {
+      _askLitres();
+      return;
+    }
+    final already = _sessionTotal(pending.cow!);
+    final big = pending.litres! > 30;
+    if (!pending.cowSure || big || already > 0) {
+      _askConfirm();
+      return;
+    }
+    _commit();
+  }
+
+  double _sessionTotal(String cow) {
+    double total = 0;
+    for (final e in _entries) {
+      if (e.cow == cow) total += e.litres;
+    }
+    return total;
+  }
+
+  void _askCow() {
+    setState(() => _phase = _VoicePhase.askCow);
+    final litres = _pending?.litres;
+    if (litres == null) {
+      _say(const _Say('எந்த மாடு?', 'Endha maadu?', 'Which cow?'));
+    } else {
+      final n = _litreWord(litres);
+      _say(
+        _Say(
+          '$n லிட்டர். எந்த மாட்டுக்கு?',
+          '$n litre. Endha maatukku?',
+          '$n litres. Which cow?',
+        ),
+      );
+    }
+  }
+
+  void _askLitres() {
+    setState(() => _phase = _VoicePhase.askLitres);
+    final cow = _pending?.cow ?? '';
+    _say(
+      _Say(
+        '${tamilDative(_name(cow))} எத்தனை லிட்டர்?',
+        '$cow-ku ethana litre?',
+        'How many litres for $cow?',
+      ),
+    );
+  }
+
+  void _askConfirm() {
+    final pending = _pending;
+    if (pending == null || pending.cow == null || pending.litres == null) {
+      _evaluate();
+      return;
+    }
+    setState(() => _phase = _VoicePhase.confirmAdd);
+    final cow = pending.cow!;
+    final n = _litreWord(pending.litres!);
+    final already = _sessionTotal(cow);
+    final recorded = milkRecordedFor(
+      cow,
+      milkSessionForTime(DateTime.now()),
+      todayDate(),
+    );
+    if (already > 0) {
+      final m = _litreWord(already);
+      _say(
+        _Say(
+          '${tamilDative(_name(cow))} ஏற்கனவே $m லிட்டர் இருக்கு. இன்னும் $n லிட்டர் சேர்க்கவா?',
+          '$cow-ku already $m litre irukku. Innum $n litre add pannava?',
+          '$cow already has $m litres. Add $n more?',
+        ),
+      );
+    } else if (recorded > 0 && pending.cowSure && pending.litres! <= 30) {
+      final m = _litreWord(recorded);
+      _say(
+        _Say(
+          'இந்த நேரத்துக்கு ${tamilDative(_name(cow))} $m லிட்டர் ஏற்கனவே பதிவாகியிருக்கு. $n லிட்டர் சேர்க்கவா?',
+          '$cow-ku indha neram already $m litre irukku. $n litre add pannava?',
+          '$cow already has $m litres this session. Add $n litres?',
+        ),
+      );
+    } else {
+      _say(
+        _Say(
+          '${tamilDative(_name(cow))} $n லிட்டர். சேர்க்கவா?',
+          '$cow-ku $n litre. Add pannava?',
+          '$n litres for $cow. Shall I add it?',
+        ),
+      );
+    }
+  }
+
+  void _commit() {
+    final pending = _pending;
+    if (pending == null || pending.cow == null || pending.litres == null) {
+      return;
+    }
+    final now = DateTime.now();
+    final entry = VoiceMilkEntry(
+      id: now.microsecondsSinceEpoch.toString(),
+      cow: pending.cow!,
+      litres: pending.litres!,
+      at: pending.yesterday ? now.subtract(const Duration(days: 1)) : now,
+      heard: pending.heard.join(' · '),
+      session: pending.session,
+    );
+    final when = _when(pending);
+    _pending = null;
+    setState(() {
+      _entries.add(entry);
+      _phase = _VoicePhase.awake;
+    });
+    unawaited(_storeVoiceDraft(_entries));
+    HapticFeedback.lightImpact();
+    UiSound.play(UiSoundKind.success);
+    _line(_LineKind.entry, '', entryId: entry.id);
+    final n = _litreWord(entry.litres);
+    _say(
+      _Say(
+        '${when.ta}${tamilDative(_name(entry.cow))} $n லிட்டர் சேர்த்தேன்.',
+        '${when.tanglish}${entry.cow}-ku $n litre add panniten.',
+        'Added $n litres for ${entry.cow}${when.en}.',
+      ),
+      show: false,
+    );
+    _armSleep();
+  }
+
+  void _askUndo() {
+    if (_entries.isEmpty) {
+      _say(
+        const _Say(
+          'இன்னும் எதுவும் சேர்க்கல.',
+          'Innum edhuvum add pannala.',
+          'Nothing added yet.',
+        ),
+      );
+      return;
+    }
+    final last = _entries.last;
+    setState(() => _phase = _VoicePhase.confirmUndo);
+    final n = _litreWord(last.litres);
+    _say(
+      _Say(
+        'கடைசியா ${tamilDative(_name(last.cow))} $n லிட்டர். அதை நீக்கவா?',
+        'Kadaisiya ${last.cow}-ku $n litre. Adha neekkava?',
+        'Remove the last entry, $n litres for ${last.cow}?',
+      ),
+    );
+  }
+
+  void _undo() {
+    if (_entries.isEmpty) return;
+    final removed = _entries.removeLast();
+    setState(() {
+      _lines.removeWhere((l) => l.entryId == removed.id);
+      _phase = _VoicePhase.awake;
+    });
+    unawaited(_storeVoiceDraft(_entries));
+    _say(const _Say('நீக்கிட்டேன்.', 'Neekkiten.', 'Removed.'));
+  }
+
+  void _notUnderstood(VoiceCommand c) {
+    if (c.yes) {
+      _say(
+        const _Say(
+          'மாடு பெயரும் லிட்டரும் சொல்லுங்க. உதாரணம்: மைனா 5 லிட்டர்.',
+          'Maadu perum litre-um sollunga.',
+          'Say the cow and the litres, like Maina 5 litres.',
+        ),
+      );
+      return;
+    }
+    _say(
+      const _Say(
+        'புரியல. மாடு பெயரும் லிட்டரும் சொல்லுங்க.',
+        'Puriyala. Maadu perum litre-um sollunga.',
+        'Sorry, I did not get that. Say the cow and the litres.',
+      ),
+    );
+  }
+
+  void _finish() {
+    _sleep?.cancel();
+    _pending = null;
+    final total = _entries.fold<double>(0, (s, e) => s + e.litres);
+    final cows = _entries.map((e) => e.cow).toSet().length;
+    if (_entries.isEmpty) {
+      _say(
+        const _Say(
+          'எதுவும் பதிவாகல.',
+          'Edhuvum padhivaagala.',
+          'Nothing was recorded.',
+        ),
+      );
+      _finishAfterSpeech = true;
+      return;
+    }
+    final t = _litreWord(total);
+    _say(
+      _Say(
+        'முடிஞ்சது. மொத்தம் $cows மாட்டுக்கு $t லிட்டர். சரிபார்த்து சேமிங்க.',
+        'Mudinjadhu. Mottham $cows maatukku $t litre. Check panni save pannunga.',
+        'Done. $t litres from $cows cows. Check and save.',
+      ),
+    );
+    _finishAfterSpeech = true;
+  }
+
+  void _openReport() {
+    _restart?.cancel();
+    _sleep?.cancel();
+    _quietly(_stt.cancel);
+    UiSound.play(UiSoundKind.whoosh);
+    setState(() {
+      _report = true;
+      _phase = _VoicePhase.sleeping;
+      _partial = '';
+    });
+  }
+
+  void _resumeListening() {
+    setState(() => _report = false);
+    if (!_initialised) {
+      _start();
+      return;
+    }
+    _running = true;
+    _say(
+      const _Say(
+        'தொடர்கிறேன். ஹே விமோ சொல்லுங்க.',
+        'Thodargiren. Hey Vimo sollunga.',
+        'Listening again. Say Hey Vimo.',
+      ),
+    );
+  }
+
+  Future<void> _changeLocale() async {
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.s20,
+                0,
+                Space.s20,
+                Space.s8,
+              ),
+              child: AppText(
+                bi('Listen in', 'கேட்கும் மொழி'),
+                style: TextStyle(
+                  fontSize: Gold.t16,
+                  fontWeight: FontWeight.w700,
+                  color: Ink.navy,
+                ),
+              ),
+            ),
+            for (final l in voiceLocales)
+              ListTile(
+                title: Text(l.label),
+                trailing: l.id == _locale
+                    ? Icon(CupertinoIcons.check_mark, color: Ink.tint)
+                    : null,
+                onTap: () => Navigator.of(context).pop(l.id),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.s20,
+                Space.s4,
+                Space.s20,
+                Space.s16,
+              ),
+              child: AppText(
+                bi(
+                  'Tamil understands English words mixed in, like "Maina 5 litre add pannu".',
+                  'தமிழில் English வார்த்தைகளும் புரியும்: "மைனா 5 litre add பண்ணு".',
+                ),
+                style: TextStyle(fontSize: 13, color: Ink.muted),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || chosen == _locale || !mounted) return;
+    await setSetting(_voiceLocaleKey, chosen);
+    try {
+      await _stt.cancel();
+    } catch (_) {}
+    setState(() {
+      _locale = chosen;
+      _micError = null;
+    });
+    if (!_running && _initialised) _running = true;
+    _scheduleListen();
+  }
+
+  void _tapOrb() {
+    if (_micError != null) {
+      setState(() => _micError = null);
+      if (_initialised) {
+        _running = true;
+        _scheduleListen();
+      } else {
+        _start();
+      }
+      return;
+    }
+    if (_speaking) {
+      _quietly(_tts.stop);
+      return;
+    }
+    if (_phase == _VoicePhase.sleeping) {
+      _wake();
+    } else {
+      _goToSleep();
+    }
+  }
+
+  Future<bool> _confirmLeave() async {
+    final leave = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(bi('Leave without saving?', 'சேமிக்காமல் வெளியேறவா?')),
+        content: Text(
+          bi(
+            'Your entries stay as a draft and come back next time.',
+            'பதிவுகள் வரைவாக இருக்கும்; அடுத்த முறை திரும்ப வரும்.',
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(bi('Stay', 'இருக்கட்டும்')),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(bi('Leave', 'வெளியேறு')),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    for (final e in _entries) {
+      final field = _litreFields[e.id];
+      if (field != null) e.litres = toDouble(field.text);
+    }
+    final invalid = _entries.where((e) => e.cow.isEmpty || e.litres <= 0);
+    if (invalid.isNotEmpty) {
+      snack(
+        context,
+        bi(
+          'Every row needs a cow and litres above 0',
+          'ஒவ்வொரு வரிசைக்கும் மாடும் 0-க்கு மேல் லிட்டரும் தேவை',
+        ),
+        tone: SnackTone.error,
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final total = _entries.fold<double>(0, (s, e) => s + e.litres);
+      final count = await saveVoiceMilkEntries(_entries);
+      _entries.clear();
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      Navigator.of(context).pop();
+      if (messenger != null) {
+        snack(
+          context,
+          bi(
+            'Saved $count entries · ${formatLitres(total)}',
+            '$count பதிவுகள் சேமிக்கப்பட்டன · ${formatLitres(total)}',
+          ),
+          tone: SnackTone.success,
+          messenger: messenger,
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _saving = false);
+        snack(
+          context,
+          bi(
+            'Could not save. Please try again.',
+            'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          ),
+          tone: SnackTone.error,
+        );
+      }
+    }
+  }
+
+  // --- build ---------------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = voiceLocales.firstWhere(
+      (l) => l.id == _locale,
+      orElse: () => voiceLocales.first,
+    );
+    return PopScope(
+      canPop: _entries.isEmpty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (!_report) {
+          _finish();
+          return;
+        }
+        final navigator = Navigator.of(context);
+        // The draft stays saved, so leaving loses nothing.
+        if (await _confirmLeave() && mounted) navigator.pop();
+      },
+      child: Scaffold(
+        backgroundColor: Ink.canvasTop,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: AppText(
+            _report
+                ? bi('Voice milk report', 'குரல் பால் அறிக்கை')
+                : bi('Voice milk', 'குரல் பால் பதிவு'),
+          ),
+          leading: const _BackButton(),
+          actions: [
+            if (!_report)
+              Padding(
+                padding: const EdgeInsets.only(right: Space.s12),
+                child: Pressable(
+                  radius: 22,
+                  onTap: _changeLocale,
+                  child: Container(
+                    height: Space.s32 + Space.s4,
+                    padding: const EdgeInsets.symmetric(horizontal: Space.s12),
+                    decoration: ShapeDecoration(
+                      shape: const StadiumBorder(),
+                      color: Ink.surface.withValues(alpha: .74),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          CupertinoIcons.globe,
+                          size: 16,
+                          color: Ink.violetDeep,
+                        ),
+                        const SizedBox(width: Space.s4),
+                        Text(
+                          locale.short,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Ink.violetDeep,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        body: Shell(
+          child: AnimatedSwitcher(
+            duration: Motion.medium,
+            switchInCurve: Motion.settle,
+            child: _report ? _reportView() : _liveView(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- live view -----------------------------------------------------------------
+
+  String get _statusText {
+    if (_micError != null) return _micError!;
+    if (!_initialised) {
+      return bi('Starting the microphone…', 'மைக் தயாராகிறது…');
+    }
+    if (_speaking) return bi('VIMO is speaking…', 'VIMO பேசுகிறது…');
+    return switch (_phase) {
+      _VoicePhase.sleeping => bi('Say "Hey Vimo"', '"ஹே விமோ" சொல்லுங்க'),
+      _VoicePhase.awake => bi(
+        'Listening… say cow and litres',
+        'கேட்கிறேன்… மாடும் லிட்டரும் சொல்லுங்க',
+      ),
+      _VoicePhase.askCow => bi('Which cow?', 'எந்த மாடு?'),
+      _VoicePhase.askLitres => bi('How many litres?', 'எத்தனை லிட்டர்?'),
+      _VoicePhase.confirmAdd || _VoicePhase.confirmUndo => bi(
+        'Say yes or no',
+        '"ஆமா" அல்லது "வேண்டாம்" சொல்லுங்க',
+      ),
+    };
+  }
+
+  Widget _liveView() {
+    final total = _entries.fold<double>(0, (s, e) => s + e.litres);
+    final cows = _entries.map((e) => e.cow).toSet().length;
+    return Column(
+      key: const ValueKey('live'),
+      children: [
+        const SizedBox(height: Space.s56 + Space.s8),
+        _VoiceOrb(
+          animation: _breath,
+          hearing: _hear,
+          phase: _phase,
+          speaking: _speaking,
+          listening: _listeningNow,
+          error: _micError != null,
+          level: _level,
+          onTap: _tapOrb,
+        ),
+        _ListeningBars(
+          breath: _breath,
+          hearing: _hear,
+          active:
+              _micError == null &&
+              (_speaking ||
+                  _phase != _VoicePhase.sleeping ||
+                  _partial.isNotEmpty),
+          speaking: _speaking,
+          level: _level,
+        ),
+        const SizedBox(height: Space.s8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Space.s24),
+          child: AnimatedSwitcher(
+            duration: Motion.short,
+            child: Text(
+              _statusText,
+              key: ValueKey(_statusText),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: _micError != null ? 15 : Gold.t16 + 1,
+                fontWeight: FontWeight.w700,
+                color: _micError != null ? Ink.redText : Ink.navy,
+              ),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: Space.s32 + Space.s8,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Space.s24,
+              Space.s8,
+              Space.s24,
+              0,
+            ),
+            child: Text(
+              _partial,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                fontStyle: FontStyle.italic,
+                color: Ink.muted,
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _lines.isEmpty
+              ? _VoiceHelp(tamil: _tamilReplies)
+              : ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(
+                    Space.s16,
+                    Space.s8,
+                    Space.s16,
+                    Space.s16,
+                  ),
+                  itemCount: _lines.length,
+                  itemBuilder: (context, i) => _lineView(_lines[i]),
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Space.s16,
+            0,
+            Space.s16,
+            Space.s16,
+          ),
+          child: Glass(
+            radius: Gold.r27,
+            padding: const EdgeInsets.fromLTRB(
+              Space.s20,
+              Space.s12,
+              Space.s12,
+              Space.s12,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CountUpText(
+                        value: total,
+                        format: formatLitres,
+                        style: TextStyle(
+                          fontSize: Gold.t27,
+                          height: 1.1,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -.6,
+                          color: Ink.deepPurple,
+                        ),
+                      ),
+                      AppText(
+                        bi(
+                          '$cows cows · ${_entries.length} entries',
+                          '$cows மாடு · ${_entries.length} பதிவு',
+                        ),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Ink.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ConstrainedBox(
+                  // 89 × φ: wide enough for the Tamil label, never less.
+                  constraints: const BoxConstraints(minWidth: 144),
+                  child: LiquidButton(
+                    label: bi('Finish', 'முடிஞ்சது'),
+                    icon: CupertinoIcons.checkmark_alt,
+                    height: Space.target + Space.s4,
+                    onPressed: _finish,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _lineView(_Line line) {
+    switch (line.kind) {
+      case _LineKind.note:
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: Space.s8),
+          child: Text(
+            line.text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Ink.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      case _LineKind.me:
+        return Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: Container(
+            margin: const EdgeInsets.only(top: Space.s8, left: Space.s48),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Space.s16,
+              vertical: Space.s12,
+            ),
+            decoration: ShapeDecoration(
+              shape: const SquircleBorder(radius: Gold.r21),
+              color: Ink.tint,
+            ),
+            child: Text(
+              line.text,
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1.3,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        );
+      case _LineKind.vimo:
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Padding(
+            padding: const EdgeInsets.only(top: Space.s8, right: Space.s48),
+            child: Glass(
+              radius: Gold.r21,
+              elevation: .6,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.s16,
+                vertical: Space.s12,
+              ),
+              child: Text(
+                line.text,
+                style: TextStyle(
+                  fontSize: 16,
+                  height: 1.3,
+                  color: Ink.navy,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        );
+      case _LineKind.entry:
+        final entry = _entries.where((e) => e.id == line.entryId).firstOrNull;
+        if (entry == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: Space.s8, right: Space.s32),
+          child: Glass(
+            radius: Gold.r21,
+            elevation: .6,
+            padding: const EdgeInsets.all(Space.s12),
+            child: Row(
+              children: [
+                Container(
+                  width: Space.s40,
+                  height: Space.s40,
+                  decoration: ShapeDecoration(
+                    shape: const SquircleBorder(radius: Gold.r13),
+                    color: Ink.green.withValues(alpha: .14),
+                  ),
+                  child: Icon(
+                    CupertinoIcons.checkmark_alt,
+                    color: Ink.greenText,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: Space.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        localizedAnimalLabel(entry.cow),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Ink.navy,
+                        ),
+                      ),
+                      Text(
+                        '${bi('Added', 'சேர்க்கப்பட்டது')} · ${_clock(entry.at)}',
+                        style: TextStyle(fontSize: 13, color: Ink.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  formatLitres(entry.litres),
+                  style: TextStyle(
+                    fontSize: Gold.t21,
+                    fontWeight: FontWeight.w700,
+                    color: Ink.deepPurple,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    }
+  }
+
+  // --- report --------------------------------------------------------------------
+
+  TextEditingController _litreField(VoiceMilkEntry e) =>
+      _litreFields.putIfAbsent(
+        e.id,
+        () => TextEditingController(text: _litreWord(e.litres)),
+      );
+
+  Widget _reportView() {
+    for (final e in _entries) {
+      final field = _litreFields[e.id];
+      if (field != null) e.litres = toDouble(field.text);
+    }
+    final total = _entries.fold<double>(0, (s, e) => s + e.litres);
+    final cowCount = _entries.map((e) => e.cow).toSet().length;
+    final first = _entries.isEmpty ? null : _entries.first.at;
+    final last = _entries.isEmpty ? null : _entries.last.at;
+    final counts = <String, int>{};
+    for (final e in _entries) {
+      counts[e.cow] = (counts[e.cow] ?? 0) + 1;
+    }
+    return Column(
+      key: const ValueKey('report'),
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              Space.s16,
+              Space.s56 + Space.s8,
+              Space.s16,
+              Space.s16,
+            ),
+            children: [
+              Reveal(
+                index: 0,
+                child: Glass(
+                  radius: Gold.r27,
+                  padding: const EdgeInsets.all(Space.s20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            CupertinoIcons.waveform,
+                            size: 16,
+                            color: Ink.orange,
+                          ),
+                          const SizedBox(width: Space.s4),
+                          Flexible(
+                            child: AppText(
+                              bi('Recorded by voice', 'குரல் மூலம் பதிவானது'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Ink.muted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: Space.s4),
+                      CountUpText(
+                        value: total,
+                        format: formatLitres,
+                        style: TextStyle(
+                          fontSize: 40,
+                          height: 1.05,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -1.2,
+                          color: Ink.deepPurple,
+                        ),
+                      ),
+                      const SizedBox(height: Space.s8),
+                      Wrap(
+                        spacing: Space.s12,
+                        runSpacing: Space.s4,
+                        children: [
+                          _ReportFact(
+                            icon: CupertinoIcons.circle_grid_3x3_fill,
+                            text: bi('$cowCount cows', '$cowCount மாடு'),
+                          ),
+                          _ReportFact(
+                            icon: CupertinoIcons.list_bullet,
+                            text: bi(
+                              '${_entries.length} entries',
+                              '${_entries.length} பதிவு',
+                            ),
+                          ),
+                          if (first != null && last != null)
+                            _ReportFact(
+                              icon: CupertinoIcons.clock,
+                              text: _clock(first) == _clock(last)
+                                  ? _clock(first)
+                                  : '${_clock(first)} – ${_clock(last)}',
+                            ),
+                          for (final session
+                              in _entries.map((e) => e.session).toSet())
+                            _ReportFact(
+                              icon: session == 'Morning'
+                                  ? CupertinoIcons.sun_max
+                                  : CupertinoIcons.moon,
+                              text: ui(session),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: Space.s16),
+              if (_entries.isEmpty)
+                const EmptyNote(
+                  icon: CupertinoIcons.mic,
+                  title: 'Nothing recorded',
+                  message:
+                      'Say "Hey Vimo" and a cow with litres, or add a row.',
+                ),
+              for (int i = 0; i < _entries.length; i++)
+                Reveal(
+                  index: 1 + i,
+                  child: _reportRow(
+                    i,
+                    _entries[i],
+                    (counts[_entries[i].cow] ?? 0) > 1,
+                  ),
+                ),
+              const SizedBox(height: Space.s8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: cowNames().isEmpty ? null : _addRow,
+                  icon: Icon(CupertinoIcons.plus_circle_fill, color: Ink.tint),
+                  label: AppText(
+                    bi('Add a row', 'வரிசை சேர்'),
+                    style: TextStyle(
+                      color: Ink.tint,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Space.s16,
+            0,
+            Space.s16,
+            Space.s16,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 382,
+                child: _SecondaryPill(
+                  label: bi('Resume', 'தொடர்'),
+                  icon: CupertinoIcons.mic_fill,
+                  onTap: _saving ? null : _resumeListening,
+                ),
+              ),
+              const SizedBox(width: Space.s12),
+              // Golden split: the main action takes the larger part.
+              Expanded(
+                flex: 618,
+                child: LiquidButton(
+                  label: bi('Save all', 'சேமி'),
+                  icon: CupertinoIcons.checkmark_alt,
+                  busy: _saving,
+                  height: Space.target + Space.s8,
+                  onPressed: _entries.isEmpty ? null : _save,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reportRow(int index, VoiceMilkEntry e, bool repeated) {
+    final cows = cowNames();
+    final field = _litreField(e);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Space.s8),
+      child: Glass(
+        radius: Gold.r21,
+        elevation: .7,
+        padding: const EdgeInsets.fromLTRB(
+          Space.s12,
+          Space.s12,
+          Space.s4,
+          Space.s12,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: Space.s32,
+                  height: Space.s32,
+                  alignment: Alignment.center,
+                  decoration: ShapeDecoration(
+                    shape: const SquircleBorder(radius: Gold.r13),
+                    color: Ink.violet.withValues(alpha: .12),
+                  ),
+                  child: Text(
+                    '${index + 1}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Ink.violetDeep,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Space.s8),
+                Expanded(
+                  child: PopupMenuButton<String>(
+                    tooltip: bi('Change cow', 'மாட்டை மாற்று'),
+                    initialValue: e.cow,
+                    onSelected: (cow) => setState(() {
+                      e.cow = cow;
+                      unawaited(_storeVoiceDraft(_entries));
+                    }),
+                    itemBuilder: (context) => [
+                      for (final c in cows)
+                        PopupMenuItem(
+                          value: c,
+                          child: Text(localizedAnimalLabel(c)),
+                        ),
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: Space.s8),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              localizedAnimalLabel(e.cow),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Ink.navy,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: Space.s4),
+                          Icon(
+                            CupertinoIcons.chevron_down,
+                            size: 14,
+                            color: Ink.muted,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 89,
+                  child: TextField(
+                    controller: field,
+                    textAlign: TextAlign.end,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (_) {
+                      e.litres = toDouble(field.text);
+                      unawaited(_storeVoiceDraft(_entries));
+                      setState(() {});
+                    },
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Ink.deepPurple,
+                    ),
+                    decoration: fieldStyle('').copyWith(
+                      suffixText: 'L',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: Space.s12,
+                        vertical: Space.s12,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: bi('Remove', 'நீக்கு'),
+                  onPressed: () => setState(() {
+                    _entries.remove(e);
+                    _litreFields.remove(e.id)?.dispose();
+                    _lines.removeWhere((l) => l.entryId == e.id);
+                    unawaited(_storeVoiceDraft(_entries));
+                  }),
+                  icon: Icon(
+                    CupertinoIcons.trash,
+                    size: 20,
+                    color: Ink.redText,
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: Space.s40, right: Space.s8),
+              child: Wrap(
+                spacing: Space.s8,
+                runSpacing: Space.s4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _chip(
+                    icon: CupertinoIcons.clock,
+                    label: [
+                      if (_dayOf(e.at) != todayDate())
+                        bi('Yesterday', 'நேற்று'),
+                      _clock(e.at),
+                    ].join(' · '),
+                    onTap: () => _editTime(e),
+                  ),
+                  // Tap to switch the milking: morning ⇄ evening.
+                  _chip(
+                    icon: e.session == 'Morning'
+                        ? CupertinoIcons.sun_max
+                        : CupertinoIcons.moon,
+                    label: ui(e.session),
+                    onTap: () {
+                      selectionFeedback();
+                      setState(() {
+                        e.sessionOverride = e.session == 'Morning'
+                            ? 'Evening'
+                            : 'Morning';
+                      });
+                      unawaited(_storeVoiceDraft(_entries));
+                    },
+                  ),
+                  if (repeated)
+                    Text(
+                      bi('Same cow twice', 'ஒரே மாடு இரு முறை'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Ink.amberText,
+                      ),
+                    ),
+                  if (e.heard.isNotEmpty)
+                    Text(
+                      '“${e.heard}”',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                        color: Ink.muted,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) => ActionChip(
+    avatar: Icon(icon, size: 15, color: Ink.violetDeep),
+    label: Text(label),
+    labelStyle: TextStyle(
+      color: Ink.violetDeep,
+      fontWeight: FontWeight.w600,
+      fontSize: 13,
+    ),
+    backgroundColor: Ink.lavender,
+    side: BorderSide.none,
+    shape: const StadiumBorder(),
+    visualDensity: VisualDensity.compact,
+    onPressed: onTap,
+  );
+
+  Future<void> _editTime(VoiceMilkEntry e) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(e.at),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      e.at = DateTime(
+        e.at.year,
+        e.at.month,
+        e.at.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+    unawaited(_storeVoiceDraft(_entries));
+  }
+
+  void _addRow() {
+    final cows = cowNames();
+    if (cows.isEmpty) return;
+    final used = _entries.map((e) => e.cow).toSet();
+    final now = DateTime.now();
+    setState(() {
+      _entries.add(
+        VoiceMilkEntry(
+          id: now.microsecondsSinceEpoch.toString(),
+          cow: cows.firstWhere(
+            (c) => !used.contains(c),
+            orElse: () => cows.first,
+          ),
+          litres: 0,
+          at: now,
+          heard: '',
+        ),
+      );
+    });
+  }
+}
+
+String _dayOf(DateTime at) => '${at.year}-${two(at.month)}-${two(at.day)}';
+
+String _clock(DateTime at) {
+  final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+  return '$hour:${two(at.minute)} ${at.hour < 12 ? 'AM' : 'PM'}';
+}
+
+class _ReportFact extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _ReportFact({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 14, color: Ink.violet),
+      const SizedBox(width: Space.s4),
+      Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Ink.body,
+        ),
+      ),
+    ],
+  );
+}
+
+class _SecondaryPill extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _SecondaryPill({required this.label, required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    child: Pressable(
+      radius: 26,
+      onTap: onTap,
+      child: Container(
+        height: Space.target + Space.s8,
+        padding: const EdgeInsets.symmetric(horizontal: Space.s12),
+        decoration: ShapeDecoration(
+          shape: const StadiumBorder(),
+          color: Ink.surface.withValues(alpha: .8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 17, color: Ink.tint),
+            const SizedBox(width: Space.s4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Ink.tint,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// How to talk to VIMO, shown before the first sentence.
+class _VoiceHelp extends StatelessWidget {
+  final bool tamil;
+  const _VoiceHelp({required this.tamil});
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = tamil
+        ? const [
+            ('1', '"ஹே விமோ"', 'VIMO "ம்ம்?" என்று கேட்கும்'),
+            ('2', '"மைனா 5 லிட்டர்"', 'அல்லது "Maina add 5 litre"'),
+            ('3', '"முடிஞ்சது"', 'அறிக்கை வரும்; திருத்தி சேமிக்கலாம்'),
+          ]
+        : const [
+            ('1', '"Hey Vimo"', 'VIMO answers "Hmm?"'),
+            ('2', '"Maina 5 litre"', 'or "add 5 litre for Maina"'),
+            ('3', '"Finish"', 'see the report, edit, then save'),
+          ];
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        Space.s20,
+        Space.s8,
+        Space.s20,
+        Space.s16,
+      ),
+      children: [
+        Glass(
+          radius: Gold.r27,
+          padding: const EdgeInsets.all(Space.s16),
+          child: Column(
+            children: [
+              for (final s in steps)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: Space.s8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: Space.s32,
+                        height: Space.s32,
+                        alignment: Alignment.center,
+                        decoration: ShapeDecoration(
+                          shape: const CircleBorder(),
+                          color: Ink.tint,
+                        ),
+                        child: Text(
+                          s.$1,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: Space.s12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              s.$2,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Ink.navy,
+                              ),
+                            ),
+                            Text(
+                              s.$3,
+                              style: TextStyle(fontSize: 13, color: Ink.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: Space.s12),
+        Text(
+          tamil
+              ? 'போனை சட்டைப் பையில் வைக்கலாம்; திரை அணையாது. "வேண்டாம்" அல்லது "cancel" சொன்னால் கடைசி பதிவை நீக்கலாம்.'
+              : 'Keep the phone in your pocket; the screen stays on. Say "cancel" to remove the last entry.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: Ink.muted, height: 1.4),
+        ),
+      ],
+    );
+  }
+}
+
+/// The listening orb: breathes while waiting for "Hey Vimo", glows orange
+/// when awake, swells with the voice level, and turns green while speaking.
+class _VoiceOrb extends StatelessWidget {
+  final Animation<double> animation;
+  final Animation<double> hearing;
+  final _VoicePhase phase;
+  final bool speaking;
+  final bool listening;
+  final bool error;
+  final double level;
+  final VoidCallback onTap;
+
+  const _VoiceOrb({
+    required this.animation,
+    required this.hearing,
+    required this.phase,
+    required this.speaking,
+    required this.listening,
+    required this.error,
+    required this.level,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final awake = phase != _VoicePhase.sleeping;
+    final colors = error
+        ? [Ink.red, const Color(0xFF8E1B2B)]
+        : speaking
+        ? [const Color(0xFF34C759), const Color(0xFF1E7B3A)]
+        : awake
+        ? [Ink.orange, Ink.tint]
+        : [Ink.violet, Ink.deepPurple];
+    // Android reports roughly -2..10 dB; the web reports nothing.
+    final voice = ((level + 2) / 12).clamp(0.0, 1.0);
+    const size = 144.0; // 89 × φ
+    return Semantics(
+      button: true,
+      label: awake
+          ? bi('Listening. Tap to stop', 'கேட்கிறது. நிறுத்த தட்டவும்')
+          : bi('Tap to talk to VIMO', 'VIMO-விடம் பேச தட்டவும்'),
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedBuilder(
+          animation: Listenable.merge([animation, hearing]),
+          builder: (context, _) {
+            final t = Curves.easeInOut.transform(animation.value);
+            // Rises and settles with each burst of words.
+            final beat = hearing.isAnimating
+                ? math.sin(math.pi * hearing.value)
+                : 0.0;
+            final heard = math.max(voice, beat);
+            final swell = awake || speaking
+                ? .06 * t + .12 * heard
+                : .03 * t + .08 * beat;
+            final glow = (awake ? 34.0 : 21.0) + 21 * t + 34 * heard;
+            return SizedBox.square(
+              dimension: size + 55,
+              child: Center(
+                child: Transform.scale(
+                  scale: 1 + swell,
+                  child: Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        center: const Alignment(-.35, -.45),
+                        radius: 1.05,
+                        colors: [
+                          Color.lerp(colors[0], Colors.white, .28)!,
+                          colors[0],
+                          colors[1],
+                        ],
+                        stops: const [0, .45, 1],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colors[0].withValues(
+                            alpha: listening || speaking ? .45 : .25,
+                          ),
+                          blurRadius: glow,
+                          spreadRadius: 2 + 8 * heard,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      error
+                          ? CupertinoIcons.mic_slash_fill
+                          : speaking
+                          ? CupertinoIcons.waveform
+                          : CupertinoIcons.mic_fill,
+                      size: 55,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Five bars under the orb that dance while VIMO hears or speaks, and rest
+/// as dots while it waits for "Hey Vimo".
+class _ListeningBars extends StatelessWidget {
+  final Animation<double> breath;
+  final Animation<double> hearing;
+  final bool active;
+  final bool speaking;
+  final double level;
+
+  const _ListeningBars({
+    required this.breath,
+    required this.hearing,
+    required this.active,
+    required this.speaking,
+    required this.level,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = speaking ? const Color(0xFF34C759) : Ink.orange;
+    return ExcludeSemantics(
+      child: SizedBox(
+        height: Space.s24,
+        child: AnimatedBuilder(
+          animation: Listenable.merge([breath, hearing]),
+          builder: (context, _) {
+            final voice = ((level + 2) / 12).clamp(0.0, 1.0);
+            final beat = hearing.isAnimating
+                ? math.sin(math.pi * hearing.value)
+                : 0.0;
+            final energy = speaking ? .55 : math.max(voice, beat);
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (int i = 0; i < 5; i++) ...[
+                  if (i > 0) const SizedBox(width: Space.s4),
+                  AnimatedContainer(
+                    duration: Motion.quick,
+                    width: Space.s4,
+                    height: active
+                        ? Space.s4 +
+                              Space.s20 *
+                                  (.25 +
+                                          .75 *
+                                              energy *
+                                              (.5 +
+                                                  .5 *
+                                                      math.sin(
+                                                        breath.value *
+                                                                math.pi *
+                                                                6 +
+                                                            i * Gold.goldenAngle,
+                                                      )))
+                                      .clamp(0.0, 1.0)
+                        : Space.s4,
+                    decoration: ShapeDecoration(
+                      shape: const StadiumBorder(),
+                      color: active ? color : Ink.faint.withValues(alpha: .5),
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

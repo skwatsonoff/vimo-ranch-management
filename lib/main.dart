@@ -49,6 +49,12 @@ import 'firebase_options.dart';
 import 'web_runtime.dart';
 import 'sync_support.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'voice_parser.dart';
 
 part 'interface.dart';
 part 'business.dart';
@@ -87,6 +93,7 @@ part 'vimo_team.dart';
 part 'shop_reviews.dart';
 part 'shop_social.dart';
 part 'vendor_walkin_fridge.dart';
+part 'voice_milk.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -11336,6 +11343,7 @@ class DashboardScreen extends StatelessWidget {
         TodayMilkCard(
           onOpen: () => onOpenCard('milk'),
           onAdd: () => push(context, const AddEntryScreen()),
+          onVoice: () => push(context, const VoiceMilkScreen()),
         ),
         const SizedBox(height: Space.s12),
         LayoutBuilder(
@@ -14998,6 +15006,54 @@ class _AddAnimalScreenState extends State<AddAnimalScreen> {
 //  Milk / feed entry
 // -----------------------------------------------------------------------------
 
+/// "Record by voice" at the top of the milk form.
+class _VoiceModeBanner extends StatelessWidget {
+  final VoidCallback onTap;
+  const _VoiceModeBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Glass(
+    radius: Gold.r21,
+    elevation: .7,
+    padding: const EdgeInsets.fromLTRB(
+      Space.s12,
+      Space.s12,
+      Space.s16,
+      Space.s12,
+    ),
+    onTap: onTap,
+    child: Row(
+      children: [
+        VoiceMilkButton(onPressed: onTap),
+        const SizedBox(width: Space.s12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppText(
+                bi('Voice milk mode', 'குரல் பால் பதிவு'),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Ink.navy,
+                ),
+              ),
+              AppText(
+                bi(
+                  'Say "Hey Vimo, Maina 5 litre"',
+                  '"ஹே விமோ, மைனா 5 லிட்டர்" என்று சொல்லுங்கள்',
+                ),
+                style: TextStyle(fontSize: 13, color: Ink.muted),
+              ),
+            ],
+          ),
+        ),
+        Icon(CupertinoIcons.chevron_right, size: 16, color: Ink.faint),
+      ],
+    ),
+  );
+}
+
 class AddEntryScreen extends StatefulWidget {
   final String? initialCow;
   const AddEntryScreen({super.key, this.initialCow});
@@ -15220,6 +15276,14 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
 
     return Column(
       children: [
+        if (cows.isNotEmpty) ...[
+          _VoiceModeBanner(
+            onTap: () => Navigator.of(context).pushReplacement(
+              LiquidRoute<void>(builder: (_) => const VoiceMilkScreen()),
+            ),
+          ),
+          const SizedBox(height: Space.s12),
+        ],
         if (cows.isEmpty)
           const EmptyNote(
             icon: CupertinoIcons.info_circle,
