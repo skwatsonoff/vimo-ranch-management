@@ -55,6 +55,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'voice_parser.dart';
+import 'mic_permission.dart';
 
 part 'interface.dart';
 part 'business.dart';
@@ -529,6 +530,29 @@ Future<void> normalizeFamilyUsers() async {
   for (final user in cleaned) {
     await AutoSyncService.putRemote(users, txt(user, 'userId'), user);
   }
+}
+
+/// Before recording a voice note: checks the microphone with the shared
+/// helper (asking with the pop-up when it still can), then the recorder.
+/// When only Settings can allow it, the message offers to open Settings.
+Future<bool> ensureRecordingMic(
+  BuildContext context,
+  AudioRecorder recorder,
+) async {
+  final access = await ensureMicPermission();
+  if (access.isGranted && await recorder.hasPermission()) return true;
+  if (!context.mounted) return false;
+  if (access.needsSettings && !kIsWeb) {
+    snack(
+      context,
+      ui('Microphone permission is needed'),
+      actionLabel: bi('Open Settings', 'Settings திற'),
+      onAction: () => unawaited(openMicSettings()),
+    );
+  } else {
+    snack(context, ui('Microphone permission is needed'));
+  }
+  return false;
 }
 
 // -----------------------------------------------------------------------------

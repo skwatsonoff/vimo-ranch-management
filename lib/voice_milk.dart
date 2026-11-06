@@ -268,6 +268,10 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   bool _tamilVoice = false;
   bool _finishAfterSpeech = false;
   String? _micError;
+
+  /// Why the microphone cannot be used, when it is a permission matter: the
+  /// error card then offers "Allow microphone" or "Open Settings".
+  _MicProblem? _micProblem;
   String _partial = '';
   double _level = 0;
   String _lastFinal = '';
@@ -343,12 +347,110 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (_running && !_report) {
-        _scheduleListen(const Duration(milliseconds: 400));
-      }
+      // The phone may have taken the permission back while VIMO was away
+      // ("Only this time"), or the owner may have just allowed it in
+      // Settings: check again before listening.
+      if (_report) return;
+      if (_running || _micProblem != null) unawaited(_resumeMic());
     } else if (state == AppLifecycleState.paused) {
       _restart?.cancel();
       _quietly(_stt.cancel);
+    }
+  }
+
+  // --- microphone permission ----------------------------------------------------
+
+  /// Checks (and, with [ask], requests) the microphone. Shows the matching
+  /// error card and returns false when listening cannot start.
+  Future<bool> _checkMic({bool ask = true}) async {
+    final access = await ensureMicPermission(speech: true, ask: ask);
+    if (!mounted) return false;
+    if (access.isGranted) {
+      if (_micProblem != null) {
+        setState(() {
+          _micProblem = null;
+          _micError = null;
+        });
+      }
+      return true;
+    }
+    _showMicProblem(switch (access) {
+      MicAccess.permanentlyDenied
+          when MicPermission.backend.platform == 'web' =>
+        _MicProblem.browserBlocked,
+      MicAccess.permanentlyDenied ||
+      MicAccess.restricted => _MicProblem.blocked,
+      MicAccess.unsupported => _MicProblem.unsupported,
+      _ => _MicProblem.denied,
+    });
+    return false;
+  }
+
+  void _showMicProblem(_MicProblem problem) {
+    _running = false;
+    _restart?.cancel();
+    _quietly(_stt.cancel);
+    setState(() {
+      _micProblem = problem;
+      _micError = switch (problem) {
+        _MicProblem.denied => bi(
+          'VIMO needs the microphone to hear you. Tap Allow microphone.',
+          'உங்களைக் கேட்க VIMO-க்கு மைக் அனுமதி தேவை. "அனுமதி கொடு" தட்டுங்கள்.',
+        ),
+        _MicProblem.blocked => bi(
+          'The microphone is turned off for VIMO. Open Settings, tap Permissions, then Microphone, and choose Allow.',
+          'VIMO-க்கு மைக் அணைக்கப்பட்டுள்ளது. Settings திறந்து Permissions → Microphone → Allow தேர்வு செய்யுங்கள்.',
+        ),
+        _MicProblem.browserBlocked => bi(
+          'This browser blocked the microphone for VIMO. Tap the lock icon next to the address, open Site settings, set Microphone to Allow, then reload the page.',
+          'இந்த browser VIMO-க்கு மைக்கைத் தடுத்துள்ளது. முகவரிக்கு அருகில் உள்ள பூட்டு ஐகானைத் தட்டி, Site settings → Microphone → Allow செய்து, பக்கத்தை reload செய்யுங்கள்.',
+        ),
+        _MicProblem.speechService => bi(
+          'VIMO has the microphone, but the phone\'s speech service does not. Open Settings, Apps, Google (or Speech Recognition & Synthesis), Permissions, and allow the microphone.',
+          'VIMO-க்கு மைக் அனுமதி உள்ளது; ஆனால் போனின் குரல் அறிதல் சேவைக்கு இல்லை. Settings → Apps → Google (அல்லது Speech Recognition & Synthesis) → Permissions → Microphone அனுமதி கொடுங்கள்.',
+        ),
+        _MicProblem.unsupported => bi(
+          'This device cannot use the microphone here. On a computer use Google Chrome; on a phone use the VIMO app or Chrome.',
+          'இந்தக் கருவியில் மைக் பயன்படுத்த முடியாது. கணினியில் Google Chrome; போனில் VIMO app அல்லது Chrome பயன்படுத்துங்கள்.',
+        ),
+      };
+    });
+  }
+
+  /// "Allow microphone": ask again (shows the pop-up when the phone still
+  /// allows it), then carry on listening.
+  Future<void> _retryMic() async {
+    if (!await _checkMic()) return;
+    if (!mounted) return;
+    if (!_initialised) {
+      await _start();
+      return;
+    }
+    setState(() => _micError = null);
+    _running = true;
+    _scheduleListen();
+  }
+
+  Future<void> _resumeMic() async {
+    if (!await _checkMic()) return;
+    if (!mounted || _report) return;
+    if (!_initialised) {
+      await _start();
+      return;
+    }
+    _running = true;
+    _scheduleListen(const Duration(milliseconds: 400));
+  }
+
+  /// The recogniser reported a permission error: find out whose permission
+  /// is missing, VIMO's or the phone's speech service's.
+  Future<void> _onPermissionError(String code) async {
+    final access = await ensureMicPermission(speech: true, ask: false);
+    if (!mounted) return;
+    if (access.isGranted) {
+      _showMicProblem(_MicProblem.speechService);
+    } else {
+      await _checkMic(ask: false);
     }
   }
 
@@ -364,6 +466,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       );
       return;
     }
+    // Never trust the recogniser's remembered start: check the permission
+    // itself, asking with the system pop-up when it is still possible.
+    if (!await _checkMic()) return;
     await _setupVoice();
     bool ok = false;
     try {
@@ -392,6 +497,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     _initialised = true;
     _running = true;
     _micError = null;
+    _micProblem = null;
     _keepAwake(true);
     if (cowNames().isEmpty) {
       _line(
@@ -490,12 +596,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       'error_insufficient_permissions',
     }.contains(message)) {
       _running = false;
-      setState(
-        () => _micError = bi(
-          'Microphone permission is off. Allow the microphone for VIMO and tap the mic.',
-          'மைக் அனுமதி இல்லை. VIMO-க்கு மைக் அனுமதி கொடுத்து மைக்கை தட்டுங்கள்.',
-        ),
-      );
+      unawaited(_onPermissionError(message));
       return;
     }
     if (const {
@@ -1207,6 +1308,15 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   void _tapOrb() {
+    if (_micProblem != null) {
+      // A permission problem: ask again rather than only restarting.
+      if (_micProblem == _MicProblem.speechService) {
+        unawaited(openMicSettings());
+      } else {
+        unawaited(_retryMic());
+      }
+      return;
+    }
     if (_micError != null) {
       setState(() => _micError = null);
       if (_initialised) {
@@ -1438,22 +1548,30 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           level: _level,
         ),
         const SizedBox(height: Space.s8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Space.s24),
-          child: AnimatedSwitcher(
-            duration: Motion.short,
-            child: Text(
-              _statusText,
-              key: ValueKey(_statusText),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: _micError != null ? 15 : Gold.t16 + 1,
-                fontWeight: FontWeight.w700,
-                color: _micError != null ? Ink.redText : Ink.navy,
+        if (_micProblem != null)
+          _MicProblemCard(
+            message: _micError ?? '',
+            problem: _micProblem!,
+            onAllow: () => unawaited(_retryMic()),
+            onSettings: () => unawaited(openMicSettings()),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Space.s24),
+            child: AnimatedSwitcher(
+              duration: Motion.short,
+              child: Text(
+                _statusText,
+                key: ValueKey(_statusText),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: _micError != null ? 15 : Gold.t16 + 1,
+                  fontWeight: FontWeight.w700,
+                  color: _micError != null ? Ink.redText : Ink.navy,
+                ),
               ),
             ),
           ),
-        ),
         SizedBox(
           height: Space.s32 + Space.s8,
           child: Padding(
@@ -2441,6 +2559,117 @@ class _ListeningBars extends StatelessWidget {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Why the microphone cannot be used.
+enum _MicProblem {
+  /// Not allowed yet; asking again shows the pop-up.
+  denied,
+
+  /// Refused for good on the phone: only Settings can allow it.
+  blocked,
+
+  /// Blocked by the browser for this site.
+  browserBlocked,
+
+  /// VIMO may use the microphone, the phone's speech service may not.
+  speechService,
+
+  /// No microphone access here at all.
+  unsupported,
+}
+
+/// The red card under the orb with the fix for a permission problem.
+class _MicProblemCard extends StatelessWidget {
+  final String message;
+  final _MicProblem problem;
+  final VoidCallback onAllow;
+  final VoidCallback onSettings;
+
+  const _MicProblemCard({
+    required this.message,
+    required this.problem,
+    required this.onAllow,
+    required this.onSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final canAsk =
+        problem == _MicProblem.denied || problem == _MicProblem.browserBlocked;
+    final canOpenSettings =
+        problem == _MicProblem.blocked || problem == _MicProblem.speechService;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Space.s16),
+      child: Glass(
+        radius: Gold.r21,
+        tint: Ink.red.withValues(alpha: .06),
+        padding: const EdgeInsets.all(Space.s16),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  CupertinoIcons.mic_slash_fill,
+                  size: 20,
+                  color: Ink.redText,
+                ),
+                const SizedBox(width: Space.s8),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      color: Ink.navy,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.s12),
+            Row(
+              children: [
+                if (canAsk)
+                  Expanded(
+                    child: LiquidButton(
+                      label: problem == _MicProblem.browserBlocked
+                          ? bi('Try again', 'மீண்டும் முயற்சி')
+                          : bi('Allow microphone', 'அனுமதி கொடு'),
+                      icon: CupertinoIcons.mic_fill,
+                      height: Space.target,
+                      onPressed: onAllow,
+                    ),
+                  ),
+                if (canAsk && canOpenSettings) const SizedBox(width: Space.s8),
+                if (canOpenSettings)
+                  Expanded(
+                    child: LiquidButton(
+                      label: bi('Open Settings', 'Settings திற'),
+                      icon: CupertinoIcons.settings,
+                      height: Space.target,
+                      onPressed: onSettings,
+                    ),
+                  ),
+                if (canOpenSettings) ...[
+                  const SizedBox(width: Space.s8),
+                  Expanded(
+                    child: _SecondaryPill(
+                      label: bi('Try again', 'மீண்டும் முயற்சி'),
+                      icon: CupertinoIcons.arrow_clockwise,
+                      onTap: onAllow,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -59,6 +59,8 @@ dependencies:
   speech_to_text: ^7.5.0
   flutter_tts: ^4.2.5
   wakelock_plus: ^1.5.2
+  permission_handler: ^13.0.2
+  crypto: ^3.0.8
 
 dev_dependencies:
   flutter_test:

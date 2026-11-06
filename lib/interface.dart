@@ -770,10 +770,7 @@ class _ConversationViewState extends State<_ConversationView> {
   Future<void> _startRecording() async {
     if (_recording || _sendingVoice || _sending) return;
     try {
-      if (!await _recorder.hasPermission()) {
-        if (mounted) snack(context, ui('Microphone permission is needed'));
-        return;
-      }
+      if (!await ensureRecordingMic(context, _recorder)) return;
       _recordedAudio = BytesBuilder(copy: false);
       final complete = Completer<void>();
       _audioComplete = complete;

@@ -803,10 +803,7 @@ class _SocialComposerState extends State<SocialComposer> {
           });
         }
       } else {
-        if (!await _recorder.hasPermission()) {
-          if (mounted) snack(context, ui('Microphone permission is needed'));
-          return;
-        }
+        if (!await ensureRecordingMic(context, _recorder)) return;
         _pcm = BytesBuilder(copy: false);
         _audioDone = Completer<void>();
         UiSound.hold(this);

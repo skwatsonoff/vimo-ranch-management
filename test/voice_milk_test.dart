@@ -1,13 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' hide Ink;
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:ranch_management/main.dart';
+import 'package:ranch_management/mic_permission.dart';
 import 'package:speech_to_text_platform_interface/speech_to_text_platform_interface.dart';
+
+import 'fake_mic_backend.dart';
 
 /// The phone's recogniser, scripted: [hear] delivers one spoken sentence.
 class FakeSpeech extends SpeechToTextPlatform {
@@ -47,6 +51,11 @@ class FakeSpeech extends SpeechToTextPlatform {
   @override
   Future<List<dynamic>> locales() async => [];
 
+  void fail(String code) {
+    onError?.call(jsonEncode({'errorMsg': code, 'permanent': true}));
+    onStatus?.call('done');
+  }
+
   void hear(String words) {
     onTextRecognition?.call(
       jsonEncode({
@@ -57,6 +66,21 @@ class FakeSpeech extends SpeechToTextPlatform {
       }),
     );
     onStatus?.call('done');
+  }
+}
+
+/// One recogniser for every test, as in the app: the speech plugin binds
+/// its callbacks to the platform only on its first start.
+final sharedSpeech = FakeSpeech();
+
+/// Lets Hive writes started under the test's fake clock finish, so the next
+/// test's set-up is not left waiting on them.
+Future<void> drainHive(WidgetTester tester) async {
+  for (int i = 0; i < 6; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 40)),
+    );
+    await tester.pump();
   }
 }
 
@@ -162,8 +186,9 @@ void main() {
           }),
         );
       }
-      final speech = FakeSpeech();
+      final speech = sharedSpeech..listens = 0;
       SpeechToTextPlatform.instance = speech;
+      MicPermission.backend = FakeMicBackend(statuses: [MicAccess.granted]);
       final spoken = <String>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('flutter_tts'),
@@ -251,6 +276,111 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       // Let the recogniser's own pause timer run out.
       await tester.pump(const Duration(seconds: 15));
+      await drainHive(tester);
     },
   );
+
+  Future<FakeSpeech> openVoice(WidgetTester tester, FakeMicBackend mic) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(
+      () => Hive.box('animals').add({
+        'type': 'cow',
+        'name': 'Maina',
+        'status': 'Active',
+        'gender': 'Female',
+      }),
+    );
+    final speech = sharedSpeech..listens = 0;
+    SpeechToTextPlatform.instance = speech;
+    MicPermission.backend = mic;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_tts'),
+      (call) async => 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: const [Locale('en'), Locale('ta')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: const VoiceMilkScreen(),
+      ),
+    );
+    for (int i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    return speech;
+  }
+
+  Future<void> closeVoice(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 15));
+    await drainHive(tester);
+  }
+
+  testWidgets('after a permission error, tapping the mic asks again', (
+    tester,
+  ) async {
+    // Allowed at first; the phone later takes it back ("Only this time").
+    final mic = FakeMicBackend(
+      statuses: [MicAccess.granted, MicAccess.denied],
+      requests: [MicAccess.granted],
+    );
+    final speech = await openVoice(tester, mic);
+    expect(mic.requestCalls, 0);
+    final listensBefore = speech.listens;
+
+    speech.fail('error_insufficient_permissions');
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(find.text('அனுமதி கொடு'), findsOneWidget);
+
+    await tester.tap(find.byIcon(CupertinoIcons.mic_slash_fill).first);
+    for (int i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    // The pop-up was requested, not only a restart of listening.
+    expect(mic.requestCalls, 1);
+    expect(find.text('அனுமதி கொடு'), findsNothing);
+    expect(speech.listens, greaterThan(listensBefore));
+    await closeVoice(tester);
+  });
+
+  testWidgets('blocked for good: the card offers Settings', (tester) async {
+    final mic = FakeMicBackend(statuses: [MicAccess.permanentlyDenied]);
+    await openVoice(tester, mic);
+    expect(find.text('Settings திற'), findsOneWidget);
+    await tester.tap(find.text('Settings திற'));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(mic.settingsCalls, 1);
+    expect(mic.requestCalls, 0);
+    await closeVoice(tester);
+  });
+
+  testWidgets('VIMO allowed but the speech service is not', (tester) async {
+    final mic = FakeMicBackend(statuses: [MicAccess.granted]);
+    final speech = await openVoice(tester, mic);
+    speech.fail('error_insufficient_permissions');
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(find.textContaining('குரல் அறிதல் சேவைக்கு'), findsOneWidget);
+    expect(find.text('Settings திற'), findsOneWidget);
+    await closeVoice(tester);
+  });
+
+  testWidgets('a blocked browser shows the site settings steps', (
+    tester,
+  ) async {
+    final mic = FakeMicBackend(
+      statuses: [MicAccess.permanentlyDenied],
+      platform: 'web',
+    );
+    await openVoice(tester, mic);
+    expect(find.textContaining('Site settings'), findsOneWidget);
+    expect(find.text('மீண்டும் முயற்சி'), findsOneWidget);
+    await closeVoice(tester);
+  });
 }

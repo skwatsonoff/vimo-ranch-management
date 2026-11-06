@@ -2773,10 +2773,7 @@ class _RouteNoteComposerState extends State<_RouteNoteComposer> {
   Future<void> _record() async {
     if (_recording) return _stop();
     try {
-      if (!await _recorder.hasPermission()) {
-        if (mounted) snack(context, ui('Microphone permission is needed'));
-        return;
-      }
+      if (!await ensureRecordingMic(context, _recorder)) return;
       _audio = BytesBuilder(copy: false);
       final done = Completer<void>();
       _done = done;
