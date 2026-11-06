@@ -49,8 +49,6 @@ import 'firebase_options.dart';
 import 'web_runtime.dart';
 import 'sync_support.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -59,6 +57,7 @@ import 'mic_permission.dart';
 import 'voice_diagnostics.dart';
 import 'voice_understanding.dart';
 import 'language_packs.dart';
+import 'voice_engine.dart';
 import 'language_pack_store.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 

@@ -175,9 +175,12 @@ class _VoiceReportScreenState extends State<VoiceReportScreen> {
     if (kIsWeb) 'browser': _browserRuntime.userAgent,
     'appLanguage': appLanguage.mode,
     'voiceLocale': _defaultVoiceLocale(),
-    'engine': settingValue('voiceOfflineBeta', false) == true
-        ? 'offline (beta)'
+    'engine':
+        voiceOfflineBetaEnabled() &&
+            offlineVoiceModelPath(_defaultVoiceLocale()) != null
+        ? 'offline (beta), falls back to system'
         : 'system',
+    'offlineVoiceSetting': voiceOfflineBetaEnabled(),
     'cows': cowNames().length,
   };
 

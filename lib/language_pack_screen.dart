@@ -11,6 +11,22 @@ part of 'main.dart';
 
 const _packsWifiOnlyKey = 'packsWifiOnly';
 
+/// "Use VIMO offline voice (beta)": off until the owner turns it on.
+const voiceOfflineBetaKey = 'voiceOfflineBeta';
+
+bool voiceOfflineBetaEnabled() =>
+    settingValue(voiceOfflineBetaKey, false) == true;
+
+/// The installed offline listening model for [locale] ("ta-IN" → asr-ta),
+/// or null when none is installed on this phone.
+String? offlineVoiceModelPath(String locale) {
+  if (kIsWeb || !Hive.isBoxOpen(languagePackBox)) return null;
+  final language = locale.split(RegExp('[-_]')).first;
+  final row = asMap(Hive.box(languagePackBox).get('asr-$language'));
+  final path = txt(row, 'path');
+  return path.isEmpty ? null : path;
+}
+
 /// Installed offline voice packs, for the device check and the report.
 String installedLanguagePacksSummary() {
   if (!Hive.isBoxOpen(languagePackBox)) return 'none installed';
@@ -351,6 +367,43 @@ class _LanguagePacksScreenState extends State<LanguagePacksScreen> {
                     ),
                   ],
                 ],
+              ],
+            ),
+            _ReportSection(
+              icon: CupertinoIcons.waveform_path,
+              title: bi(
+                'Use VIMO offline voice (beta)',
+                'VIMO offline குரல் (சோதனை)',
+              ),
+              subtitle: bi(
+                'When on and the listening pack is installed, VIMO listens on the phone without the internet. If the offline voice cannot start, VIMO uses the phone\'s speech service as before.',
+                'இயக்கி, கேட்டல் pack நிறுவப்பட்டிருந்தால், VIMO இணையம் இல்லாமல் போனிலேயே கேட்கும். Offline குரல் தொடங்காவிட்டால், முன்பு போல போனின் குரல் சேவையைப் பயன்படுத்தும்.',
+              ),
+              children: [
+                Material(
+                  type: MaterialType.transparency,
+                  child: SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: voiceOfflineBetaEnabled(),
+                    title: AppText(bi('Offline voice', 'Offline குரல்')),
+                    subtitle: AppText(
+                      offlineVoiceModelPath(appLanguage.code) == null
+                          ? bi(
+                              'Listening pack not installed yet',
+                              'கேட்டல் pack இன்னும் நிறுவப்படவில்லை',
+                            )
+                          : bi(
+                              'Listening pack installed',
+                              'கேட்டல் pack நிறுவப்பட்டுள்ளது',
+                            ),
+                    ),
+                    onChanged: (v) async {
+                      await setSetting(voiceOfflineBetaKey, v);
+                      VoiceDiagnostics.log('offline_voice_setting', {'on': v});
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
               ],
             ),
             _ReportSection(

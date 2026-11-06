@@ -44,3 +44,28 @@ String voiceRewrite(String text) {
   final meant = txt(row, 'meant');
   return meant.isEmpty ? text : meant;
 }
+
+/// Words the recogniser should favour: the wake word, cow names in every
+/// spelling, customers, and words the owner taught VIMO.
+List<String> voiceHotwords({int limit = 120}) {
+  final words = <String>{'Vimo', 'Hey Vimo', 'விமோ'};
+  for (final cow in cowNames()) {
+    words.add(cow);
+    words.add(tamilCowName(cow));
+  }
+  for (final extra in cowNameAliases().values) {
+    words.addAll(extra);
+  }
+  words.addAll(learnedVoiceWords());
+  words.addAll(knownPeopleNames().take(40));
+  return words.where((w) => w.trim().isNotEmpty).take(limit).toList();
+}
+
+/// Everything the owner taught, as words to favour.
+List<String> learnedVoiceWords() {
+  if (!Hive.isBoxOpen(voiceLearningBox)) return const [];
+  return [
+    for (final row in Hive.box(voiceLearningBox).values.whereType<Map>())
+      if ('${row['meant'] ?? ''}'.trim().isNotEmpty) '${row['meant']}'.trim(),
+  ];
+}

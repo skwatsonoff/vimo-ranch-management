@@ -57,6 +57,7 @@ dependencies:
   latlong2: ^0.10.1
   geolocator: ^14.0.2
   speech_to_text: ^7.5.0
+  speech_to_text_platform_interface: ^2.5.0
   flutter_tts: ^4.2.5
   wakelock_plus: ^1.5.2
   permission_handler: ^13.0.2
@@ -66,7 +67,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  speech_to_text_platform_interface: ^2.5.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

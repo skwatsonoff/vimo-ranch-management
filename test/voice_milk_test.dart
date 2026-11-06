@@ -412,4 +412,21 @@ void main() {
     expect(find.textContaining('வெற்றி'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('offline voice turned on without a pack works as before', (
+    tester,
+  ) async {
+    await tester.runAsync(
+      () => Hive.box('settings').put('voiceOfflineBeta', true),
+    );
+    final mic = FakeMicBackend(statuses: [MicAccess.granted]);
+    final speech = await openVoice(tester, mic);
+    expect(speech.listens, greaterThan(0));
+    speech.hear('ஹே விமோ மைனா 5 லிட்டர்');
+    for (int i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(find.text('5 L'), findsWidgets);
+    await closeVoice(tester);
+  });
 }

@@ -931,7 +931,7 @@ packages:
     source: hosted
     version: "7.5.0"
   speech_to_text_platform_interface:
-    dependency: "direct dev"
+    dependency: "direct main"
     description:
       name: speech_to_text_platform_interface
       sha256: "7e447356be3074c471223c9d179ef3f822475350b67ca923ec71ab3bf2ede214"

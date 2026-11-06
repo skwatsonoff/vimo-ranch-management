@@ -237,7 +237,13 @@ class VoiceMilkScreen extends StatefulWidget {
 
 class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
-  final SpeechToText _stt = SpeechToText();
+  /// The ear: the phone's speech service, or VIMO's offline model when the
+  /// owner turned it on and its pack is installed.
+  VoiceEngine? _engine;
+  final List<StreamSubscription<Object?>> _engineSubs = [];
+
+  /// Cancels listening without waiting (the engine may not exist yet).
+  Future<void> _cancelEar() async => _engine?.cancel();
   final FlutterTts _tts = FlutterTts();
   final ScrollController _scroll = ScrollController();
   late final AnimationController _breath = AnimationController(
@@ -285,6 +291,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   /// final until the microphone stops, so VIMO decides itself, as Siri does.
   Timer? _settle;
   DateTime? _listenStartedAt;
+  bool _engineFactsLogged = false;
   bool _firstWordsLogged = false;
   double? _lastConfidence;
   List<String> _pendingAlternatives = const [];
@@ -333,9 +340,11 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     _restart?.cancel();
     _sleep?.cancel();
     _settle?.cancel();
-    if (_stt.statusListener == _onStatus) _stt.statusListener = null;
-    if (_stt.errorListener == _onError) _stt.errorListener = null;
-    _quietly(_stt.cancel);
+    for (final sub in _engineSubs) {
+      unawaited(sub.cancel());
+    }
+    final engine = _engine;
+    if (engine != null) _quietly(engine.dispose);
     _quietly(_tts.stop);
     _keepAwake(false);
     _breath.dispose();
@@ -357,7 +366,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       if (_running || _micProblem != null) unawaited(_resumeMic());
     } else if (state == AppLifecycleState.paused) {
       _restart?.cancel();
-      _quietly(_stt.cancel);
+      _quietly(_cancelEar);
     }
   }
 
@@ -392,7 +401,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _showMicProblem(_MicProblem problem) {
     _running = false;
     _restart?.cancel();
-    _quietly(_stt.cancel);
+    _quietly(_cancelEar);
     setState(() {
       _micProblem = problem;
       _micError = switch (problem) {
@@ -475,19 +484,29 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     await _setupVoice();
     bool ok = false;
     try {
-      ok = await _stt.initialize(
-        onStatus: _onStatus,
-        onError: _onError,
-        finalTimeout: const Duration(milliseconds: 900),
-      );
+      if (_engine == null) {
+        final (engine, started) = await createVoiceEngine(
+          offlineEnabled: voiceOfflineBetaEnabled(),
+          offlineModelPath: offlineVoiceModelPath(_locale),
+          log: VoiceDiagnostics.log,
+        );
+        _engine = engine;
+        ok = started;
+        _engineSubs.addAll([
+          engine.results.listen(_onResult),
+          engine.statuses.listen(_onStatus),
+          engine.errors.listen(_onError),
+          engine.soundLevels.listen((level) {
+            if (mounted) setState(() => _level = level);
+          }),
+        ]);
+      } else {
+        ok = await _engine!.initialize();
+      }
     } catch (_) {
       ok = false;
     }
     if (!mounted) return;
-    // The recogniser is one shared object: a second visit must point its
-    // callbacks at this screen (initialize only binds them the first time).
-    _stt.statusListener = _onStatus;
-    _stt.errorListener = _onError;
     if (!ok) {
       setState(
         () => _micError = bi(
@@ -504,7 +523,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
       'appLanguage': appLanguage.mode,
       'voiceLocale': _locale,
-      'engine': 'system',
+      'engine': _engine?.name ?? 'system',
       'tamilVoice': _tamilVoice,
       'cows': cowNames().length,
     });
@@ -560,29 +579,27 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   Future<void> _listen() async {
     if (!mounted || !_running || _report || _speaking || _starting) return;
-    if (_micError != null || _stt.isListening) return;
+    final engine = _engine;
+    if (engine == null || _micError != null || engine.isListening) return;
     _starting = true;
     _listenStartedAt = DateTime.now();
     _firstWordsLogged = false;
     _consumed = '';
     try {
-      await _stt.listen(
-        onResult: _onResult,
-        onSoundLevelChange: (level) {
-          if (mounted) setState(() => _level = level);
-        },
-        listenOptions: SpeechListenOptions(
-          localeId: _locale,
-          partialResults: true,
-          cancelOnError: false,
-          listenMode: ListenMode.dictation,
-          // A long first wait so silence does not restart the microphone
-          // every second; shortened as soon as words arrive.
-          pauseFor: const Duration(seconds: 12),
-          listenFor: const Duration(seconds: 55),
-          contextualPhrases: ['Vimo', 'Hey Vimo', ...cowNames()],
-        ),
+      await engine.start(
+        locale: _locale,
+        // Names and words to favour: the wake word, cows, customers and the
+        // owner's learned words.
+        hotwords: voiceHotwords(),
+        // A long first wait so silence does not restart the microphone
+        // every second; shortened as soon as words arrive.
+        pauseFor: const Duration(seconds: 12),
+        listenFor: const Duration(seconds: 55),
       );
+      if (!_engineFactsLogged) {
+        _engineFactsLogged = true;
+        VoiceDiagnostics.log('engine_facts', engine.facts);
+      }
     } catch (_) {
       _scheduleListen(const Duration(seconds: 1));
     } finally {
@@ -592,8 +609,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   Future<void> _logLocales() async {
     try {
-      final locales = await _stt.locales();
-      final ids = [for (final l in locales) l.localeId];
+      final ids =
+          await (_engine?.supportedLocales() ?? Future.value(<String>[]));
       VoiceDiagnostics.log('speech_locales', {
         'count': ids.length,
         'tamil': ids.any((id) => id.toLowerCase().startsWith('ta')),
@@ -607,13 +624,13 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _onStatus(String status) {
     VoiceDiagnostics.log('speech_status', {
       'status': status,
-      if (_listenStartedAt != null && status != SpeechToText.listeningStatus)
+      if (_listenStartedAt != null && status != VoiceStatus.listening)
         'msListening': DateTime.now()
             .difference(_listenStartedAt!)
             .inMilliseconds,
     });
     if (!mounted) return;
-    final listening = status == SpeechToText.listeningStatus;
+    final listening = status == VoiceStatus.listening;
     if (listening != _listeningNow) setState(() => _listeningNow = listening);
     if (!listening && !_speaking) {
       _scheduleListen(
@@ -622,9 +639,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
-  void _onError(SpeechRecognitionError error) {
+  void _onError(VoiceEngineError error) {
     if (!mounted) return;
-    final message = error.errorMsg;
+    final message = error.code;
     VoiceDiagnostics.log('speech_error', {
       'code': message,
       'permanent': error.permanent,
@@ -667,20 +684,15 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
-  void _onResult(SpeechRecognitionResult result) {
+  void _onResult(VoiceHeard result) {
     if (!mounted || _speaking) return;
-    final words = result.recognizedWords.trim();
+    final words = result.text.trim();
     if (words.isEmpty || words == _consumed) return;
-    final alternatives = [
-      words,
-      for (final a in result.alternates) a.recognizedWords,
-    ];
-    _lastConfidence = result.hasConfidenceRating ? result.confidence : null;
-    if (!result.finalResult) {
-      try {
-        // Keep the microphone open past VIMO's own end-of-sentence pause.
-        _stt.changePauseFor(const Duration(milliseconds: 2600));
-      } catch (_) {}
+    final alternatives = [words, ...result.alternatives];
+    _lastConfidence = result.confidence;
+    if (!result.isFinal) {
+      // Keep the microphone open past VIMO's own end-of-sentence pause.
+      _engine?.changePauseFor(const Duration(milliseconds: 2600));
       if (words.length > _partial.length) {
         // The first words of a sentence: a light tap, like Siri noticing.
         if (_partial.isEmpty) HapticFeedback.selectionClick();
@@ -722,7 +734,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     _errorStreak = 0;
     // A fresh session for the next sentence: browsers would otherwise keep
     // adding new words to this one.
-    _quietly(_stt.cancel);
+    _quietly(_cancelEar);
     _scheduleListen(const Duration(milliseconds: 200));
     VoiceDiagnostics.log('heard', {
       'text': words,
@@ -757,7 +769,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       _partial = '';
     });
     try {
-      await _stt.cancel();
+      await _cancelEar();
     } catch (_) {}
     try {
       await _tts.setLanguage(language);
@@ -1306,7 +1318,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _openReport() {
     _restart?.cancel();
     _sleep?.cancel();
-    _quietly(_stt.cancel);
+    _quietly(_cancelEar);
     UiSound.play(UiSoundKind.whoosh);
     setState(() {
       _report = true;
@@ -1385,7 +1397,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     if (chosen == null || chosen == _locale || !mounted) return;
     await setSetting(_voiceLocaleKey, chosen);
     try {
-      await _stt.cancel();
+      await _cancelEar();
     } catch (_) {}
     setState(() {
       _locale = chosen;
