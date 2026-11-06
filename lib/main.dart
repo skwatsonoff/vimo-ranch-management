@@ -15139,6 +15139,10 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     super.initState();
     final cows = cowNames();
     _cow = widget.initialCow ?? (cows.isEmpty ? '' : cows.first);
+    // Unsaved voice entries are saved or deleted before typing by hand.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(settleVoiceDraftBeforeManual(context));
+    });
   }
 
   @override

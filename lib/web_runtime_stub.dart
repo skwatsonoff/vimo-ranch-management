@@ -27,6 +27,12 @@ class BrowserRuntime {
   /// The browser's description of itself; empty outside a browser.
   String get userAgent => '';
 
+  /// iPhone or iPad browser (Safari, Chrome on iOS).
+  bool get appleMobile => false;
+
+  /// Opened from the Home Screen as an app, not in a browser tab.
+  bool get standaloneApp => false;
+
   /// Reduce Transparency is reported only by browsers.
   bool get reducedTransparency => false;
 

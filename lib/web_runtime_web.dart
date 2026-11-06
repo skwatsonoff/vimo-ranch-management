@@ -45,6 +45,27 @@ class BrowserRuntime {
     }
   }
 
+  /// iPhone or iPad browser (Safari, Chrome on iOS).
+  bool get appleMobile {
+    try {
+      final navigator = web.window.navigator;
+      final agent = navigator.userAgent;
+      return RegExp('iPhone|iPad|iPod').hasMatch(agent) ||
+          (agent.contains('Macintosh') && navigator.maxTouchPoints > 1);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opened from the Home Screen as an app, not in a browser tab.
+  bool get standaloneApp {
+    try {
+      return web.window.matchMedia('(display-mode: standalone)').matches;
+    } catch (_) {
+      return false;
+    }
+  }
+
   bool get lowEndHint {
     try {
       final navigator = web.window.navigator as JSObject;

@@ -136,6 +136,89 @@ Future<int> saveVoiceMilkEntries(List<VoiceMilkEntry> entries) async {
   return saved;
 }
 
+// --- old drafts ------------------------------------------------------------------
+
+/// A voice draft is old when its newest entry is from another day or
+/// milking, or more than three hours ago: the owner decides what to do
+/// with it before anything else happens.
+bool voiceDraftIsStale(List<VoiceMilkEntry> entries, DateTime now) {
+  if (entries.isEmpty) return false;
+  final last = entries.map((e) => e.at).reduce((a, b) => a.isAfter(b) ? a : b);
+  return now.difference(last) > const Duration(hours: 3) ||
+      _dayOf(last) != _dayOf(now) ||
+      milkSessionForTime(last) != milkSessionForTime(now);
+}
+
+/// What to do with unsaved voice entries: "save", "discard" or "review".
+/// The dialog cannot be dismissed: the owner must choose.
+Future<String> askAboutVoiceDraft(
+  BuildContext context,
+  List<VoiceMilkEntry> entries, {
+  bool review = true,
+}) async {
+  final total = entries.fold<double>(0, (s, e) => s + e.litres);
+  final cows = entries.map((e) => e.cow).toSet().length;
+  final first = entries
+      .map((e) => e.at)
+      .reduce((a, b) => a.isBefore(b) ? a : b);
+  final day = _dayOf(first) == todayDate()
+      ? bi('today', 'இன்று')
+      : bi('on ${_dayOf(first)}', '${_dayOf(first)} அன்று');
+  final choice = await showCupertinoDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => CupertinoAlertDialog(
+      title: Text(bi('Unsaved voice entries', 'சேமிக்காத குரல் பதிவுகள்')),
+      content: Text(
+        bi(
+          'From $day ${_clock(first)}: $cows cows · ${formatLitres(total)}. Save them with their own time, or delete them?',
+          '$day ${_clock(first)} முதல்: $cows மாடு · ${formatLitres(total)}. அவற்றின் நேரத்துடன் சேமிக்கவா, நீக்கவா?',
+        ),
+      ),
+      actions: [
+        CupertinoDialogAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.of(context).pop('save'),
+          child: Text(bi('Save', 'சேமி')),
+        ),
+        if (review)
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(context).pop('review'),
+            child: Text(bi('Check and edit', 'பார்த்து திருத்து')),
+          ),
+        CupertinoDialogAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.of(context).pop('discard'),
+          child: Text(bi('Delete', 'நீக்கு')),
+        ),
+      ],
+    ),
+  );
+  return choice ?? 'review';
+}
+
+/// Before typing milk by hand: unsaved voice entries are saved or deleted
+/// first, so nothing is entered twice or left hanging.
+Future<void> settleVoiceDraftBeforeManual(BuildContext context) async {
+  final draft = _loadVoiceDraft();
+  if (draft.isEmpty || !context.mounted) return;
+  final choice = await askAboutVoiceDraft(context, draft, review: false);
+  if (choice == 'save') {
+    final count = await saveVoiceMilkEntries(draft);
+    VoiceDiagnostics.log('draft_saved', {'entries': count, 'from': 'manual'});
+    if (context.mounted) {
+      snack(
+        context,
+        bi('Saved $count entries', '$count பதிவுகள் சேமிக்கப்பட்டன'),
+        tone: SnackTone.success,
+      );
+    }
+  } else {
+    await _storeVoiceDraft(const []);
+    VoiceDiagnostics.log('draft_discarded', {'entries': draft.length});
+  }
+}
+
 // --- cow names -----------------------------------------------------------------
 
 /// Other spellings of each cow's name (its saved Tamil and English names),
@@ -279,6 +362,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   bool _listeningNow = false;
   bool _speaking = false;
   bool _report = false;
+  bool _askingDraft = false;
+  DateTime? _retriedAt;
   bool _saving = false;
   bool _tamilVoice = false;
   bool _finishAfterSpeech = false;
@@ -339,7 +424,53 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         .disableAnimations)) {
       _breath.repeat(reverse: true);
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _settleOldDraft();
+      if (mounted && !_report) await _start();
+    });
+  }
+
+  /// An old draft (another day or milking, or hours ago) is not silently
+  /// continued: the owner saves it, checks it, or deletes it first.
+  Future<void> _settleOldDraft() async {
+    if (_askingDraft || !voiceDraftIsStale(_entries, DateTime.now())) return;
+    _askingDraft = true;
+    _restart?.cancel();
+    _quietly(_cancelEar);
+    final choice = await askAboutVoiceDraft(context, _entries);
+    _askingDraft = false;
+    if (!mounted) return;
+    VoiceDiagnostics.log('draft_choice', {
+      'choice': choice,
+      'entries': _entries.length,
+    });
+    switch (choice) {
+      case 'save':
+        final total = _entries.fold<double>(0, (s, e) => s + e.litres);
+        final count = await saveVoiceMilkEntries(_entries);
+        if (!mounted) return;
+        setState(() {
+          _entries.clear();
+          _lines.clear();
+        });
+        snack(
+          context,
+          bi(
+            'Saved $count entries · ${formatLitres(total)}',
+            '$count பதிவுகள் சேமிக்கப்பட்டன · ${formatLitres(total)}',
+          ),
+          tone: SnackTone.success,
+        );
+      case 'discard':
+        await _storeVoiceDraft(const []);
+        if (!mounted) return;
+        setState(() {
+          _entries.clear();
+          _lines.clear();
+        });
+      default:
+        _openReport();
+    }
   }
 
   @override
@@ -372,6 +503,10 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       // ("Only this time"), or the owner may have just allowed it in
       // Settings: check again before listening.
       if (_report) return;
+      if (voiceDraftIsStale(_entries, DateTime.now())) {
+        unawaited(_settleOldDraft());
+        return;
+      }
       if (_running || _micProblem != null) unawaited(_resumeMic());
     } else if (state == AppLifecycleState.paused) {
       _restart?.cancel();
@@ -408,6 +543,20 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   void _showMicProblem(_MicProblem problem) {
+    final retried = _retriedAt;
+    if (retried != null &&
+        DateTime.now().difference(retried) < const Duration(seconds: 12) &&
+        mounted) {
+      _retriedAt = null;
+      snack(
+        context,
+        bi(
+          'Still not working. Follow the steps on the card, or type the entry.',
+          'இன்னும் வேலை செய்யவில்லை. card-இல் உள்ள படிகளைப் பின்பற்றுங்கள், அல்லது கையால் பதிவு செய்யுங்கள்.',
+        ),
+        tone: SnackTone.error,
+      );
+    }
     _running = false;
     _restart?.cancel();
     _quietly(_cancelEar);
@@ -426,10 +575,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           'This browser blocked the microphone for VIMO. Tap the lock icon next to the address, open Site settings, set Microphone to Allow, then reload the page.',
           'இந்த browser VIMO-க்கு மைக்கைத் தடுத்துள்ளது. முகவரிக்கு அருகில் உள்ள பூட்டு ஐகானைத் தட்டி, Site settings → Microphone → Allow செய்து, பக்கத்தை reload செய்யுங்கள்.',
         ),
-        _MicProblem.speechService => bi(
-          'VIMO has the microphone, but the phone\'s speech service does not. Open Settings, Apps, Google (or Speech Recognition & Synthesis), Permissions, and allow the microphone.',
-          'VIMO-க்கு மைக் அனுமதி உள்ளது; ஆனால் போனின் குரல் அறிதல் சேவைக்கு இல்லை. Settings → Apps → Google (அல்லது Speech Recognition & Synthesis) → Permissions → Microphone அனுமதி கொடுங்கள்.',
-        ),
+        _MicProblem.speechService => _speechServiceHelp(),
         _MicProblem.unsupported => bi(
           'This device cannot use the microphone here. On a computer use Google Chrome; on a phone use the VIMO app or Chrome.',
           'இந்தக் கருவியில் மைக் பயன்படுத்த முடியாது. கணினியில் Google Chrome; போனில் VIMO app அல்லது Chrome பயன்படுத்துங்கள்.',
@@ -438,9 +584,49 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     });
   }
 
+  /// Where to turn speech recognition on, for the device in hand.
+  String _speechServiceHelp() {
+    if (kIsWeb && _browserRuntime.appleMobile) {
+      return _browserRuntime.standaloneApp
+          ? bi(
+              'On iPhone, voice does not work in VIMO opened from the Home Screen. Open my-ranch-sync.web.app in Safari, or turn on Dictation: Settings → General → Keyboard → Enable Dictation.',
+              'iPhone-இல் Home Screen-இலிருந்து திறந்த VIMO-வில் குரல் வேலை செய்யாது. Safari-இல் my-ranch-sync.web.app திறங்கள், அல்லது Dictation-ஐ இயக்குங்கள்: Settings → General → Keyboard → Enable Dictation.',
+            )
+          : bi(
+              'On iPhone, voice needs Dictation. Open the iPhone Settings app → General → Keyboard → turn on Enable Dictation, then tap Try again.',
+              'iPhone-இல் குரலுக்கு Dictation தேவை. iPhone Settings app → General → Keyboard → Enable Dictation இயக்கி, "மீண்டும் முயற்சி" தட்டுங்கள்.',
+            );
+    }
+    if (kIsWeb) {
+      return bi(
+        'This browser\'s speech service is off. Use Google Chrome, allow the microphone for this site, then tap Try again.',
+        'இந்த browser-இன் குரல் சேவை இயங்கவில்லை. Google Chrome பயன்படுத்துங்கள், இந்தத் தளத்துக்கு மைக் அனுமதி கொடுத்து, "மீண்டும் முயற்சி" தட்டுங்கள்.',
+      );
+    }
+    return bi(
+      'VIMO has the microphone, but the phone\'s speech service does not. Open Settings, Apps, Google (or Speech Recognition & Synthesis), Permissions, and allow the microphone.',
+      'VIMO-க்கு மைக் அனுமதி உள்ளது; ஆனால் போனின் குரல் அறிதல் சேவைக்கு இல்லை. Settings → Apps → Google (அல்லது Speech Recognition & Synthesis) → Permissions → Microphone அனுமதி கொடுங்கள்.',
+    );
+  }
+
+  /// "Type instead": voice is not available, so go to the milk form, after
+  /// the unsaved voice entries are saved or deleted.
+  Future<void> _typeInstead() async {
+    final navigator = Navigator.of(context);
+    if (_entries.isNotEmpty) {
+      await settleVoiceDraftBeforeManual(context);
+      _entries.clear();
+    }
+    if (!mounted) return;
+    navigator.pushReplacement(
+      LiquidRoute<void>(builder: (_) => const AddEntryScreen()),
+    );
+  }
+
   /// "Allow microphone": ask again (shows the pop-up when the phone still
   /// allows it), then carry on listening.
   Future<void> _retryMic() async {
+    _retriedAt = DateTime.now();
     if (!await _checkMic()) return;
     if (!mounted) return;
     if (!_initialised) {
@@ -770,7 +956,16 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   Future<void> _speakNow(String text, String language) async {
-    if (!mounted || !_running) return;
+    if (!mounted) return;
+    if (!_running) {
+      // The microphone is off (a permission or speech service problem):
+      // nothing is spoken, but Finish must still open the report.
+      if (_finishAfterSpeech) {
+        _finishAfterSpeech = false;
+        _openReport();
+      }
+      return;
+    }
     _restart?.cancel();
     _settle?.cancel();
     setState(() {
@@ -1406,8 +1601,14 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   void _finish() {
+    if (_report || _finishAfterSpeech) return;
     _sleep?.cancel();
     _pending = null;
+    if (!_running || _micProblem != null) {
+      // No voice to speak with: show the report straight away.
+      _openReport();
+      return;
+    }
     final total = _entries.fold<double>(0, (s, e) => s + e.litres);
     final cows = _entries.map((e) => e.cow).toSet().length;
     if (_entries.isEmpty) {
@@ -1527,7 +1728,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _tapOrb() {
     if (_micProblem != null) {
       // A permission problem: ask again rather than only restarting.
-      if (_micProblem == _MicProblem.speechService) {
+      if (_micProblem == _MicProblem.speechService && !kIsWeb) {
         unawaited(openMicSettings());
       } else {
         unawaited(_retryMic());
@@ -1835,11 +2036,21 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         ),
         const SizedBox(height: Space.s8),
         if (_micProblem != null)
-          _MicProblemCard(
-            message: _micError ?? '',
-            problem: _micProblem!,
-            onAllow: () => unawaited(_retryMic()),
-            onSettings: () => unawaited(openMicSettings()),
+          // The help card scrolls on small phones instead of overflowing.
+          Flexible(
+            child: SingleChildScrollView(
+              child: _MicProblemCard(
+                message: _micError ?? '',
+                problem: _micProblem!,
+                // A web page cannot open the phone's settings.
+                canOpenSettings: !kIsWeb,
+                onAllow: () => unawaited(_retryMic()),
+                onSettings: () => unawaited(openMicSettings()),
+                onType: canRecordEntries
+                    ? () => unawaited(_typeInstead())
+                    : null,
+              ),
+            ),
           )
         else
           Padding(
@@ -2764,7 +2975,8 @@ class _VoiceOrb extends StatelessWidget {
         : [Ink.violet, Ink.deepPurple];
     // Android reports roughly -2..10 dB; the web reports nothing.
     final voice = ((level + 2) / 12).clamp(0.0, 1.0);
-    const size = 144.0; // 89 × φ
+    // 89 × φ normally; 89 when a help card needs the room.
+    final size = error ? 89.0 : 144.0;
     return Semantics(
       button: true,
       label: awake
@@ -2786,7 +2998,7 @@ class _VoiceOrb extends StatelessWidget {
                 : .03 * t + .08 * beat;
             final glow = (awake ? 34.0 : 21.0) + 21 * t + 34 * heard;
             return SizedBox.square(
-              dimension: size + 55,
+              dimension: size + (error ? 21 : 55),
               child: Center(
                 child: Transform.scale(
                   scale: 1 + swell,
@@ -2821,7 +3033,7 @@ class _VoiceOrb extends StatelessWidget {
                           : speaking
                           ? CupertinoIcons.waveform
                           : CupertinoIcons.mic_fill,
-                      size: 55,
+                      size: error ? 34 : 55,
                       color: Colors.white,
                     ),
                   ),
@@ -2929,20 +3141,28 @@ class _MicProblemCard extends StatelessWidget {
   final _MicProblem problem;
   final VoidCallback onAllow;
   final VoidCallback onSettings;
+  final VoidCallback? onType;
+  final bool canOpenSettings;
 
   const _MicProblemCard({
     required this.message,
     required this.problem,
     required this.onAllow,
     required this.onSettings,
+    this.onType,
+    this.canOpenSettings = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final canAsk =
-        problem == _MicProblem.denied || problem == _MicProblem.browserBlocked;
-    final canOpenSettings =
+    final settingsHelp =
         problem == _MicProblem.blocked || problem == _MicProblem.speechService;
+    final canOpenSettings = this.canOpenSettings && settingsHelp;
+    // Where Settings cannot be opened from here, "Try again" leads.
+    final canAsk =
+        problem == _MicProblem.denied ||
+        problem == _MicProblem.browserBlocked ||
+        (settingsHelp && !canOpenSettings);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Space.s16),
       child: Glass(
@@ -2979,7 +3199,7 @@ class _MicProblemCard extends StatelessWidget {
                 if (canAsk)
                   Expanded(
                     child: LiquidButton(
-                      label: problem == _MicProblem.browserBlocked
+                      label: problem != _MicProblem.denied
                           ? bi('Try again', 'மீண்டும் முயற்சி')
                           : bi('Allow microphone', 'அனுமதி கொடு'),
                       icon: CupertinoIcons.mic_fill,
@@ -3009,6 +3229,14 @@ class _MicProblemCard extends StatelessWidget {
                 ],
               ],
             ),
+            if (onType != null) ...[
+              const SizedBox(height: Space.s8),
+              _SecondaryPill(
+                label: bi('Type instead', 'கையால் பதிவு செய்'),
+                icon: CupertinoIcons.keyboard,
+                onTap: onType,
+              ),
+            ],
           ],
         ),
       ),
