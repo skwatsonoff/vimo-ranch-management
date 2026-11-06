@@ -67,11 +67,8 @@ void main() {
             as Map;
     expect(json['transcript'], 'மைனா 5 லிட்டர்');
     expect(json['sampleRate'], 16000);
-    expect(trainingPath('uid1', 'ta', 'r1'), 'training_data/uid1/ta/r1.wav');
-    expect(
-      trainingPath('uid1', 'ta', 'r1', ext: 'json'),
-      'training_data/uid1/ta/r1.json',
-    );
+    expect(trainingDocId('uid1', 'r1'), 'uid1_r1');
+    expect(trainingMaxSeconds * 32000 + 44, lessThan(1000000));
   });
 
   test('a worse model is never offered', () {

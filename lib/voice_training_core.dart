@@ -162,13 +162,17 @@ String trainingSidecar({
   'recordedAt': recordedAt.toUtc().toIso8601String(),
 });
 
-/// Storage path of a recording (or its sidecar with [ext] "json").
-String trainingPath(
-  String uid,
-  String language,
-  String id, {
-  String ext = 'wav',
-}) => 'training_data/$uid/$language/$id.$ext';
+/// Longest recording kept: one Firestore document holds at most 1 MiB,
+/// and 25 seconds of 16 kHz mono WAV is about 800 KB.
+const trainingMaxSeconds = 25;
+
+/// Firestore id of an uploaded recording: the owner's uid, then the id, so
+/// the rules can check whose it is. No names of people are in it.
+String trainingDocId(String uid, String id) => '${uid}_$id';
+
+/// Firestore collections the training uses (free Spark plan; no Storage).
+const trainingAudioCollection = 'voice_training_audio';
+const trainingLexiconCollection = 'voice_training_lexicon';
 
 /// Status words written by the cloud workflow, in order.
 const trainingStatuses = [

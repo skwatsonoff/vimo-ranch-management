@@ -46,7 +46,8 @@ def test_manifest_versions_only_go_up(tmp_path):
     asr = next(p for p in newer["packs"] if p["id"] == "asr-ta")
     assert asr["version"] == 2
     assert asr["sizeBytes"] == len(b"model two")
-    assert asr["url"] == public_url("language_packs/asr-ta-2.tar.bz2")
+    assert asr["url"] == public_url("asr-ta-2.tar.bz2")
+    assert asr["url"].startswith("https://github.com/") and asr["asset"] == "asr-ta-2.tar.bz2"
     # A pack not rebuilt is kept.
     (packs / "lexicon-ta.json").unlink()
     kept = build(packs, newer)

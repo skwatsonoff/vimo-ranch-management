@@ -1,5 +1,7 @@
 # VIMO language packs and offline voice
 
+Everything here uses free plans only (Firestore Spark, GitHub).
+
 Plain words first: a **language pack** is one file VIMO downloads so that its
 voice keeps working without the internet. Choosing a language in Settings
 downloads what that language needs:
@@ -26,8 +28,8 @@ phone's own (online) speech service listens.
 
 ## The manifest
 
-`language_packs/manifest.json` in Firebase Storage (public read, no client
-writes). The cloud training workflow writes it with
+`manifest.json` and the pack files are assets of this repository's
+**"voice-packs" GitHub release** (free, public, read-only for the app). The cloud training workflow writes it with
 `tools/voice_training/build_pack_manifest.py`.
 
 ```json
@@ -40,7 +42,7 @@ writes). The cloud training workflow writes it with
       "language": "ta",
       "kind": "asr",
       "version": 3,
-      "url": "https://firebasestorage.googleapis.com/v0/b/my-ranch-sync.firebasestorage.app/o/language_packs%2Fasr-ta-3.tar.bz2?alt=media",
+      "url": "https://github.com/skwatsonoff/vimo-ranch-management/releases/download/voice-packs/asr-ta-3.tar.bz2",
       "sizeBytes": 48123456,
       "sha256": "9f2c…"
     }

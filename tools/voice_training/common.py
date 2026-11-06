@@ -1,9 +1,9 @@
 """Shared helpers for VIMO's cloud voice training.
 
 Plain words: these scripts run on a free GitHub Actions machine (or Google
-Colab). They read the owner's recordings from Firebase Storage, train a
-small speech model, check it, and publish it as a language pack that the
-phone downloads. Nothing here runs on the phone.
+Colab). They read the owner's recordings from Firestore (free plan), train
+a small speech model, check it, and publish it as a language pack (a free
+GitHub release) that the phone downloads. Nothing here runs on the phone.
 """
 from __future__ import annotations
 
@@ -14,8 +14,11 @@ import pathlib
 import re
 import unicodedata
 
-BUCKET = os.environ.get("VIMO_BUCKET", "my-ranch-sync.firebasestorage.app")
 PROJECT = os.environ.get("VIMO_PROJECT", "my-ranch-sync")
+
+# Packs are published as assets of one GitHub release (free, public).
+REPO = os.environ.get("GITHUB_REPOSITORY", "skwatsonoff/vimo-ranch-management")
+RELEASE_TAG = os.environ.get("VIMO_PACKS_TAG", "voice-packs")
 
 # App language -> pack languages (keep equal to the app's bundles).
 BUNDLES = {"ta": ["ta", "en", "ta-Latn"]}
@@ -37,10 +40,9 @@ def normalise_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def public_url(path: str, bucket: str = BUCKET) -> str:
-    from urllib.parse import quote
-
-    return f"https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{quote(path, safe='')}?alt=media"
+def public_url(asset: str, repo: str = REPO, tag: str = RELEASE_TAG) -> str:
+    """Download address of a release asset (what the phone fetches)."""
+    return f"https://github.com/{repo}/releases/download/{tag}/{asset}"
 
 
 def read_json(path: pathlib.Path, default):

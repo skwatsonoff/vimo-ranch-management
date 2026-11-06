@@ -20,11 +20,11 @@ instant improvement without any training.
 | Status the phone shows | What happens | Script |
 | --- | --- | --- |
 | requested | The owner tapped **Start training** (Firestore `voice_training_jobs`) | app |
-| running | Recordings and `lexicon.json` downloaded from `training_data/<uid>/` | `train_job.py` |
+| running | Recordings (`voice_training_audio`) and words (`voice_training_lexicon`) read from Firestore | `train_job.py` |
 | running | Extra dairy sentences made from cow names and learned words | `make_synthetic_text.py` |
 | running | Whisper tiny fine-tuned on CPU for at most `VIMO_MAX_MINUTES` | `finetune_asr.py` |
 | evaluating | Word error rate on held-out recordings | `evaluate_wer.py` |
-| packaging | ONNX + int8 export, packs and `manifest.json` (versions only go up, size and SHA-256) | `build_pack_manifest.py` |
+| packaging | ONNX + int8 export, packs and `manifest.json` (versions only go up, size and SHA-256) uploaded to the "voice-packs" release | `build_pack_manifest.py` |
 | ready / failed | Job updated with WER, previous WER, pack versions, log link | `train_job.py` |
 
 A model that is not better is **not published**; only the words (lexicon)
@@ -45,10 +45,14 @@ They run in `flutter-checks.yml` and before every training run.
 
 ## Data and licences
 
-- By default only **the owner's own recordings** are used. They stay in the
-  owner's private folder `training_data/<uid>/` (Storage rules allow only
-  that signed-in user), with a speaker tag the owner chose, never a name in
-  a file path.
+- Free plans only: recordings are Firestore documents
+  (`voice_training_audio`, one WAV under 1 MB each, at most 25 seconds) and
+  the owner's words one document (`voice_training_lexicon/<uid>`); packs are
+  assets of the free "voice-packs" GitHub release. No Firebase Storage, no
+  paid plan.
+- By default only **the owner's own recordings** are used; Firestore rules
+  let only that signed-in user add, read or delete them, with a speaker tag
+  the owner chose, never a name in an id.
 - Base model: **OpenAI Whisper tiny**, MIT licence.
 - Optional public data for Colab, only with licences that allow it:
   **Mozilla Common Voice Tamil** (CC0 1.0) and **Google FLEURS** Tamil

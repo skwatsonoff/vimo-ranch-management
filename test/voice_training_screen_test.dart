@@ -146,7 +146,7 @@ void main() {
     expect(find.text('பதிவு செய்'), findsOneWidget);
     await tester.tap(find.text('தரவு'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.textContaining('training_data'), findsOneWidget);
+    expect(find.textContaining('cloud database'), findsOneWidget);
     await tester.tap(find.text('பயிற்சி'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.textContaining('GitHub Actions'), findsOneWidget);

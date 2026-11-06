@@ -8,8 +8,10 @@ requested -> running -> evaluating -> packaging -> ready (or failed).
 A new listening model is published only when its word error rate is lower
 than the previous model's: a worse model never reaches the phone.
 
-Needs Google credentials (GOOGLE_APPLICATION_CREDENTIALS), which the
-workflow sets from the FIREBASE_SERVICE_ACCOUNT secret.
+Needs Google credentials (GOOGLE_APPLICATION_CREDENTIALS, set by the
+workflow from the FIREBASE_SERVICE_ACCOUNT secret) to read Firestore, and
+GH_TOKEN (the workflow's own GitHub token) to publish packs to the
+"voice-packs" release. Everything stays on free plans.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ import subprocess
 import sys
 import time
 
-from common import BUCKET, PROJECT, read_json
+from common import PROJECT, RELEASE_TAG, read_json
 
 WORK = pathlib.Path(os.environ.get("VIMO_WORK", "work"))
 
@@ -50,12 +52,6 @@ def _firestore():
     return firestore.Client(project=PROJECT)
 
 
-def _bucket():
-    from google.cloud import storage
-
-    return storage.Client(project=PROJECT).bucket(BUCKET)
-
-
 def _jobs(db) -> list[dict]:
     out = []
     for snap in db.collection("voice_training_jobs").stream():
@@ -74,36 +70,59 @@ def _set(db, job_id: str, **fields):
     db.collection("voice_training_jobs").document(job_id).set(fields, merge=True)
 
 
-def download(bucket, owner: str, dest: pathlib.Path) -> int:
+def download(db, owner: str, dest: pathlib.Path) -> int:
+    """The owner's recordings (Firestore voice_training_audio) as WAV +
+    JSON files, and their words (voice_training_lexicon) as lexicon.json."""
     dest.mkdir(parents=True, exist_ok=True)
     n = 0
-    for blob in bucket.list_blobs(prefix=f"training_data/{owner}/"):
-        target = dest / blob.name.removeprefix(f"training_data/{owner}/")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        blob.download_to_filename(target)
+    for snap in db.collection("voice_training_audio").where("ownerUid", "==", owner).stream():
+        d = snap.to_dict() or {}
+        meta = json.loads(d.get("sidecar") or "{}")
+        lang = meta.get("language", "ta")
+        folder = dest / lang
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{snap.id}.wav").write_bytes(bytes(d.get("wav") or b""))
+        (folder / f"{snap.id}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
         n += 1
+    lex = db.collection("voice_training_lexicon").document(owner).get()
+    if lex.exists:
+        (dest / "lexicon.json").write_text((lex.to_dict() or {}).get("json", "{}"), encoding="utf-8")
     return n
 
 
-def publish(bucket, packs_dir: pathlib.Path) -> dict:
-    """Uploads changed packs and the manifest; returns the manifest."""
+def _gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(["gh", *args], check=check, capture_output=True, text=True)
+
+
+def publish(packs_dir: pathlib.Path) -> dict:
+    """Uploads changed packs and the manifest to the GitHub release."""
     from build_pack_manifest import build
 
-    old_blob = bucket.blob("language_packs/manifest.json")
-    old = json.loads(old_blob.download_as_text()) if old_blob.exists() else {}
+    if _gh("release", "view", RELEASE_TAG, check=False).returncode != 0:
+        _gh("release", "create", RELEASE_TAG, "--title", "VIMO voice packs",
+            "--notes", "Language packs for VIMO offline voice. Written by the training workflow.")
+    old_dir = WORK / "old_manifest"
+    old_dir.mkdir(parents=True, exist_ok=True)
+    _gh("release", "download", RELEASE_TAG, "-p", "manifest.json", "-D", str(old_dir), "--clobber", check=False)
+    old = read_json(old_dir / "manifest.json", {})
     manifest = build(packs_dir, old)
     old_ids = {(p["id"], p["sha256"]) for p in old.get("packs", [])}
+    upload_dir = WORK / "upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
     for p in manifest["packs"]:
         local = p.pop("localFile", None)
         if local and (p["id"], p["sha256"]) not in old_ids:
-            bucket.blob(p["storagePath"]).upload_from_filename(local)
-    old_blob.upload_from_string(json.dumps(manifest, ensure_ascii=False), content_type="application/json")
+            target = upload_dir / p["asset"]
+            target.write_bytes(pathlib.Path(local).read_bytes())
+            _gh("release", "upload", RELEASE_TAG, str(target), "--clobber")
+    out = upload_dir / "manifest.json"
+    out.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    _gh("release", "upload", RELEASE_TAG, str(out), "--clobber")
     return manifest
 
 
 def run(job_id: str):
     db = _firestore()
-    bucket = _bucket()
     jobs = _jobs(db)
     job = next((j for j in jobs if j["id"] == job_id), None)
     if not job:
@@ -113,7 +132,7 @@ def run(job_id: str):
     _set(db, job_id, status="running", logUrl=log_url, startedAt=time.time())
     try:
         data = WORK / "data"
-        count = download(bucket, owner, data)
+        count = download(db, owner, data)
         lexicon = read_json(data / "lexicon.json", {})
         subprocess.run([sys.executable, "make_synthetic_text.py", str(data / "lexicon.json"), str(WORK / "synthetic.txt")], check=False)
         budget = os.environ.get("VIMO_MAX_MINUTES", "300")
@@ -130,7 +149,13 @@ def run(job_id: str):
         if not should_publish(new_wer, old_wer):
             # Keep the old listening model: drop the new one before publishing.
             (packs / "asr-ta.tar.bz2").unlink(missing_ok=True)
-        manifest = publish(bucket, packs)
+        if not os.environ.get("GH_TOKEN"):
+            # Colab without a GitHub token: trained and checked; the GitHub
+            # workflow publishes the packs on its next run.
+            _set(db, job_id, status="requested", wer=new_wer, previousWer=old_wer,
+                 note="Trained in Colab; publishing on the next workflow run")
+            return
+        manifest = publish(packs)
         _set(db, job_id, status="ready", wer=new_wer, previousWer=old_wer,
              improved=should_publish(new_wer, old_wer),
              packVersions={p["id"]: p["version"] for p in manifest["packs"]})

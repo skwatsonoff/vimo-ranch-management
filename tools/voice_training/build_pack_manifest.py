@@ -36,14 +36,14 @@ def build(packs_dir: pathlib.Path, old: dict) -> dict:
         digest = sha256_of(path)
         before = previous.get(pack_id)
         version = before["version"] if before and before["sha256"] == digest else (before["version"] + 1 if before else 1)
-        storage_path = f"language_packs/{pack_id}-{version}{''.join(path.suffixes)}"
+        asset = f"{pack_id}-{version}{''.join(path.suffixes)}"
         packs.append({
             "id": pack_id,
             "language": language,
             "kind": kind,
             "version": version,
-            "url": public_url(storage_path),
-            "storagePath": storage_path,
+            "url": public_url(asset),
+            "asset": asset,
             "localFile": str(path),
             "sizeBytes": path.stat().st_size,
             "sha256": digest,

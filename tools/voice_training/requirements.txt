@@ -1,6 +1,5 @@
 # Cloud training (GitHub Actions / Colab). CPU wheels are enough.
 google-cloud-firestore>=2.16
-google-cloud-storage>=2.16
 torch>=2.3
 transformers>=4.44
 soundfile>=0.12

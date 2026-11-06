@@ -60,7 +60,6 @@ import 'language_packs.dart';
 import 'voice_engine.dart';
 import 'voice_dialogue.dart';
 import 'voice_training_core.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'language_pack_store.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 

@@ -9,7 +9,9 @@ name: Train VIMO voice
 #   voice" → Run workflow (optionally paste a job id).
 #
 # Uses the same Google credentials as deploy-web.yml (secret
-# FIREBASE_SERVICE_ACCOUNT); no token is ever put in the app.
+# FIREBASE_SERVICE_ACCOUNT) to read the recordings in Firestore, and the
+# workflow's own GitHub token to publish packs. Free plans only; no token
+# is ever put in the app.
 on:
   workflow_dispatch:
     inputs:
@@ -36,7 +38,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install the Firestore client
-        run: pip install --quiet google-cloud-firestore google-cloud-storage
+        run: pip install --quiet google-cloud-firestore
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -57,6 +59,9 @@ jobs:
     if: needs.check.outputs.job != ''
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    # Packs are published to this repository's free "voice-packs" release.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -87,6 +92,7 @@ jobs:
         env:
           VIMO_LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           VIMO_MAX_MINUTES: '300'
+          GH_TOKEN: ${{ github.token }}
         run: python train_job.py run "${{ needs.check.outputs.job }}"
       - name: Keep the training report
         if: always()

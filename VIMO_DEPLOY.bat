@@ -12,7 +12,6 @@ cd /d "%WORK%"
 call flutter pub get || goto :fail
 call flutter build web --release || goto :fail
 call firebase deploy --only hosting,firestore:rules --project my-ranch-sync || goto :fail
-call firebase deploy --only storage --project my-ranch-sync || echo Storage rules not deployed: open Firebase console, Build, Storage, Get started.
 echo.
 echo VIMO is live at https://my-ranch-sync.web.app
 pause

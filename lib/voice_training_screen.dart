@@ -62,6 +62,7 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
   );
   int _index = 0;
   bool _recording = false;
+  Timer? _limit;
   BytesBuilder? _pcm;
   StreamSubscription<Uint8List>? _audio;
   VoiceFormat _format = VoiceFormat(16000);
@@ -96,6 +97,7 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
 
   @override
   void dispose() {
+    _limit?.cancel();
     unawaited(_audio?.cancel());
     unawaited(_recorder.dispose().catchError((Object _) {}));
     unawaited(_player.dispose().catchError((Object _) {}));
@@ -147,6 +149,11 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
         ),
       );
       _audio = stream.listen((chunk) => _pcm?.add(chunk));
+      // One recording fits one cloud record: stop at the limit.
+      _limit?.cancel();
+      _limit = Timer(const Duration(seconds: trainingMaxSeconds), () {
+        if (_recording) unawaited(_stop());
+      });
       setState(() {
         _recording = true;
         _take = null;
@@ -165,6 +172,7 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
   }
 
   Future<void> _stop() async {
+    _limit?.cancel();
     try {
       await _recorder.stop();
     } catch (_) {}
@@ -254,31 +262,31 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
     setState(() => _uploading = true);
     var sent = 0;
     try {
-      final storage = FirebaseStorage.instance;
+      final audio = FirebaseFirestore.instance.collection(
+        trainingAudioCollection,
+      );
       for (final r in pending) {
         final id = txt(r, 'id');
         final bytes = await Hive.lazyBox(_trainingAudioBox).get(id);
-        if (bytes is! Uint8List) continue;
+        if (bytes is! Uint8List || bytes.length >= 1000000) continue;
         final lang = txt(r, 'lang', 'ta');
-        await storage
-            .ref(trainingPath(uid, lang, id))
-            .putData(bytes, SettableMetadata(contentType: 'audio/wav'));
-        await storage
-            .ref(trainingPath(uid, lang, id, ext: 'json'))
-            .putString(
-              trainingSidecar(
-                id: id,
-                transcript: txt(r, 'text'),
-                language: lang,
-                speaker: txt(r, 'speaker'),
-                noise: txt(r, 'noise'),
-                durationMs: toInt(r['durationMs']),
-                device: txt(r, 'device'),
-                recordedAt:
-                    DateTime.tryParse(txt(r, 'createdAt')) ?? DateTime.now(),
-              ),
-              metadata: SettableMetadata(contentType: 'application/json'),
-            );
+        // One Firestore document per recording: the WAV and what was said.
+        await audio.doc(trainingDocId(uid, id)).set({
+          'ownerUid': uid,
+          'sidecar': trainingSidecar(
+            id: id,
+            transcript: txt(r, 'text'),
+            language: lang,
+            speaker: txt(r, 'speaker'),
+            noise: txt(r, 'noise'),
+            durationMs: toInt(r['durationMs']),
+            device: txt(r, 'device'),
+            recordedAt:
+                DateTime.tryParse(txt(r, 'createdAt')) ?? DateTime.now(),
+          ),
+          'wav': Blob(bytes),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
         await Hive.box(
           _trainingBox,
         ).put(id, {...asMap(Hive.box(_trainingBox).get(id)), 'uploaded': true});
@@ -302,13 +310,12 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
     await Hive.lazyBox(_trainingAudioBox).delete(id);
     final uid = _trainingUid();
     if (uid != null) {
-      for (final ext in const ['wav', 'json']) {
-        try {
-          await FirebaseStorage.instance
-              .ref(trainingPath(uid, lang, id, ext: ext))
-              .delete();
-        } catch (_) {}
-      }
+      try {
+        await FirebaseFirestore.instance
+            .collection(trainingAudioCollection)
+            .doc(trainingDocId(uid, id))
+            .delete();
+      } catch (_) {}
     }
     if (mounted) setState(() {});
   }
@@ -377,12 +384,14 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
     try {
       // The words pack: cow names in every spelling and the owner's lessons.
       try {
-        await FirebaseStorage.instance
-            .ref('training_data/$uid/lexicon.json')
-            .putString(
-              jsonEncode(voiceLexiconExport()),
-              metadata: SettableMetadata(contentType: 'application/json'),
-            );
+        await FirebaseFirestore.instance
+            .collection(trainingLexiconCollection)
+            .doc(uid)
+            .set({
+              'ownerUid': uid,
+              'json': jsonEncode(voiceLexiconExport()),
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
       } catch (error) {
         VoiceDiagnostics.log('training_lexicon_error', {'error': '$error'});
       }
@@ -846,8 +855,8 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
         icon: CupertinoIcons.lock_shield,
         title: bi('Your training data', 'உங்கள் பயிற்சி தரவு'),
         subtitle: bi(
-          'Your recordings go only to your own private folder in VIMO\'s cloud storage (training_data/your id), used only to train VIMO\'s voice for you. Speaker tags are labels you chose; no names go into file paths. You can delete any recording or all of them at any time.',
-          'உங்கள் பதிவுகள் VIMO cloud storage-இல் உங்களுக்கு மட்டுமான folder-க்கு (training_data/உங்கள் id) மட்டுமே போகும்; உங்களுக்கான VIMO குரல் பயிற்சிக்கு மட்டுமே பயன்படும். பேசுபவர் குறிச்சொற்கள் நீங்கள் தேர்ந்தவை; கோப்புப் பாதைகளில் பெயர்கள் இல்லை. எப்போது வேண்டுமானாலும் நீக்கலாம்.',
+          'Your recordings go only to your own private records in VIMO\'s cloud database, readable only by you and the training workflow, used only to train VIMO\'s voice for you. Speaker tags are labels you chose; no names go into file paths. You can delete any recording or all of them at any time.',
+          'உங்கள் பதிவுகள் VIMO cloud database-இல் உங்களுக்கு மட்டுமான பதிவுகளாகச் சேமிக்கப்படும் (நீங்களும் பயிற்சி workflow-உம் மட்டுமே படிக்க முடியும்); உங்களுக்கான VIMO குரல் பயிற்சிக்கு மட்டுமே பயன்படும். பேசுபவர் குறிச்சொற்கள் நீங்கள் தேர்ந்தவை; கோப்புப் பாதைகளில் பெயர்கள் இல்லை. எப்போது வேண்டுமானாலும் நீக்கலாம்.',
         ),
         children: [
           Text(

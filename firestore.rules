@@ -1359,6 +1359,36 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Voice training recordings, one document each: the owner's WAV (under
+    // 1 MB) and a JSON description. Only the owner reads, adds or deletes
+    // them; the training workflow reads them as a service account.
+    match /voice_training_audio/{docId} {
+      allow read, delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn()
+        && docId.matches(request.auth.uid + '_[A-Za-z0-9]+')
+        && request.resource.data.keys().hasOnly(['ownerUid', 'sidecar', 'wav', 'createdAt'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.sidecar is string
+        && request.resource.data.sidecar.size() <= 4000
+        && request.resource.data.wav is bytes
+        && request.resource.data.wav.size() < 1000000
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+    }
+
+    // The owner's words for training (cow names, learned words), one
+    // document per owner.
+    match /voice_training_lexicon/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['ownerUid', 'json', 'updatedAt'])
+        && request.resource.data.ownerUid == uid
+        && request.resource.data.json is string
+        && request.resource.data.json.size() < 900000
+        && request.resource.data.updatedAt == request.time;
+    }
+
     // What the team decided about an account. Its owner can read it.
     match /vimo_sanctions/{uid} {
       allow read: if (signedIn() && request.auth.uid == uid) || isVimoTeam();

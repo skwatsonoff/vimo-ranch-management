@@ -15,11 +15,11 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
-/// THE ONE PLACE TO EDIT: the public address of
-/// `language_packs/manifest.json` in Firebase Storage. The cloud training
-/// workflow writes that file; the app only reads it.
+/// THE ONE PLACE TO EDIT: the public address of `manifest.json`. Packs are
+/// assets of the repository's free "voice-packs" GitHub release, written by
+/// the cloud training workflow; the app only reads them.
 const languagePackManifestUrl =
-    'https://firebasestorage.googleapis.com/v0/b/my-ranch-sync.firebasestorage.app/o/language_packs%2Fmanifest.json?alt=media';
+    'https://github.com/skwatsonoff/vimo-ranch-management/releases/download/voice-packs/manifest.json';
 
 /// What a pack is for.
 enum PackKind {

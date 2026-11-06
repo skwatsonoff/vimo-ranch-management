@@ -1,20 +1,17 @@
-// Voice training: job requests in Firestore and recordings in Storage. Run
+// Voice training: job requests, recordings and words in Firestore. Run
 // with the Firebase Emulator Suite through test/run_rules_checks.cjs.
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, updateDoc, deleteDoc, serverTimestamp } = require('firebase/firestore');
-const { ref, uploadBytes, uploadString, getBytes, deleteObject } = require('firebase/storage');
+const { doc, setDoc, getDoc, updateDoc, deleteDoc, serverTimestamp, Bytes } = require('firebase/firestore');
 const fs = require('node:fs');
 
 (async () => {
   const env = await initializeTestEnvironment({
     projectId: 'demo-vimo',
     firestore: { host: '127.0.0.1', port: 8088, rules: fs.readFileSync('firestore.rules', 'utf8') },
-    storage: { host: '127.0.0.1', port: 9199, rules: fs.readFileSync('storage.rules', 'utf8') },
   });
   let checks = 0;
   try {
     await env.clearFirestore();
-    await env.clearStorage();
     await env.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
       await setDoc(doc(db, 'ranches/r1/members/owner'), { role: 'Admin', active: true, status: 'active' });
@@ -41,25 +38,30 @@ const fs = require('node:fs');
     await assertFails(updateDoc(jobRef(owner, 'done'), { status: 'requested' })); checks++; // the server owns status
     await assertFails(deleteDoc(jobRef(owner, 'done'))); checks++;
 
-    // --- Storage: training_data and language_packs ---------------------------------
-    const wav = new Uint8Array(1024);
-    const audio = (ctx, uid = 'owner', name = 'a1.wav') => ref(ctx.storage(), `training_data/${uid}/ta/${name}`);
-    await assertSucceeds(uploadBytes(audio(owner), wav, { contentType: 'audio/wav' })); checks++;
-    await assertSucceeds(uploadString(audio(owner, 'owner', 'a1.json'), '{"transcript":"லட்சுமி 5 லிட்டர்"}', 'raw', { contentType: 'application/json' })); checks++;
-    await assertFails(uploadBytes(audio(owner, 'owner', 'a2.mp3'), wav, { contentType: 'audio/mpeg' })); checks++; // wav or json only
-    await assertFails(uploadBytes(audio(owner, 'owner', 'big.wav'), new Uint8Array(10 * 1024 * 1024 + 1), { contentType: 'audio/wav' })); checks++; // 10 MB limit
-    await assertFails(uploadBytes(audio(other, 'owner', 'x.wav'), wav, { contentType: 'audio/wav' })); checks++; // not your folder
-    await assertFails(uploadBytes(audio(anon), wav, { contentType: 'audio/wav' })); checks++;
-    await assertSucceeds(getBytes(audio(owner))); checks++;
-    await assertFails(getBytes(audio(other))); checks++;
-    await assertFails(deleteObject(audio(other))); checks++;
-    await assertSucceeds(deleteObject(audio(owner))); checks++;
+    // --- Firestore: recordings and words ----------------------------------------------
+    const wav = (n = 1024) => Bytes.fromUint8Array(new Uint8Array(n));
+    const rec = (over = {}) => ({ ownerUid: 'owner', sidecar: '{"transcript":"லட்சுமி 5 லிட்டர்"}', wav: wav(), createdAt: serverTimestamp(), ...over });
+    const recRef = (ctx, id = 'owner_r1') => doc(ctx.firestore(), 'voice_training_audio/' + id);
+    await assertSucceeds(setDoc(recRef(owner), rec())); checks++;
+    await assertFails(setDoc(recRef(owner, 'other_r2'), rec())); checks++; // id must start with your uid
+    await assertFails(setDoc(recRef(other, 'other_r3'), rec())); checks++; // not your recording
+    await assertFails(setDoc(recRef(owner, 'owner_r4'), rec({ wav: wav(1000001) }))); checks++; // under 1 MB
+    await assertFails(setDoc(recRef(owner, 'owner_r5'), rec({ wav: 'not bytes' }))); checks++;
+    await assertFails(setDoc(recRef(owner, 'owner_r6'), rec({ name: 'Selvi' }))); checks++; // no extra fields
+    await assertFails(setDoc(recRef(anon, 'owner_r7'), rec())); checks++;
+    await assertSucceeds(getDoc(recRef(owner))); checks++;
+    await assertFails(getDoc(recRef(other))); checks++;
+    await assertFails(updateDoc(recRef(owner), { sidecar: '{}' })); checks++; // recordings are not edited
+    await assertFails(deleteDoc(recRef(other))); checks++;
+    await assertSucceeds(deleteDoc(recRef(owner))); checks++;
 
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await uploadString(ref(ctx.storage(), 'language_packs/manifest.json'), '{"schema":1,"packs":[]}', 'raw', { contentType: 'application/json' });
-    });
-    await assertSucceeds(getBytes(ref(anon.storage(), 'language_packs/manifest.json'))); checks++; // public read
-    await assertFails(uploadString(ref(owner.storage(), 'language_packs/manifest.json'), '{}', 'raw', { contentType: 'application/json' })); checks++; // no client writes
+    const lex = (over = {}) => ({ ownerUid: 'owner', json: '{"cows":[]}', updatedAt: serverTimestamp(), ...over });
+    const lexRef = (ctx, uid = 'owner') => doc(ctx.firestore(), 'voice_training_lexicon/' + uid);
+    await assertSucceeds(setDoc(lexRef(owner), lex())); checks++;
+    await assertSucceeds(setDoc(lexRef(owner), lex({ json: '{"cows":[{"name":"Lakshmi"}]}' }))); checks++;
+    await assertFails(setDoc(lexRef(other, 'owner'), lex())); checks++;
+    await assertFails(getDoc(lexRef(other, 'owner'))); checks++;
+    await assertSucceeds(getDoc(lexRef(owner))); checks++;
     console.log(`voice training rules: ${checks} checks passed`);
   } finally {
     await env.cleanup();
