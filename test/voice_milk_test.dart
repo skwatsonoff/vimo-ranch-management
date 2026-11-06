@@ -76,7 +76,7 @@ final sharedSpeech = FakeSpeech();
 /// Lets Hive writes started under the test's fake clock finish, so the next
 /// test's set-up is not left waiting on them.
 Future<void> drainHive(WidgetTester tester) async {
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 20; i++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 40)),
     );
@@ -280,7 +280,11 @@ void main() {
     },
   );
 
-  Future<FakeSpeech> openVoice(WidgetTester tester, FakeMicBackend mic) async {
+  Future<FakeSpeech> openVoice(
+    WidgetTester tester,
+    FakeMicBackend mic, {
+    List<String>? spoken,
+  }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -298,7 +302,10 @@ void main() {
     MicPermission.backend = mic;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('flutter_tts'),
-      (call) async => 1,
+      (call) async {
+        if (call.method == 'speak') spoken?.add('${call.arguments}');
+        return 1;
+      },
     );
     await tester.pumpWidget(
       MaterialApp(

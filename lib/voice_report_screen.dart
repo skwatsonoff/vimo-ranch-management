@@ -517,6 +517,44 @@ class _VoiceReportScreenState extends State<VoiceReportScreen> {
               ],
             ),
             _ReportSection(
+              icon: CupertinoIcons.lightbulb,
+              title: bi('Learned words', 'கற்றுக்கொண்ட வார்த்தைகள்'),
+              subtitle: bi(
+                'What you taught VIMO with "Improve VIMO". It is used first, on this phone.',
+                '"VIMO-வை மேம்படுத்து" மூலம் நீங்கள் கற்றுக்கொடுத்தவை. இந்த போனில் முதலில் பயன்படும்.',
+              ),
+              children: [
+                if (learnedVoiceRows().isEmpty)
+                  AppText(
+                    bi('Nothing learned yet.', 'இன்னும் எதுவும் இல்லை.'),
+                    style: TextStyle(fontSize: 14, color: Ink.body),
+                  ),
+                for (final row in learnedVoiceRows().take(60))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      '“${txt(row, 'heard')}” → “${txt(row, 'meant')}”',
+                    ),
+                    subtitle: Text(
+                      '${txt(row, 'kind') == 'word' ? bi('word', 'வார்த்தை') : bi('sentence', 'வாக்கியம்')} · ×${toInt(row['count'])}',
+                    ),
+                    trailing: IconButton(
+                      tooltip: bi('Delete', 'நீக்கு'),
+                      icon: Icon(
+                        CupertinoIcons.trash,
+                        color: Ink.redText,
+                        size: 20,
+                      ),
+                      onPressed: () async {
+                        await forgetVoiceLesson(txt(row, 'key'));
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
+              ],
+            ),
+            _ReportSection(
               icon: CupertinoIcons.doc_text,
               title: bi('Report', 'அறிக்கை'),
               subtitle: bi(

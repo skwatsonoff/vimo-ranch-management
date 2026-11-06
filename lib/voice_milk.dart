@@ -262,6 +262,15 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   _VoicePhase _phase = _VoicePhase.sleeping;
   _Pending? _pending;
   final List<VoiceMilkEntry> _entries = [];
+
+  /// Follow-up questions for everything other than milk.
+  late final VoiceDialogue _dialogue = VoiceDialogue(
+    cows: cowNames,
+    tamilName: (n) => nameInLanguage(n, true),
+  );
+
+  /// Other entries saved by voice in this session (shown in the report).
+  final List<VoiceSavedAction> _otherSaved = [];
   final List<_Line> _lines = [];
 
   bool _running = false;
@@ -841,6 +850,16 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       );
     }
     _pending = null;
+    if (_dialogue.active) {
+      _dialogue.reset();
+      _line(
+        _LineKind.note,
+        bi(
+          'Not confirmed, so nothing was added',
+          'உறுதி செய்யாததால் சேர்க்கவில்லை',
+        ),
+      );
+    }
     if (_phase != _VoicePhase.sleeping) {
       UiSound.play(UiSoundKind.toggleOff);
       setState(() => _phase = _VoicePhase.sleeping);
@@ -892,17 +911,115 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     });
     if (command.isEmpty && !command.wake) return;
 
+    // Ranch work beyond milk: expenses, feed, a new cow, the doctor,
+    // questions. Milk follow-ups in progress keep priority.
+    final spoken = command.rest.join(' ');
+    final full = understandVoice(
+      spoken.isEmpty ? command.text : spoken,
+      cows: cowNames(),
+      aliases: cowNameAliases(),
+    );
+    final milkBusy = _pending != null || _phase == _VoicePhase.confirmUndo;
+    final otherWork =
+        !milkBusy && !_dialogue.active && dialogueIntents.contains(full.intent);
+    if (otherWork || _dialogue.active) {
+      VoiceDiagnostics.log('understood_extra', {
+        'intent': full.intent,
+        'slots': full.slots,
+        'dialogue': _dialogue.intent,
+        'asking': _dialogue.asking,
+      });
+    }
+
     if (_phase == _VoicePhase.sleeping) {
       if (!command.wake) return; // Not for VIMO: ordinary talk nearby.
       _line(_LineKind.me, command.text);
-      final hasMore = command.hasEntryData || command.finish || command.cancel;
+      final hasMore =
+          command.hasEntryData || command.finish || command.cancel || otherWork;
       _wake(silent: hasMore);
-      if (hasMore) _process(command);
+      if (otherWork) {
+        _talk(_dialogue.start(full, command.text));
+      } else if (hasMore) {
+        _process(command);
+      }
       return;
     }
     _line(_LineKind.me, command.text);
     _armSleep();
+    if (_dialogue.active) {
+      if (command.finish && !command.hasEntryData) {
+        _dialogue.reset();
+        _finish();
+      } else if (command.cancel && !command.hasEntryData) {
+        _dialogue.reset();
+        _say(
+          const _Say(
+            'சரி, விட்டுட்டேன்.',
+            'Sari, vittuten.',
+            'Okay, dropped it.',
+          ),
+        );
+      } else {
+        _talk(_dialogue.answer(command.text, yes: command.yes, no: command.no));
+      }
+      return;
+    }
+    if (otherWork) {
+      _talk(_dialogue.start(full, command.text));
+      return;
+    }
     _process(command);
+  }
+
+  /// Speaks a dialogue turn and carries out its action.
+  void _talk(DialogueTurn turn) {
+    setState(() => _phase = _VoicePhase.awake);
+    final action = turn.action;
+    final say = turn.say;
+    if (action != null &&
+        (action.kind == 'query' || action.kind == 'history')) {
+      final answer = answerVoiceQuestion(action.data);
+      VoiceDiagnostics.log('answered', {
+        'slots': action.data,
+        'answer': answer.en,
+      });
+      _say(_Say(answer.ta, answer.tanglish, answer.en));
+      _armSleep();
+      return;
+    }
+    if (say != null) _say(_Say(say.ta, say.tanglish, say.en));
+    if (action != null) unawaited(_saveAction(action));
+    _armSleep();
+  }
+
+  Future<void> _saveAction(VoiceAction action) async {
+    try {
+      final saved = await saveVoiceAction(action);
+      VoiceDiagnostics.log('action_saved', {
+        'kind': action.kind,
+        'saved': saved != null,
+        'data': action.data,
+      });
+      if (saved == null || !mounted) return;
+      HapticFeedback.lightImpact();
+      UiSound.play(UiSoundKind.success);
+      setState(() => _otherSaved.add(saved));
+      _line(_LineKind.note, '✓ ${saved.summary}');
+    } catch (error) {
+      VoiceDiagnostics.log('action_error', {
+        'kind': action.kind,
+        'error': '$error',
+      });
+      if (mounted) {
+        _line(
+          _LineKind.note,
+          bi(
+            'Could not save. Please try again.',
+            'சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          ),
+        );
+      }
+    }
   }
 
   void _process(VoiceCommand c) {
@@ -1438,6 +1555,74 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
+  /// "Improve VIMO": the owner types what was really said; VIMO learns it
+  /// on this phone at once (sentence and words, by sound).
+  Future<void> _improve(String heard) async {
+    final field = TextEditingController(text: heard);
+    final meant = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          Space.s20,
+          0,
+          Space.s20,
+          Space.s20 + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppText(
+              bi('Improve VIMO', 'VIMO-வை மேம்படுத்து'),
+              style: TextStyle(
+                fontSize: Gold.t16 + 1,
+                fontWeight: FontWeight.w700,
+                color: Ink.navy,
+              ),
+            ),
+            const SizedBox(height: Space.s4),
+            AppText(
+              bi(
+                'VIMO heard: "$heard". Type what you said; VIMO will understand it next time.',
+                'VIMO கேட்டது: "$heard". நீங்கள் சொன்னதை எழுதுங்கள்; அடுத்த முறை VIMO புரிந்துகொள்ளும்.',
+              ),
+              style: TextStyle(fontSize: 13, color: Ink.muted),
+            ),
+            const SizedBox(height: Space.s12),
+            TextField(
+              controller: field,
+              autofocus: true,
+              decoration: fieldStyle(
+                bi('What you said', 'நீங்கள் சொன்னது'),
+                icon: CupertinoIcons.pencil,
+              ),
+              onSubmitted: (v) => Navigator.of(context).pop(v),
+            ),
+            const SizedBox(height: Space.s12),
+            LiquidButton(
+              label: bi('Teach VIMO', 'VIMO-க்குக் கற்றுக்கொடு'),
+              icon: CupertinoIcons.lightbulb,
+              onPressed: () => Navigator.of(context).pop(field.text),
+            ),
+          ],
+        ),
+      ),
+    );
+    field.dispose();
+    final text = meant?.trim() ?? '';
+    if (text.isEmpty || text == heard.trim()) return;
+    await rememberVoiceCorrection(heard, text);
+    if (mounted) {
+      snack(
+        context,
+        bi('VIMO learned this', 'VIMO இதைக் கற்றுக்கொண்டது'),
+        tone: SnackTone.success,
+      );
+    }
+  }
+
   Future<bool> _confirmLeave() async {
     final leave = await showCupertinoDialog<bool>(
       context: context,
@@ -1791,25 +1976,48 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           ),
         );
       case _LineKind.me:
+        // Tap what VIMO heard to teach it what was really said.
         return Align(
           alignment: AlignmentDirectional.centerEnd,
-          child: Container(
-            margin: const EdgeInsets.only(top: Space.s8, left: Space.s48),
-            padding: const EdgeInsets.symmetric(
-              horizontal: Space.s16,
-              vertical: Space.s12,
-            ),
-            decoration: ShapeDecoration(
-              shape: const SquircleBorder(radius: Gold.r21),
-              color: Ink.tint,
-            ),
-            child: Text(
-              line.text,
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.3,
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
+          child: Semantics(
+            button: true,
+            hint: bi('Improve VIMO', 'VIMO-வை மேம்படுத்து'),
+            child: GestureDetector(
+              onTap: () => unawaited(_improve(line.text)),
+              child: Container(
+                margin: const EdgeInsets.only(top: Space.s8, left: Space.s48),
+                padding: const EdgeInsets.fromLTRB(
+                  Space.s16,
+                  Space.s12,
+                  Space.s12,
+                  Space.s12,
+                ),
+                decoration: ShapeDecoration(
+                  shape: const SquircleBorder(radius: Gold.r21),
+                  color: Ink.tint,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        line.text,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          height: 1.3,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: Space.s8),
+                    Icon(
+                      CupertinoIcons.pencil,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: .7),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2028,6 +2236,37 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
                     (counts[_entries[i].cow] ?? 0) > 1,
                   ),
                 ),
+              if (_otherSaved.isNotEmpty) ...[
+                const SizedBox(height: Space.s8),
+                AppText(
+                  bi('Also saved by voice', 'குரல் மூலம் சேமித்த மற்றவை'),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Ink.navy,
+                  ),
+                ),
+                for (final a in _otherSaved)
+                  Padding(
+                    padding: const EdgeInsets.only(top: Space.s4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          CupertinoIcons.checkmark_circle_fill,
+                          size: 16,
+                          color: Ink.greenText,
+                        ),
+                        const SizedBox(width: Space.s8),
+                        Expanded(
+                          child: Text(
+                            '${a.summary} · ${_clock(a.at)}',
+                            style: TextStyle(fontSize: 14, color: Ink.body),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
               const SizedBox(height: Space.s8),
               Align(
                 alignment: AlignmentDirectional.centerStart,

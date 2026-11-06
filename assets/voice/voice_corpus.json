@@ -4,7 +4,9 @@
   "Lakshmi",
   "Kaveri",
   "Gowri",
-  "Rani"
+  "Rani",
+  "Ponni",
+  "Sivappi"
  ],
  "utterances": [
   {
@@ -396,6 +398,200 @@
    "lang": "ta-Latn"
   },
   {
+   "text": "பொன்னி 5 லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "பொன்னிக்கு அஞ்சு லிட்டர் சேர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று காலை பொன்னி 8 லிட்டர் பால் கொடுத்தது",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 8,
+    "session": "Morning",
+    "date": "today"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "நேற்று மாலை பொன்னி மாடு ரெண்டரை லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 2.5,
+    "session": "Evening",
+    "date": "yesterday"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ponni ku anju litre podu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "ponni maadu 7 lit kuduthuchu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 7
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "nethu kaalaila ponni 3.5 lit",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 3.5,
+    "session": "Morning",
+    "date": "yesterday"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "add 6 litres for Ponni",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 6
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Ponni gave 4 litres of milk this evening",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 4,
+    "session": "Evening"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Ponni pathu litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "சிவப்பி 5 லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "சிவப்பிக்கு அஞ்சு லிட்டர் சேர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று காலை சிவப்பி 8 லிட்டர் பால் கொடுத்தது",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 8,
+    "session": "Morning",
+    "date": "today"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "நேற்று மாலை சிவப்பி மாடு ரெண்டரை லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 2.5,
+    "session": "Evening",
+    "date": "yesterday"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "sivappi ku anju litre podu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "sivappi maadu 7 lit kuduthuchu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 7
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "nethu kaalaila sivappi 3.5 lit",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 3.5,
+    "session": "Morning",
+    "date": "yesterday"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "add 6 litres for Sivappi",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 6
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Sivappi gave 4 litres of milk this evening",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 4,
+    "session": "Evening"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Sivappi pathu litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
    "text": "செல்விக்கு 2 லிட்டர் பால் விற்றேன்",
    "intent": "sell_milk",
    "slots": {
@@ -580,6 +776,1925 @@
   {
    "text": "விமோ",
    "intent": "wake",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "லட்சுமிக்கு ஊசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "lakshmi maaduku oosi pottom",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "vaccinated Lakshmi yesterday",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "லட்சுமிக்கு கோமாரி தடுப்பூசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Lakshmi",
+    "vaccine": "fmd"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "லட்சுமி சினை உறுதி ஆனது",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "lakshmi sinaiya irukku urudhi",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "லட்சுமிக்கு செயற்கை கருவூட்டல் செய்தோம்",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "lakshmiku karuvootal pannen",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "லட்சுமி பெண் கன்று ஈன்றது",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Lakshmi",
+    "gender": "female"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "Lakshmi gave birth to a male calf today",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Lakshmi",
+    "gender": "male"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "lakshmi kanru pottuchu",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "லட்சுமி மாடு காய்ச்சல் அடிக்கிறது",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "lakshmi maadu nondukuthu",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Lakshmi is coughing today",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Lakshmi"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "லட்சுமி மாட்டுக்கு மடிவீக்கம் என்று டாக்டர் சொன்னார்",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Lakshmi",
+    "disease": "mastitis"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor said Lakshmi has bloat",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Lakshmi",
+    "disease": "bloat"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இன்று லட்சுமிக்கு டாக்டர் வந்தார் 500 ரூபாய்",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Lakshmi",
+    "fee": 500
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor checked Lakshmi paid 300 rupees",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Lakshmi",
+    "fee": 300
+   },
+   "lang": "en"
+  },
+  {
+   "text": "lakshmi maaduva 30000 rupaaiku vitten",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Lakshmi",
+    "amount": 30000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "இன்று லட்சுமி மாட்டை 25000 ரூபாய்க்கு விற்றேன்",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Lakshmi",
+    "amount": 25000
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று லட்சுமி எவ்வளவு பால் கொடுத்தது",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "cow": "Lakshmi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "காவேரிக்கு ஊசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "kaveri maaduku oosi pottom",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "vaccinated Kaveri yesterday",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "காவேரிக்கு கோமாரி தடுப்பூசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Kaveri",
+    "vaccine": "fmd"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "காவேரி சினை உறுதி ஆனது",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "kaveri sinaiya irukku urudhi",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "காவேரிக்கு செயற்கை கருவூட்டல் செய்தோம்",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "kaveriku karuvootal pannen",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "காவேரி பெண் கன்று ஈன்றது",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Kaveri",
+    "gender": "female"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "Kaveri gave birth to a male calf today",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Kaveri",
+    "gender": "male"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "kaveri kanru pottuchu",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "காவேரி மாடு காய்ச்சல் அடிக்கிறது",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "kaveri maadu nondukuthu",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Kaveri is coughing today",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Kaveri"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "காவேரி மாட்டுக்கு மடிவீக்கம் என்று டாக்டர் சொன்னார்",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Kaveri",
+    "disease": "mastitis"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor said Kaveri has bloat",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Kaveri",
+    "disease": "bloat"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இன்று காவேரிக்கு டாக்டர் வந்தார் 500 ரூபாய்",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Kaveri",
+    "fee": 500
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor checked Kaveri paid 300 rupees",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Kaveri",
+    "fee": 300
+   },
+   "lang": "en"
+  },
+  {
+   "text": "kaveri maaduva 30000 rupaaiku vitten",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Kaveri",
+    "amount": 30000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "இன்று காவேரி மாட்டை 25000 ரூபாய்க்கு விற்றேன்",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Kaveri",
+    "amount": 25000
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று காவேரி எவ்வளவு பால் கொடுத்தது",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "cow": "Kaveri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "கௌரிக்கு ஊசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "gowri maaduku oosi pottom",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "vaccinated Gowri yesterday",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "கௌரிக்கு கோமாரி தடுப்பூசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Gowri",
+    "vaccine": "fmd"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "கௌரி சினை உறுதி ஆனது",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "gowri sinaiya irukku urudhi",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "கௌரிக்கு செயற்கை கருவூட்டல் செய்தோம்",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "gowriku karuvootal pannen",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "கௌரி பெண் கன்று ஈன்றது",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Gowri",
+    "gender": "female"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "Gowri gave birth to a male calf today",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Gowri",
+    "gender": "male"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "gowri kanru pottuchu",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "கௌரி மாடு காய்ச்சல் அடிக்கிறது",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "gowri maadu nondukuthu",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Gowri is coughing today",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Gowri"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "கௌரி மாட்டுக்கு மடிவீக்கம் என்று டாக்டர் சொன்னார்",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Gowri",
+    "disease": "mastitis"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor said Gowri has bloat",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Gowri",
+    "disease": "bloat"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இன்று கௌரிக்கு டாக்டர் வந்தார் 500 ரூபாய்",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Gowri",
+    "fee": 500
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor checked Gowri paid 300 rupees",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Gowri",
+    "fee": 300
+   },
+   "lang": "en"
+  },
+  {
+   "text": "gowri maaduva 30000 rupaaiku vitten",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Gowri",
+    "amount": 30000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "இன்று கௌரி மாட்டை 25000 ரூபாய்க்கு விற்றேன்",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Gowri",
+    "amount": 25000
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று கௌரி எவ்வளவு பால் கொடுத்தது",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "cow": "Gowri"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ராணிக்கு ஊசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "rani maaduku oosi pottom",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "vaccinated Rani yesterday",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "ராணிக்கு கோமாரி தடுப்பூசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Rani",
+    "vaccine": "fmd"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ராணி சினை உறுதி ஆனது",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "rani sinaiya irukku urudhi",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "ராணிக்கு செயற்கை கருவூட்டல் செய்தோம்",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "raniku karuvootal pannen",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "ராணி பெண் கன்று ஈன்றது",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Rani",
+    "gender": "female"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "Rani gave birth to a male calf today",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Rani",
+    "gender": "male"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "rani kanru pottuchu",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "ராணி மாடு காய்ச்சல் அடிக்கிறது",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "rani maadu nondukuthu",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Rani is coughing today",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Rani"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "ராணி மாட்டுக்கு மடிவீக்கம் என்று டாக்டர் சொன்னார்",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Rani",
+    "disease": "mastitis"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor said Rani has bloat",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Rani",
+    "disease": "bloat"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இன்று ராணிக்கு டாக்டர் வந்தார் 500 ரூபாய்",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Rani",
+    "fee": 500
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor checked Rani paid 300 rupees",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Rani",
+    "fee": 300
+   },
+   "lang": "en"
+  },
+  {
+   "text": "rani maaduva 30000 rupaaiku vitten",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Rani",
+    "amount": 30000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "இன்று ராணி மாட்டை 25000 ரூபாய்க்கு விற்றேன்",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Rani",
+    "amount": 25000
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று ராணி எவ்வளவு பால் கொடுத்தது",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "cow": "Rani"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "பொன்னிக்கு ஊசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ponni maaduku oosi pottom",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "vaccinated Ponni yesterday",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "பொன்னிக்கு கோமாரி தடுப்பூசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Ponni",
+    "vaccine": "fmd"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "பொன்னி சினை உறுதி ஆனது",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ponni sinaiya irukku urudhi",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "பொன்னிக்கு செயற்கை கருவூட்டல் செய்தோம்",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ponniku karuvootal pannen",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "பொன்னி பெண் கன்று ஈன்றது",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Ponni",
+    "gender": "female"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "Ponni gave birth to a male calf today",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Ponni",
+    "gender": "male"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "ponni kanru pottuchu",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "பொன்னி மாடு காய்ச்சல் அடிக்கிறது",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ponni maadu nondukuthu",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Ponni is coughing today",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Ponni"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "பொன்னி மாட்டுக்கு மடிவீக்கம் என்று டாக்டர் சொன்னார்",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Ponni",
+    "disease": "mastitis"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor said Ponni has bloat",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Ponni",
+    "disease": "bloat"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இன்று பொன்னிக்கு டாக்டர் வந்தார் 500 ரூபாய்",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Ponni",
+    "fee": 500
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor checked Ponni paid 300 rupees",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Ponni",
+    "fee": 300
+   },
+   "lang": "en"
+  },
+  {
+   "text": "ponni maaduva 30000 rupaaiku vitten",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Ponni",
+    "amount": 30000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "இன்று பொன்னி மாட்டை 25000 ரூபாய்க்கு விற்றேன்",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Ponni",
+    "amount": 25000
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று பொன்னி எவ்வளவு பால் கொடுத்தது",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "cow": "Ponni"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "சிவப்பிக்கு ஊசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "sivappi maaduku oosi pottom",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "vaccinated Sivappi yesterday",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "சிவப்பிக்கு கோமாரி தடுப்பூசி போட்டேன்",
+   "intent": "vaccination",
+   "slots": {
+    "cow": "Sivappi",
+    "vaccine": "fmd"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "சிவப்பி சினை உறுதி ஆனது",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "sivappi sinaiya irukku urudhi",
+   "intent": "pregnancy_confirmed",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "சிவப்பிக்கு செயற்கை கருவூட்டல் செய்தோம்",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "sivappiku karuvootal pannen",
+   "intent": "insemination",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "சிவப்பி பெண் கன்று ஈன்றது",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Sivappi",
+    "gender": "female"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "Sivappi gave birth to a male calf today",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Sivappi",
+    "gender": "male"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "sivappi kanru pottuchu",
+   "intent": "calf_birth",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "சிவப்பி மாடு காய்ச்சல் அடிக்கிறது",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "sivappi maadu nondukuthu",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Sivappi is coughing today",
+   "intent": "symptom",
+   "slots": {
+    "cow": "Sivappi"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "சிவப்பி மாட்டுக்கு மடிவீக்கம் என்று டாக்டர் சொன்னார்",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Sivappi",
+    "disease": "mastitis"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor said Sivappi has bloat",
+   "intent": "diagnosis",
+   "slots": {
+    "cow": "Sivappi",
+    "disease": "bloat"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இன்று சிவப்பிக்கு டாக்டர் வந்தார் 500 ரூபாய்",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Sivappi",
+    "fee": 500
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "doctor checked Sivappi paid 300 rupees",
+   "intent": "vet_visit",
+   "slots": {
+    "cow": "Sivappi",
+    "fee": 300
+   },
+   "lang": "en"
+  },
+  {
+   "text": "sivappi maaduva 30000 rupaaiku vitten",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Sivappi",
+    "amount": 30000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "இன்று சிவப்பி மாட்டை 25000 ரூபாய்க்கு விற்றேன்",
+   "intent": "sell_cow",
+   "slots": {
+    "cow": "Sivappi",
+    "amount": 25000
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று சிவப்பி எவ்வளவு பால் கொடுத்தது",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "cow": "Sivappi"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "luna nu pudhu maadu vaangunom",
+   "intent": "add_cow",
+   "slots": {
+    "name": "luna"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "luna nu oru pudhu maadu vaanginen 40000 rupaai",
+   "intent": "add_cow",
+   "slots": {
+    "name": "luna",
+    "amount": 40000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "komathi nu pudhu maadu vaangunom",
+   "intent": "add_cow",
+   "slots": {
+    "name": "komathi"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "komathi nu oru pudhu maadu vaanginen 40000 rupaai",
+   "intent": "add_cow",
+   "slots": {
+    "name": "komathi",
+    "amount": 40000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "புதிய மாடு மாதவி வாங்கினேன்",
+   "intent": "add_cow",
+   "slots": {
+    "name": "மாதவி"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "புதிய HF மாடு ராணி சேர்த்தேன்",
+   "intent": "add_cow",
+   "slots": {
+    "breed": "hf"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "added new Jersey cow Karuppi",
+   "intent": "add_cow",
+   "slots": {
+    "name": "karuppi",
+    "breed": "jersey"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "bought a new cow Bhavani for 50000 rupees",
+   "intent": "add_cow",
+   "slots": {
+    "amount": 50000
+   },
+   "lang": "en"
+  },
+  {
+   "text": "pudhu jersey maadu vaangunom",
+   "intent": "add_cow",
+   "slots": {
+    "breed": "jersey"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "கயிறு 150 ரூபாய் செலவு",
+   "intent": "expense",
+   "slots": {
+    "amount": 150
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று பெட்ரோல் 300 ரூபாய்",
+   "intent": "expense",
+   "slots": {
+    "amount": 300
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "petrol ku 200 rupaai selavu",
+   "intent": "expense",
+   "slots": {
+    "amount": 200
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "kayiru vaanga 120 rs",
+   "intent": "expense",
+   "slots": {
+    "amount": 120
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "current bill 450 rs",
+   "intent": "expense",
+   "slots": {
+    "amount": 450
+   },
+   "lang": "en"
+  },
+  {
+   "text": "spent 600 rupees on diesel",
+   "intent": "expense",
+   "slots": {
+    "amount": 600
+   },
+   "lang": "en"
+  },
+  {
+   "text": "ஆள் கூலி 500 ரூபாய் கொடுத்தேன்",
+   "intent": "expense",
+   "slots": {
+    "amount": 500
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "மருந்து 250 ரூபாய் செலவு",
+   "intent": "expense",
+   "slots": {
+    "amount": 250
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "water bill 100 rupees",
+   "intent": "expense",
+   "slots": {
+    "amount": 100
+   },
+   "lang": "en"
+  },
+  {
+   "text": "வைக்கோல் கூலி 300 ரூபாய்",
+   "intent": "expense",
+   "slots": {
+    "amount": 300
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "nethu marundhu 80 rupaai",
+   "intent": "expense",
+   "slots": {
+    "amount": 80,
+    "date": "yesterday"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "repair ku 1000 rupaai selavu",
+   "intent": "expense",
+   "slots": {
+    "amount": 1000
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "தவுடு 2 மூட்டை பயன்படுத்தினேன்",
+   "intent": "stock_use",
+   "slots": {
+    "item": "thavudu",
+    "qty": 2
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "மாட்டுக்கு வைக்கோல் 10 கட்டு கொடுத்தேன்",
+   "intent": "stock_use",
+   "slots": {
+    "item": "vaikol",
+    "qty": 10
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "thavudu 5 kg potten",
+   "intent": "stock_use",
+   "slots": {
+    "item": "thavudu",
+    "qty": 5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "vaikol 3 kattu kuduthen",
+   "intent": "stock_use",
+   "slots": {
+    "item": "vaikol",
+    "qty": 3
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "used 4 bags of bran today",
+   "intent": "stock_use",
+   "slots": {
+    "item": "thavudu",
+    "qty": 4
+   },
+   "lang": "en"
+  },
+  {
+   "text": "fed 12 kg of hay",
+   "intent": "stock_use",
+   "slots": {
+    "item": "vaikol",
+    "qty": 12
+   },
+   "lang": "en"
+  },
+  {
+   "text": "தவுடு 20 கிலோ வாங்கினேன்",
+   "intent": "stock_in",
+   "slots": {
+    "item": "thavudu",
+    "qty": 20
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "வைக்கோல் 50 கட்டு வாங்கினோம்",
+   "intent": "stock_in",
+   "slots": {
+    "item": "vaikol",
+    "qty": 50
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "thavudu 16 moottai vaanginen",
+   "intent": "stock_in",
+   "slots": {
+    "item": "thavudu",
+    "qty": 16
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "bought 25 kg of hay today",
+   "intent": "stock_in",
+   "slots": {
+    "item": "vaikol",
+    "qty": 25
+   },
+   "lang": "en"
+  },
+  {
+   "text": "hay stock came today",
+   "intent": "stock_in",
+   "slots": {
+    "item": "vaikol"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "murugan 500 rupaai kuduthaaru",
+   "intent": "payment",
+   "slots": {
+    "amount": 500
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "கண்ணன் 200 ரூபாய் பணம் கொடுத்தார்",
+   "intent": "payment",
+   "slots": {
+    "amount": 200
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "received 1000 rupees from Ram",
+   "intent": "payment",
+   "slots": {
+    "amount": 1000
+   },
+   "lang": "en"
+  },
+  {
+   "text": "ravi kitta 300 ruba vaanginen",
+   "intent": "payment",
+   "slots": {
+    "amount": 300
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "இன்று எவ்வளவு பால்?",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "range": "today"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இந்த மாதம் மொத்தம் எவ்வளவு பால்",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "range": "this_month"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "innaiku ethana litre paal",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "range": "today"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "how much milk this month",
+   "intent": "query",
+   "slots": {
+    "metric": "milk",
+    "range": "this_month"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "நேற்று எவ்வளவு பால் விற்றோம்",
+   "intent": "query",
+   "slots": {
+    "metric": "milk_sold",
+    "range": "yesterday"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "today how much milk sold",
+   "intent": "query",
+   "slots": {
+    "metric": "milk_sold"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "ரவி இதுவரை எவ்வளவு பால் வாங்கினார்",
+   "intent": "query",
+   "slots": {
+    "metric": "milk_sold",
+    "range": "all"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "தவுடு எவ்வளவு இருக்கு",
+   "intent": "query",
+   "slots": {
+    "metric": "stock",
+    "item": "thavudu"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "vaikol evlo irukku",
+   "intent": "query",
+   "slots": {
+    "metric": "stock",
+    "item": "vaikol"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "how much bran is left",
+   "intent": "query",
+   "slots": {
+    "metric": "stock",
+    "item": "thavudu"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "எத்தனை கன்று இருக்கு",
+   "intent": "query",
+   "slots": {
+    "metric": "calf_count"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "how many cows do I have",
+   "intent": "query",
+   "slots": {
+    "metric": "cow_count"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இந்த மாதம் செலவு எவ்வளவு",
+   "intent": "query",
+   "slots": {
+    "metric": "expense",
+    "range": "this_month"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "profit this week",
+   "intent": "query",
+   "slots": {
+    "metric": "profit",
+    "range": "this_week"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "இந்த மாதம் பால் வரலாறு காட்டு",
+   "intent": "history",
+   "slots": {
+    "metric": "milk",
+    "range": "this_month"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "inniki paal pathivugal kaattu",
+   "intent": "history",
+   "slots": {
+    "metric": "milk",
+    "range": "today"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "show milk records yesterday",
+   "intent": "history",
+   "slots": {
+    "metric": "milk",
+    "range": "yesterday"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "நாளை லட்சுமிக்கு ஊசி போட வேண்டும்",
+   "intent": "unknown",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "remind me to vaccinate Rani tomorrow",
+   "intent": "unknown",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "இன்று மழை வருமா",
+   "intent": "unknown",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "hello",
+   "intent": "unknown",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "லட்சுமி முக்கால் லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 0.75
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "lakshmi irubathi anju litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 25
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Lakshmi twelve litres",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 12
+   },
+   "lang": "en"
+  },
+  {
+   "text": "மாலை லட்சுமிக்கு ஒன்றரை லிட்டர் போடு",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 1.5,
+    "session": "Evening"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "காவேரி முக்கால் லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 0.75
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "kaveri irubathi anju litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 25
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Kaveri twelve litres",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 12
+   },
+   "lang": "en"
+  },
+  {
+   "text": "மாலை காவேரிக்கு ஒன்றரை லிட்டர் போடு",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 1.5,
+    "session": "Evening"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "கௌரி முக்கால் லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 0.75
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "gowri irubathi anju litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 25
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Gowri twelve litres",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 12
+   },
+   "lang": "en"
+  },
+  {
+   "text": "மாலை கௌரிக்கு ஒன்றரை லிட்டர் போடு",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 1.5,
+    "session": "Evening"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ராணி முக்கால் லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 0.75
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "rani irubathi anju litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 25
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Rani twelve litres",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 12
+   },
+   "lang": "en"
+  },
+  {
+   "text": "மாலை ராணிக்கு ஒன்றரை லிட்டர் போடு",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 1.5,
+    "session": "Evening"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "பொன்னி முக்கால் லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 0.75
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ponni irubathi anju litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 25
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Ponni twelve litres",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 12
+   },
+   "lang": "en"
+  },
+  {
+   "text": "மாலை பொன்னிக்கு ஒன்றரை லிட்டர் போடு",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 1.5,
+    "session": "Evening"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "சிவப்பி முக்கால் லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 0.75
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "sivappi irubathi anju litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 25
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Sivappi twelve litres",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 12
+   },
+   "lang": "en"
+  },
+  {
+   "text": "மாலை சிவப்பிக்கு ஒன்றரை லிட்டர் போடு",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 1.5,
+    "session": "Evening"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ஹே விமோ லட்சுமிக்கு 5 லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "hey vimo rani 4 litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 4
+   },
+   "lang": "en"
+  },
+  {
+   "text": "vimo kaveri ku moonu litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 3
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "பொன்னி 5 லிட்டர் பால் கறந்தேன்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Ponni",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "gowri maadu paththu litre kuduthaa",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "Lakshmi ko paanch litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 5
+   },
+   "lang": "hi-Latn"
+  },
+  {
+   "text": "சிவப்பி ஏழு லிட்டர் கொடுத்தாள்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Sivappi",
+    "liters": 7
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ரவிக்கு அரை லிட்டர் பால் விற்பனை",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 0.5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "today evening Ravi bought 2 litres milk",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 2
+   },
+   "lang": "en"
+  },
+  {
+   "text": "selvi akka ku 6 lit koduthaen",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 6
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "13 illa 2 litre",
+   "intent": "edit_last",
+   "slots": {
+    "liters": 2
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "150 இல்லை 250 ரூபாய்",
+   "intent": "edit_last",
+   "slots": {
+    "amount": 250
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "thappu, 2 litre nu maathu",
+   "intent": "edit_last",
+   "slots": {
+    "liters": 2
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "அதை நீக்கு",
+   "intent": "delete_last",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "ippo potta pathivai azhi",
+   "intent": "delete_last",
+   "slots": {},
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "முடிஞ்சது",
+   "intent": "finish",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "done",
+   "intent": "finish",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "ஆமாம்",
+   "intent": "yes",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "ok",
+   "intent": "yes",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "இல்லை",
+   "intent": "no",
    "slots": {},
    "lang": "ta"
   }

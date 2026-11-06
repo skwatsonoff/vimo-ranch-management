@@ -77,4 +77,20 @@ section *Corpus failures* below, refreshed whenever the corpus changes.
 
 ### Corpus failures
 
-None at the moment; see the Phase 5 notes in `VIMO_MASTER_HANDOFF.md`.
+`assets/voice/voice_corpus.json` (315 sentences in Tamil script, Tanglish,
+English and a few Hindi; built by `tools/voice_corpus/build_corpus.py`):
+**315 / 315 pass**. The owner's labelled sample sentences
+(`test/data/voice_intent_samples.jsonl`, 7,464 sentences, 20 intents) pass
+at **99.0%** (`test/voice_intents_test.dart`).
+
+Honest limits: both sets are written text, not real recordings, and the
+rules were tuned on them. Real speech brings recogniser mistakes; those are
+what the live mic test, "Improve VIMO" and the voice report are for. Known
+weak spots in the owner's samples:
+
+- Small talk labelled "unknown" in the samples ("ok", "சரி") is read as a
+  yes, because during a confirmation that is what it means.
+- A few sickness sentences with uncommon words (about 5% of symptom
+  samples) are not recognised as sickness.
+- Expenses phrased only as "vet fee expense yesterday" (no amount) can be
+  read as a doctor visit.

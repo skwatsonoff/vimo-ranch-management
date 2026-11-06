@@ -283,6 +283,13 @@ const _tamilNumbers = <String, double>{
   'பத்தொன்பது': 19,
   'இருபது': 20,
   'இருவது': 20,
+  // Tens up to நூறு; "இருபத்தி ஐந்து" joins a ten and a unit.
+  'இருபத்தி': 20, 'இருபத்து': 20, 'முப்பது': 30, 'முப்பத்தி': 30,
+  'முப்பத்து': 30, 'நாற்பது': 40, 'நாப்பது': 40, 'நாற்பத்தி': 40,
+  'ஐம்பது': 50, 'அம்பது': 50, 'ஐம்பத்தி': 50, 'அறுபது': 60, 'அறுபத்தி': 60,
+  'எழுபது': 70, 'எழுபத்தி': 70, 'எண்பது': 80, 'எண்பத்தி': 80,
+  'தொண்ணூறு': 90, 'தொண்ணூத்தி': 90, 'நூறு': 100,
+  'கால்': .25, 'முக்கால்': .75,
 };
 
 /// Latin spellings of Tamil, English and Hindi numbers.
@@ -307,7 +314,12 @@ const _latinNumbers = <String, double>{
   'pathinonnu': 11, 'pannendu': 12, 'pannirendu': 12,
   'pathimoonu': 13, 'pathinaalu': 14, 'pathinanju': 15,
   'pathinaaru': 16, 'pathinezhu': 17, 'pathinettu': 18,
-  'irubathu': 20, 'iruvathu': 20,
+  'irubathu': 20, 'iruvathu': 20, 'irubathi': 20, 'iruvathi': 20,
+  'mupathu': 30, 'muppathu': 30, 'muppathi': 30, 'naarpathu': 40,
+  'narpathu': 40, 'naapathu': 40, 'aimbathu': 50, 'ambathu': 50,
+  'arubathu': 60, 'ezhubathu': 70, 'enbathu': 80, 'thonnooru': 90,
+  'nooru': 100, 'hundred': 100, 'sixty': 60, 'seventy': 70, 'eighty': 80,
+  'ninety': 90, 'kaal': .25, 'mukkaal': .75, 'mukkal': .75,
   // Hindi in Latin letters
   'ek': 1, 'do': 2, 'teen': 3, 'tin': 3, 'char': 4, 'chaar': 4,
   'paanch': 5, 'panch': 5, 'paach': 5, 'chhe': 6, 'chhah': 6, 'che': 6,

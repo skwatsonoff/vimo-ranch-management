@@ -58,6 +58,7 @@ import 'voice_diagnostics.dart';
 import 'voice_understanding.dart';
 import 'language_packs.dart';
 import 'voice_engine.dart';
+import 'voice_dialogue.dart';
 import 'language_pack_store.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -102,6 +103,7 @@ part 'voice_milk.dart';
 part 'voice_report_screen.dart';
 part 'voice_learning.dart';
 part 'language_pack_screen.dart';
+part 'voice_actions.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
