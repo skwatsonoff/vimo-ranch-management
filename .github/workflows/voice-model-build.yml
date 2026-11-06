@@ -12,6 +12,10 @@ on:
         description: 'Models: <hf id>:<openai base>:<name>, space separated'
         required: false
         default: 'vasista22/whisper-tamil-small:openai/whisper-small:whisper-tamil-small mahimairaja/whisper-base-tamil:openai/whisper-base:whisper-tamil-base'
+      baseline:
+        description: 'Also score the ready-made multilingual model (yes/no)'
+        required: false
+        default: 'yes'
 permissions:
   contents: write
 concurrency:
@@ -33,6 +37,9 @@ jobs:
         run: |
           pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
           pip install --quiet "optimum[exporters]==1.24.0" "transformers==4.48.3" "onnx==1.17.0" "onnxruntime==1.20.1" google-cloud-firestore
+          # A torchvision built for another torch breaks transformers' imports;
+          # nothing here needs it.
+          pip uninstall --yes --quiet torchvision || true
       - name: Install the browser runtime (for the check)
         working-directory: tools/voice_training
         run: |
@@ -69,7 +76,7 @@ jobs:
             fi
           done
           # A ready-made multilingual model, for comparison only.
-          node web_model_check.mjs "$RUNNER_TEMP/models" onnx-community/whisper-base "$rec" "$RUNNER_TEMP/heard_base.jsonl" \
+          [ "${{ inputs.baseline }}" = "no" ] || node web_model_check.mjs "$RUNNER_TEMP/models" onnx-community/whisper-base "$rec" "$RUNNER_TEMP/heard_base.jsonl" \
             && pairs="$pairs whisper-base-multilingual=$RUNNER_TEMP/heard_base.jsonl" || true
           python score_web_models.py "$rec/lexicon.json" $pairs
           cp scores.json "$RUNNER_TEMP/models/scores.json"
