@@ -311,6 +311,11 @@ class _Line {
 
 // --- the screen ----------------------------------------------------------------
 
+/// Tests: behave as the iPhone Home Screen web app does (keyboard
+/// dictation instead of the browser's speech service).
+@visibleForTesting
+bool debugKeyboardDictation = false;
+
 class VoiceMilkScreen extends StatefulWidget {
   const VoiceMilkScreen({super.key});
 
@@ -396,10 +401,23 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   final Map<String, TextEditingController> _litreFields = {};
 
+  /// Keyboard dictation instead of the browser's speech service. Apple
+  /// blocks that service in an iPhone web app opened from the Home Screen
+  /// (whatever the Dictation setting); the keyboard's 🎤 key still works.
+  bool _keyboardMode = false;
+  final DictationController _dictation = DictationController();
+  final FocusNode _dictationFocus = FocusNode();
+
+  /// True where the browser's speech service can never start.
+  static bool get _speechServiceBlocked =>
+      debugKeyboardDictation ||
+      (kIsWeb && _browserRuntime.appleMobile && _browserRuntime.standaloneApp);
+
   bool get _tamilReplies => _locale.startsWith('ta');
 
   @override
   void initState() {
+    _dictationFocus.addListener(_dictationFocusChanged);
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _entries.addAll(_loadVoiceDraft());
@@ -485,6 +503,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
     final engine = _engine;
     if (engine != null) _quietly(engine.dispose);
+    _dictationFocus.removeListener(_dictationFocusChanged);
+    _dictationFocus.dispose();
+    _dictation.dispose();
     _quietly(_tts.stop);
     _keepAwake(false);
     _breath.dispose();
@@ -519,6 +540,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   /// Checks (and, with [ask], requests) the microphone. Shows the matching
   /// error card and returns false when listening cannot start.
   Future<bool> _checkMic({bool ask = true}) async {
+    // Keyboard dictation is the phone's own: the page needs no microphone.
+    if (_keyboardMode) return true;
     final access = await ensureMicPermission(speech: true, ask: ask);
     if (!mounted) return false;
     if (access.isGranted) {
@@ -673,9 +696,19 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       );
       return;
     }
+    if (_keyboardMode || _speechServiceBlocked) {
+      await _useKeyboard();
+      return;
+    }
     // Never trust the recogniser's remembered start: check the permission
     // itself, asking with the system pop-up when it is still possible.
-    if (!await _checkMic()) return;
+    if (!await _checkMic()) {
+      // On an iPhone the keyboard's 🎤 needs no permission from the page.
+      if (mounted && kIsWeb && _browserRuntime.appleMobile) {
+        await _useKeyboard(switched: true);
+      }
+      return;
+    }
     await _setupVoice();
     bool ok = false;
     try {
@@ -687,14 +720,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         );
         _engine = engine;
         ok = started;
-        _engineSubs.addAll([
-          engine.results.listen(_onResult),
-          engine.statuses.listen(_onStatus),
-          engine.errors.listen(_onError),
-          engine.soundLevels.listen((level) {
-            if (mounted) setState(() => _level = level);
-          }),
-        ]);
+        _listenTo(engine);
       } else {
         ok = await _engine!.initialize();
       }
@@ -702,6 +728,10 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       ok = false;
     }
     if (!mounted) return;
+    if (!ok && kIsWeb && _browserRuntime.appleMobile) {
+      await _useKeyboard(switched: true);
+      return;
+    }
     if (!ok) {
       setState(
         () => _micError = bi(
@@ -742,6 +772,91 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         'Ready. Say Hey Vimo.',
       ),
     );
+  }
+
+  void _listenTo(VoiceEngine engine) => _engineSubs.addAll([
+    engine.results.listen(_onResult),
+    engine.statuses.listen(_onStatus),
+    engine.errors.listen(_onError),
+    engine.soundLevels.listen((level) {
+      if (mounted) setState(() => _level = level);
+    }),
+  ]);
+
+  /// Listens through the keyboard's dictation: the same conversation, the
+  /// words come from the 🎤 key into the box at the bottom. [switched]: the
+  /// browser's speech service was tried and refused.
+  Future<void> _useKeyboard({bool switched = false}) async {
+    final old = _engine;
+    if (old is KeyboardDictationEngine) return;
+    for (final sub in _engineSubs) {
+      unawaited(sub.cancel());
+    }
+    _engineSubs.clear();
+    if (old != null) _quietly(old.dispose);
+    final engine = KeyboardDictationEngine(_dictation);
+    _engine = engine;
+    _listenTo(engine);
+    await _setupVoice();
+    if (!mounted) return;
+    setState(() {
+      _keyboardMode = true;
+      _initialised = true;
+      _running = true;
+      _micError = null;
+      _micProblem = null;
+      // No wake word: tapping the box is already "Hey Vimo".
+      if (_phase == _VoicePhase.sleeping) _phase = _VoicePhase.awake;
+    });
+    VoiceDiagnostics.log('voice_session_start', {
+      'appVersion': vimoAppVersion,
+      'platform': 'web',
+      'appLanguage': appLanguage.mode,
+      'voiceLocale': _locale,
+      'engine': engine.name,
+      'switched': switched,
+      'homeScreenApp': _speechServiceBlocked,
+      'cows': cowNames().length,
+    });
+    _keepAwake(true);
+    if (cowNames().isEmpty) {
+      _line(
+        _LineKind.note,
+        bi(
+          'Add a cow before recording milk.',
+          'பால் பதிவுக்கு முதலில் மாடு சேர்க்கவும்.',
+        ),
+      );
+    }
+    _say(
+      const _Say(
+        'தயார். கீழே உள்ள பெட்டியைத் தட்டி, keyboard-இல் 🎤 அழுத்திப் பேசுங்க.',
+        'Ready. Keezha ulla box-a thottu, keyboard mic-a azhuthi pesunga.',
+        'Ready. Tap the box below, then 🎤 on the keyboard, and speak.',
+      ),
+    );
+  }
+
+  void _dictationFocusChanged() {
+    if (!mounted) return;
+    final engine = _engine;
+    if (!_dictationFocus.hasFocus) {
+      // The keyboard closed: words left in the box are one last sentence,
+      // and an emptied-out box starts clean next time.
+      if (engine is KeyboardDictationEngine) engine.submit();
+      if (_dictation.fresh.isEmpty && _dictation.text.isNotEmpty) {
+        _dictation.clear();
+        _dictation.used = 0;
+      }
+    } else {
+      HapticFeedback.selectionClick();
+      if (_speaking) _quietly(_tts.stop);
+      // A tap on the box wakes VIMO the way "Hey Vimo" does.
+      if (_phase == _VoicePhase.sleeping) {
+        setState(() => _phase = _VoicePhase.awake);
+      }
+    }
+    setState(() {});
   }
 
   Future<void> _setupVoice() async {
@@ -848,6 +963,11 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       'service-not-allowed',
       'error_insufficient_permissions',
     }.contains(message)) {
+      if (kIsWeb && _browserRuntime.appleMobile && !_keyboardMode) {
+        // Safari refused its speech service: the keyboard's 🎤 still works.
+        unawaited(_useKeyboard(switched: true));
+        return;
+      }
       _running = false;
       unawaited(_onPermissionError(message));
       return;
@@ -903,7 +1023,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       _pendingAlternatives = alternatives;
       _settle?.cancel();
       _settle = Timer(
-        const Duration(milliseconds: 1250),
+        // Dictation brings words in bursts: a little longer between them.
+        Duration(milliseconds: _keyboardMode ? 1700 : 1250),
         () => _sentence(_pendingAlternatives),
       );
       return;
@@ -955,6 +1076,28 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     _speech = _speech.then((_) => _speakNow(spoken, language));
   }
 
+  Future<void> _speakAloud(String text, String language) async {
+    try {
+      await _tts.setLanguage(language);
+      await _tts.setSpeechRate(kIsWeb ? 1.0 : 0.5);
+      final limit = Duration(
+        milliseconds: (1200 + text.length * 90).clamp(1600, 9000),
+      );
+      // Some voices never report the end: the length of the text bounds it.
+      final ended = Completer<void>();
+      final timer = Timer(limit, () {
+        if (!ended.isCompleted) ended.complete();
+      });
+      await Future.any([_tts.speak(text), ended.future]);
+      timer.cancel();
+    } catch (error) {
+      VoiceDiagnostics.log('tts_error', {
+        'language': language,
+        'error': '$error',
+      });
+    }
+  }
+
   Future<void> _speakNow(String text, String language) async {
     if (!mounted) return;
     if (!_running) {
@@ -975,24 +1118,10 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     try {
       await _cancelEar();
     } catch (_) {}
-    try {
-      await _tts.setLanguage(language);
-      await _tts.setSpeechRate(kIsWeb ? 1.0 : 0.5);
-      final limit = Duration(
-        milliseconds: (1200 + text.length * 90).clamp(1600, 9000),
-      );
-      // Some voices never report the end: the length of the text bounds it.
-      final ended = Completer<void>();
-      final timer = Timer(limit, () {
-        if (!ended.isCompleted) ended.complete();
-      });
-      await Future.any([_tts.speak(text), ended.future]);
-      timer.cancel();
-    } catch (error) {
-      VoiceDiagnostics.log('tts_error', {
-        'language': language,
-        'error': '$error',
-      });
+    // While the keyboard's 🎤 is open it would write VIMO's own voice into
+    // the box: the reply is shown, not spoken.
+    if (!(_keyboardMode && _dictationFocus.hasFocus)) {
+      await _speakAloud(text, language);
     }
     await Future.delayed(const Duration(milliseconds: 220));
     if (!mounted) return;
@@ -1025,6 +1154,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   void _armSleep([Duration after = const Duration(seconds: 14)]) {
     _sleep?.cancel();
+    // With the keyboard VIMO is only spoken to on purpose: it never dozes.
+    if (_keyboardMode) return;
     _sleep = Timer(after, _goToSleep);
   }
 
@@ -1126,6 +1257,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       });
     }
 
+    if (_keyboardMode && _phase == _VoicePhase.sleeping) {
+      _phase = _VoicePhase.awake;
+    }
     if (_phase == _VoicePhase.sleeping) {
       if (!command.wake) return; // Not for VIMO: ordinary talk nearby.
       _line(_LineKind.me, command.text);
@@ -1726,6 +1860,11 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   void _tapOrb() {
+    if (_keyboardMode && _micProblem == null) {
+      if (_speaking) _quietly(_tts.stop);
+      _dictationFocus.requestFocus();
+      return;
+    }
     if (_micProblem != null) {
       // A permission problem: ask again rather than only restarting.
       if (_micProblem == _MicProblem.speechService && !kIsWeb) {
@@ -1991,6 +2130,18 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       return bi('Starting the microphone…', 'மைக் தயாராகிறது…');
     }
     if (_speaking) return bi('VIMO is speaking…', 'VIMO பேசுகிறது…');
+    if (_keyboardMode &&
+        (_phase == _VoicePhase.sleeping || _phase == _VoicePhase.awake)) {
+      return _dictationFocus.hasFocus
+          ? bi(
+              'Press 🎤 on the keyboard: say cow and litres',
+              'keyboard 🎤 அழுத்தி மாடும் லிட்டரும் சொல்லுங்க',
+            )
+          : bi(
+              'Tap the box below, then 🎤 on the keyboard',
+              'கீழே உள்ள பெட்டியைத் தட்டி, keyboard 🎤 அழுத்துங்க',
+            );
+    }
     return switch (_phase) {
       _VoicePhase.sleeping => bi('Say "Hey Vimo"', '"ஹே விமோ" சொல்லுங்க'),
       _VoicePhase.awake => bi(
@@ -2009,32 +2160,37 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   Widget _liveView() {
     final total = _entries.fold<double>(0, (s, e) => s + e.litres);
     final cows = _entries.map((e) => e.cow).toSet().length;
+    // With the keyboard open there is no room for the orb: the words, the
+    // box and Finish stay.
+    final typing = _keyboardMode && MediaQuery.viewInsetsOf(context).bottom > 0;
     return Column(
       key: const ValueKey('live'),
       children: [
         const SizedBox(height: Space.s56 + Space.s8),
-        _VoiceOrb(
-          animation: _breath,
-          hearing: _hear,
-          phase: _phase,
-          speaking: _speaking,
-          listening: _listeningNow,
-          error: _micError != null,
-          level: _level,
-          onTap: _tapOrb,
-        ),
-        _ListeningBars(
-          breath: _breath,
-          hearing: _hear,
-          active:
-              _micError == null &&
-              (_speaking ||
-                  _phase != _VoicePhase.sleeping ||
-                  _partial.isNotEmpty),
-          speaking: _speaking,
-          level: _level,
-        ),
-        const SizedBox(height: Space.s8),
+        if (!typing) ...[
+          _VoiceOrb(
+            animation: _breath,
+            hearing: _hear,
+            phase: _phase,
+            speaking: _speaking,
+            listening: _listeningNow,
+            error: _micError != null,
+            level: _level,
+            onTap: _tapOrb,
+          ),
+          _ListeningBars(
+            breath: _breath,
+            hearing: _hear,
+            active:
+                _micError == null &&
+                (_speaking ||
+                    _phase != _VoicePhase.sleeping ||
+                    _partial.isNotEmpty),
+            speaking: _speaking,
+            level: _level,
+          ),
+          const SizedBox(height: Space.s8),
+        ],
         if (_micProblem != null)
           // The help card scrolls on small phones instead of overflowing.
           Flexible(
@@ -2069,28 +2225,29 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
               ),
             ),
           ),
-        SizedBox(
-          height: Space.s32 + Space.s8,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              Space.s24,
-              Space.s8,
-              Space.s24,
-              0,
-            ),
-            child: Text(
-              _partial,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15,
-                fontStyle: FontStyle.italic,
-                color: Ink.muted,
+        if (!_keyboardMode)
+          SizedBox(
+            height: Space.s32 + Space.s8,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.s24,
+                Space.s8,
+                Space.s24,
+                0,
+              ),
+              child: Text(
+                _partial,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontStyle: FontStyle.italic,
+                  color: Ink.muted,
+                ),
               ),
             ),
           ),
-        ),
         Expanded(
           child: _lines.isEmpty
               ? _VoiceHelp(tamil: _tamilReplies)
@@ -2106,6 +2263,15 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
                   itemBuilder: (context, i) => _lineView(_lines[i]),
                 ),
         ),
+        if (_keyboardMode)
+          _DictationBox(
+            controller: _dictation,
+            focusNode: _dictationFocus,
+            onSubmit: () {
+              final engine = _engine;
+              if (engine is KeyboardDictationEngine) engine.submit();
+            },
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             Space.s16,
@@ -3242,4 +3408,124 @@ class _MicProblemCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The box the keyboard's dictation writes into (iPhone web app). Words
+/// VIMO already used stay, faded; Return sends typed words at once.
+class _DictationBox extends StatelessWidget {
+  final DictationController controller;
+  final FocusNode focusNode;
+  final VoidCallback onSubmit;
+  const _DictationBox({
+    required this.controller,
+    required this.focusNode,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([controller, focusNode]),
+    builder: (context, _) {
+      final focused = focusNode.hasFocus;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(Space.s16, 0, Space.s16, Space.s12),
+        child: AnimatedContainer(
+          duration: Motion.short,
+          curve: Motion.settle,
+          constraints: const BoxConstraints(minHeight: Space.target + Space.s8),
+          padding: const EdgeInsets.fromLTRB(
+            Space.s16,
+            Space.s4,
+            Space.s4,
+            Space.s4,
+          ),
+          decoration: ShapeDecoration(
+            color: Ink.surface.withValues(alpha: focused ? 1 : .86),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(Gold.r21),
+              side: BorderSide(
+                color: focused
+                    ? Ink.violet.withValues(alpha: .62)
+                    : Ink.violet.withValues(alpha: .18),
+                width: focused ? 1.6 : 1,
+              ),
+            ),
+            shadows: [
+              if (focused)
+                BoxShadow(
+                  color: Ink.violet.withValues(alpha: .16),
+                  blurRadius: Gold.r21,
+                  offset: const Offset(0, Space.s4),
+                ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                CupertinoIcons.mic_fill,
+                size: 20,
+                color: focused ? Ink.violetDeep : Ink.faint,
+              ),
+              const SizedBox(width: Space.s12),
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('voice-dictation-box'),
+                  controller: controller,
+                  focusNode: focusNode,
+                  minLines: 1,
+                  maxLines: 3,
+                  autocorrect: false,
+                  textCapitalization: TextCapitalization.none,
+                  textInputAction: TextInputAction.send,
+                  // Return sends the words and keeps the keyboard open.
+                  onEditingComplete: onSubmit,
+                  onTapOutside: (_) {},
+                  style: TextStyle(
+                    fontSize: Gold.t16 + 1,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                    color: Ink.navy,
+                  ),
+                  cursorColor: Ink.violet,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: Space.s12,
+                    ),
+                    hintText: bi(
+                      'Tap here, then 🎤 on the keyboard',
+                      'இங்கே தட்டி, keyboard 🎤 அழுத்துங்க',
+                    ),
+                    hintStyle: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Ink.faint,
+                    ),
+                  ),
+                ),
+              ),
+              if (focused)
+                Semantics(
+                  button: true,
+                  label: bi('Close keyboard', 'Keyboard மூடு'),
+                  child: Pressable(
+                    radius: 22,
+                    onTap: focusNode.unfocus,
+                    child: SizedBox.square(
+                      dimension: Space.target,
+                      child: Icon(
+                        CupertinoIcons.keyboard_chevron_compact_down,
+                        size: 22,
+                        color: Ink.muted,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
