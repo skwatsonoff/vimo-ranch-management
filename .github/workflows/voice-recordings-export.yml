@@ -1,0 +1,50 @@
+name: Export voice recordings (encrypted)
+# Copies the Train VIMO recordings out of Firestore so VIMO's voice
+# understanding can be studied and improved from them (the owner asked for
+# this). This repository is public: the copy is encrypted with the public
+# key given when the run is started, so only the holder of the matching
+# private key can open it, and it is deleted after one day. The log shows
+# counts only.
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: RSA public key (PEM, base64 on one line) to encrypt the copy
+        required: true
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install --quiet google-cloud-firestore
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Copy the recordings
+        working-directory: tools/voice_training
+        run: python export_recordings.py "$RUNNER_TEMP/rec"
+      - name: Encrypt
+        env:
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          echo "$PUBLIC_KEY" | base64 -d > pub.pem
+          tar -czf rec.tgz -C rec .
+          openssl rand -out key.bin 32
+          mkdir -p out
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in rec.tgz -out out/rec.tgz.enc -pass file:key.bin
+          openssl pkeyutl -encrypt -pubin -inkey pub.pem -pkeyopt rsa_padding_mode:oaep -in key.bin -out out/key.bin.enc
+          rm -rf rec rec.tgz key.bin
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voice-recordings-encrypted
+          path: ${{ runner.temp }}/out
+          retention-days: 1
