@@ -30,6 +30,6 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Deploy to Firebase
-        run: npx --yes firebase-tools@latest deploy --only hosting,firestore:rules --project my-ranch-sync --non-interactive
+        run: npx --yes firebase-tools@latest deploy --only hosting,firestore:rules,storage --project my-ranch-sync --non-interactive
       - name: Done
         run: echo "::notice::VIMO is live at https://my-ranch-sync.web.app"

@@ -336,7 +336,7 @@ Validation: `flutter analyze` no errors or warnings (infos only, pre-existing); 
 
 Not done / placeholders (honest): the offline recogniser runtime on the phone (needs native ONNX libraries and a trained model); the fine-tuning and ONNX export have never run on real recordings; voice replies for languages other than Tamil are spoken and shown in English; cow sales and payments are recognised but not saved by voice.
 
-How to continue: merge `feature/offline-voice-training` → `deploy-web.yml` deploys hosting and Firestore rules. Storage rules are **not** in that workflow: deploy them once with `firebase deploy --only storage --project my-ranch-sync`. Then record on Train VIMO, tap Start training, and run "Train VIMO voice" in GitHub Actions (or the Colab notebook). Give Claude the Voice test & report file for the next round.
+How to continue: merge `feature/offline-voice-training` → `deploy-web.yml` deploys hosting, Firestore rules and (owner approved 2026-11-06) Storage rules; `VIMO_DEPLOY.bat` does the same. Then record on Train VIMO, tap Start training, and run "Train VIMO voice" in GitHub Actions (or the Colab notebook). Give Claude the Voice test & report file for the next round.
 
 ## 7. Open items, limitations and questions
 
