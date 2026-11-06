@@ -229,13 +229,16 @@ class SystemSpeechEngine implements VoiceEngine {
 
 /// VIMO's own model, downloaded as an `asr` language pack.
 ///
-/// TODO(offline-asr): load the pack with sherpa-onnx (streaming Zipformer,
-/// int8) through the `sherpa_onnx` Flutter package, feed it 16 kHz mono PCM
-/// from the `record` package, and emit [VoiceHeard] partial/final results.
-/// That needs the native libraries in the Android/iOS builds and a model
-/// produced by tools/voice_training, neither of which can be built and
-/// tested in this repository's CI yet. Until then [initialize] throws
-/// [UnsupportedError] and [createVoiceEngine] keeps the system engine.
+/// TODO(offline-asr): the `asr-ta` pack built by tools/voice_training is a
+/// tar.bz2 of a fine-tuned Whisper tiny exported to ONNX with int8 weights
+/// (encoder, decoder and tokenizer files). Load it with an on-device ONNX
+/// runtime (the `onnxruntime` Flutter package, or sherpa-onnx after
+/// converting the model to its Whisper layout), feed it 16 kHz mono PCM
+/// from the `record` package, and emit [VoiceHeard] results. That needs
+/// native libraries in the Android/iOS builds and a real trained model,
+/// neither of which can be built and tested in this repository's CI yet.
+/// Until then [initialize] throws [UnsupportedError] and
+/// [createVoiceEngine] keeps the system engine.
 class OfflineSpeechEngine implements VoiceEngine {
   OfflineSpeechEngine(this.modelPath);
 

@@ -1,0 +1,97 @@
+name: Train VIMO voice
+# Trains VIMO's own listening model when the owner taps "Start training" in
+# the app (Settings → Train VIMO), which writes a voice_training_jobs
+# document with status "requested".
+#
+# - Every 3 hours a tiny check looks for a requested job and stops in
+#   seconds when there is none.
+# - Or run it now: GitHub app → this repository → Actions → "Train VIMO
+#   voice" → Run workflow (optionally paste a job id).
+#
+# Uses the same Google credentials as deploy-web.yml (secret
+# FIREBASE_SERVICE_ACCOUNT); no token is ever put in the app.
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Job id (leave empty to take the oldest requested job)
+        required: false
+        default: ''
+  schedule:
+    - cron: '17 */3 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: voice-training
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      job: ${{ steps.find.outputs.job }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install the Firestore client
+        run: pip install --quiet google-cloud-firestore google-cloud-storage
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Find a requested job
+        id: find
+        working-directory: tools/voice_training
+        env:
+          REQUESTED: ${{ inputs.job_id }}
+        run: |
+          job="$REQUESTED"
+          if [ -z "$job" ]; then job="$(python train_job.py check)"; fi
+          echo "job=$job" >> "$GITHUB_OUTPUT"
+          if [ -z "$job" ]; then echo "::notice::No training requested"; else echo "::notice::Training job $job"; fi
+
+  train:
+    needs: check
+    if: needs.check.outputs.job != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: tools/voice_training/requirements.txt
+      - name: Keep the model checkpoint between runs
+        uses: actions/cache@v4
+        with:
+          path: tools/voice_training/work/checkpoint
+          key: voice-ckpt-${{ github.run_id }}
+          restore-keys: voice-ckpt-
+      - name: Install training tools (CPU)
+        working-directory: tools/voice_training
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet -r requirements.txt
+      - name: Check the training scripts
+        working-directory: tools/voice_training
+        run: python -m pytest -q tests
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Train, check and publish
+        working-directory: tools/voice_training
+        env:
+          VIMO_LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VIMO_MAX_MINUTES: '300'
+        run: python train_job.py run "${{ needs.check.outputs.job }}"
+      - name: Keep the training report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-training-report
+          path: tools/voice_training/work/train_report.json
+          if-no-files-found: ignore

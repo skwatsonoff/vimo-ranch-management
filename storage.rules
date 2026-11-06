@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// VIMO Firebase Storage.
+// - training_data/<uid>/...: the owner's own voice recordings (WAV) and
+//   their JSON descriptions, for training VIMO's voice model. Only that
+//   signed-in user can read, write or delete them; at most 10 MB a file.
+// - language_packs/...: downloadable offline voice packs and their
+//   manifest. Anyone may read; only the training workflow (a service
+//   account, which bypasses these rules) writes.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /training_data/{uid}/{rest=**} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && (request.resource.contentType == 'audio/wav'
+            || request.resource.contentType == 'application/json');
+    }
+
+    match /language_packs/{rest=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

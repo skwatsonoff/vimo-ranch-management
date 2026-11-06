@@ -24,4 +24,4 @@ jobs:
           NODE_PATH: /tmp/vimo-rules/node_modules
         run: |
           mkdir -p tmp
-          /tmp/vimo-rules/node_modules/.bin/firebase emulators:exec --only firestore --project demo-vimo --config firebase.test.json 'node test/run_rules_checks.cjs'
+          /tmp/vimo-rules/node_modules/.bin/firebase emulators:exec --only firestore,storage --project demo-vimo --config firebase.test.json 'node test/run_rules_checks.cjs'

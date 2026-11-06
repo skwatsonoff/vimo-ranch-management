@@ -1335,6 +1335,30 @@ service cloud.firestore {
       }
     }
 
+    // Voice training: the owner asks for a training run of VIMO's own voice
+    // model; the cloud workflow (a service account, which bypasses these
+    // rules) runs it and writes the status. Clients only create a request
+    // for themselves and read their own jobs.
+    match /voice_training_jobs/{jobId} {
+      allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerUid', 'ranchId', 'languages', 'status', 'createdAt', 'recordingCount', 'minutes'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'requested'
+        && request.resource.data.languages is list
+        && request.resource.data.languages.size() >= 1
+        && request.resource.data.languages.size() <= 4
+        && request.resource.data.ranchId is string
+        && request.resource.data.ranchId.size() <= 128
+        && (request.resource.data.ranchId == '' || isMember(request.resource.data.ranchId))
+        && request.resource.data.recordingCount is int
+        && request.resource.data.recordingCount >= 0
+        && request.resource.data.minutes is number
+        && request.resource.data.minutes >= 0
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
     // What the team decided about an account. Its owner can read it.
     match /vimo_sanctions/{uid} {
       allow read: if (signedIn() && request.auth.uid == uid) || isVimoTeam();

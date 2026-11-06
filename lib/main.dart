@@ -59,6 +59,8 @@ import 'voice_understanding.dart';
 import 'language_packs.dart';
 import 'voice_engine.dart';
 import 'voice_dialogue.dart';
+import 'voice_training_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'language_pack_store.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -104,6 +106,7 @@ part 'voice_report_screen.dart';
 part 'voice_learning.dart';
 part 'language_pack_screen.dart';
 part 'voice_actions.dart';
+part 'voice_training_screen.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -20075,6 +20078,12 @@ class AppSettingsScreen extends StatelessWidget {
                   label: 'Preferences',
                   onTap: () => push(context, const PreferencesScreen()),
                 ),
+                if (workspaceEnabled('Ranch') && canManageRanch)
+                  _ActionRow(
+                    icon: CupertinoIcons.bolt,
+                    label: bi('Train VIMO', 'VIMO பயிற்சி'),
+                    onTap: () => push(context, const TrainVimoScreen()),
+                  ),
                 if (workspaceEnabled('Ranch') && canManageRanch)
                   _ActionRow(
                     icon: CupertinoIcons.waveform,

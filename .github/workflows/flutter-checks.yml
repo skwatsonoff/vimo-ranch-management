@@ -17,6 +17,10 @@ jobs:
           cache: true
       - name: Install packages
         run: flutter pub get
+      - name: Voice training scripts (Python)
+        run: |
+          pip install --quiet pytest
+          python -m pytest -q tools/voice_training/tests
       - name: Analyze
         id: analyze
         continue-on-error: true
