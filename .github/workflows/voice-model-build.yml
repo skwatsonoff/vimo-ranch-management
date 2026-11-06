@@ -35,8 +35,8 @@ jobs:
           node-version: '22'
       - name: Install converters (CPU)
         run: |
-          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --quiet "optimum[exporters]==1.24.0" "transformers==4.48.3" "onnx==1.17.0" "onnxruntime==1.20.1" google-cloud-firestore
+          pip install --quiet torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet "optimum[exporters]==1.24.0" "transformers==4.48.3" "onnx==1.17.0" "onnxruntime==1.20.1" onnxscript google-cloud-firestore
           # A torchvision built for another torch breaks transformers' imports;
           # nothing here needs it.
           pip uninstall --yes --quiet torchvision || true
@@ -76,8 +76,10 @@ jobs:
             fi
           done
           # A ready-made multilingual model, for comparison only.
-          [ "${{ inputs.baseline }}" = "no" ] || node web_model_check.mjs "$RUNNER_TEMP/models" onnx-community/whisper-base "$rec" "$RUNNER_TEMP/heard_base.jsonl" \
-            && pairs="$pairs whisper-base-multilingual=$RUNNER_TEMP/heard_base.jsonl" || true
+          if [ "${{ inputs.baseline }}" != "no" ] && node web_model_check.mjs "$RUNNER_TEMP/models" onnx-community/whisper-base "$rec" "$RUNNER_TEMP/heard_base.jsonl"; then
+            pairs="$pairs whisper-base-multilingual=$RUNNER_TEMP/heard_base.jsonl"
+          fi
+          if [ -z "$pairs" ]; then echo "::error::No model could be checked"; exit 1; fi
           python score_web_models.py "$rec/lexicon.json" $pairs
           cp scores.json "$RUNNER_TEMP/models/scores.json"
           rm -rf "$RUNNER_TEMP/rec" "$RUNNER_TEMP"/heard_*.jsonl
