@@ -1,0 +1,96 @@
+name: Build VIMO's own ear (browser voice models)
+# Turns Tamil Whisper models into files the phone's browser runs itself
+# (transformers.js, 8-bit), checks each one exactly as the phone will run
+# it on the owner's own Train VIMO recordings, and publishes the files to
+# this repository's "voice-models" branch, from where the app downloads
+# them (raw.githubusercontent.com allows that; free). The recordings never
+# leave the runner, and the log shows counts and scores only.
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: 'Models: <hf id>:<openai base>:<name>, space separated'
+        required: false
+        default: 'vasista22/whisper-tamil-small:openai/whisper-small:whisper-tamil-small mahimairaja/whisper-base-tamil:openai/whisper-base:whisper-tamil-base'
+permissions:
+  contents: write
+concurrency:
+  group: voice-model-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install converters (CPU)
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet "optimum[exporters]==1.24.0" "transformers==4.48.3" "onnx==1.17.0" "onnxruntime==1.20.1" google-cloud-firestore
+      - name: Install the browser runtime (for the check)
+        working-directory: tools/voice_training
+        run: npm install --no-save --silent @huggingface/transformers@4.3.1
+      - name: Build the models
+        working-directory: tools/voice_training
+        env:
+          MODELS: ${{ inputs.models }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/models"
+          for spec in $MODELS; do
+            IFS=: read -r id base name <<< "$spec"
+            python build_web_model.py "$id" "$base" "$RUNNER_TEMP/models/$name" || echo "::warning::$name could not be built"
+          done
+          du -sh "$RUNNER_TEMP"/models/* || true
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Check every model on the owner's recordings
+        working-directory: tools/voice_training
+        run: |
+          set -euo pipefail
+          python export_recordings.py "$RUNNER_TEMP/rec"
+          rec="$RUNNER_TEMP/rec/owner1"
+          pairs=""
+          for dir in "$RUNNER_TEMP"/models/*/; do
+            name="$(basename "$dir")"
+            if node web_model_check.mjs "$RUNNER_TEMP/models" "$name" "$rec" "$RUNNER_TEMP/heard_$name.jsonl"; then
+              pairs="$pairs $name=$RUNNER_TEMP/heard_$name.jsonl"
+            else
+              echo "::warning::$name did not run in the browser runtime"; rm -rf "$dir"
+            fi
+          done
+          # A ready-made multilingual model, for comparison only.
+          node web_model_check.mjs "$RUNNER_TEMP/models" onnx-community/whisper-base "$rec" "$RUNNER_TEMP/heard_base.jsonl" \
+            && pairs="$pairs whisper-base-multilingual=$RUNNER_TEMP/heard_base.jsonl" || true
+          python score_web_models.py "$rec/lexicon.json" $pairs
+          cp scores.json "$RUNNER_TEMP/models/scores.json"
+          rm -rf "$RUNNER_TEMP/rec" "$RUNNER_TEMP"/heard_*.jsonl
+      - name: Publish to the voice-models branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/models"
+          cat > README.md <<'MD'
+          # VIMO voice models
+          Files the VIMO app downloads to understand speech on the phone itself
+          (transformers.js, 8-bit ONNX). Built by .github/workflows/voice-model-build.yml
+          on the main branch from Apache-2.0 models:
+          - whisper-tamil-small: vasista22/whisper-tamil-small (SPRING Lab, IIT Madras)
+          - whisper-tamil-base: mahimairaja/whisper-base-tamil
+          scores.json: how well each heard the owner's own recordings.
+          MD
+          git init -q -b voice-models
+          git config user.name "vimo-bot"
+          git config user.email "vimo-bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "VIMO voice models"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" voice-models
+          find . -type f -not -path './.git/*' -printf '%s %p\n' | sort -n | tail -20
