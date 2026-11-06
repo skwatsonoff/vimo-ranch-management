@@ -1389,6 +1389,14 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
     }
 
+    // What VIMO learned from the owner's recordings (cow names as the
+    // owner says them). Written only by the training workflow (a service
+    // account); the owner's phone reads it before listening.
+    match /voice_training_lessons/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     // What the team decided about an account. Its owner can read it.
     match /vimo_sanctions/{uid} {
       allow read: if (signedIn() && request.auth.uid == uid) || isVimoTeam();

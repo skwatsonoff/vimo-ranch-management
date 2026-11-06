@@ -42,6 +42,9 @@ String? _trainingUid() {
   }
 }
 
+/// The training job whose lessons this phone already read.
+String? _lessonsReadFor;
+
 class TrainVimoScreen extends StatefulWidget {
   const TrainVimoScreen({super.key});
 
@@ -780,6 +783,14 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
             final job = docs.first.data();
             final status = txt(job, 'status', 'requested');
             final step = trainingStatuses.indexOf(status);
+            final lessons = job['lessons'];
+            if (status == 'ready' &&
+                lessons is num &&
+                _lessonsReadFor != docs.first.id) {
+              // New lessons in the cloud: bring them to the phone now.
+              _lessonsReadFor = docs.first.id;
+              unawaited(refreshVoiceLessons());
+            }
             return _ReportSection(
               icon: CupertinoIcons.gauge,
               title: bi('Latest training', 'சமீபத்திய பயிற்சி'),
@@ -793,6 +804,22 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
                       minHeight: Space.s8,
                       color: Ink.tint,
                       backgroundColor: Ink.lavender,
+                    ),
+                  ),
+                if (lessons is num)
+                  Padding(
+                    padding: const EdgeInsets.only(top: Space.s8),
+                    child: AppText(
+                      lessons > 0
+                          ? bi(
+                              'VIMO learned ${lessons.toInt()} ways your cows\' names are said, from ${toInt(job['files'])} recordings. Voice milk uses them now.',
+                              'உங்கள் ${toInt(job['files'])} பதிவுகளிலிருந்து, மாட்டுப் பெயர்கள் சொல்லப்படும் ${lessons.toInt()} விதங்களை VIMO கற்றுக்கொண்டது. குரல் பால் பதிவு இப்போதே இவற்றைப் பயன்படுத்தும்.',
+                            )
+                          : bi(
+                              'VIMO already understands every cow name in your ${toInt(job['files'])} recordings.',
+                              'உங்கள் ${toInt(job['files'])} பதிவுகளிலும் எல்லா மாட்டுப் பெயர்களும் VIMO-வுக்கு ஏற்கனவே புரிகின்றன.',
+                            ),
+                      style: TextStyle(fontSize: 14, color: Ink.body),
                     ),
                   ),
                 if (job['wer'] is num)
@@ -828,7 +855,7 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
                     icon: CupertinoIcons.arrow_down_circle_fill,
                     onPressed: () => push(context, const LanguagePacksScreen()),
                   ),
-                ] else if (status == 'ready')
+                ] else if (status == 'ready' && job['wer'] is num)
                   Padding(
                     padding: const EdgeInsets.only(top: Space.s8),
                     child: AppText(

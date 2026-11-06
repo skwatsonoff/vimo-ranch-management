@@ -687,9 +687,10 @@ double? _moneyAmount(List<String> tokens) {
 double? _quantity(List<String> tokens) {
   for (int i = 0; i < tokens.length; i++) {
     if (_unitWords.containsKey(tokens[i]) && i > 0) {
-      final v =
-          extractLitres([tokens[i - 1]]) ??
-          (i > 1 ? extractLitres(tokens.sublist(i - 2, i)) : null);
+      final one = extractLitres([tokens[i - 1]]);
+      final two = i > 1 ? extractLitres(tokens.sublist(i - 2, i)) : null;
+      // "twenty five kilos" is 25, not 5.
+      final v = two != null && one != null && two > one ? two : one ?? two;
       if (v != null) return v;
     }
   }

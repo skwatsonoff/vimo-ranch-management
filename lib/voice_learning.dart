@@ -117,6 +117,69 @@ Map<String, Object?> voiceLexiconExport() => {
   ],
 };
 
+// --- lessons from the owner's recordings ---------------------------------------
+
+/// Where the phone keeps the last lessons read from the cloud.
+const _cloudLessonsKey = 'voiceCloudLessons';
+Map<String, List<String>>? _cloudAliases;
+
+/// Cow names as the owner says them, learned in the cloud from the "Train
+/// VIMO" recordings ("Shomperi" heard as "strawberry"): one more name for
+/// each cow, so VIMO understands it next time. Works offline from the copy
+/// kept on the phone.
+Map<String, List<String>> cloudCowAliases() {
+  final cached = _cloudAliases;
+  if (cached != null) return cached;
+  final out = <String, List<String>>{};
+  try {
+    final raw = Hive.isBoxOpen('settings')
+        ? Hive.box('settings').get(_cloudLessonsKey)
+        : null;
+    final lessons = raw is String ? jsonDecode(raw) : null;
+    final aliases = lessons is Map ? lessons['aliases'] : null;
+    if (aliases is Map) {
+      for (final MapEntry(:key, :value) in aliases.entries) {
+        if (value is! List) continue;
+        final names = [
+          for (final v in value)
+            if ('$v'.trim().isNotEmpty) '$v'.trim(),
+        ];
+        if (names.isNotEmpty) out['$key'] = names;
+      }
+    }
+  } catch (_) {}
+  return _cloudAliases = out;
+}
+
+/// Reads the latest lessons (Firestore voice_training_lessons/<uid>,
+/// written by the training workflow) into the phone. Quietly does nothing
+/// when signed out or offline; the last copy keeps working.
+Future<void> refreshVoiceLessons() async {
+  try {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || !Hive.isBoxOpen('settings')) return;
+    final snap = await FirebaseFirestore.instance
+        .collection(trainingLessonsCollection)
+        .doc(uid)
+        .get()
+        .timeout(const Duration(seconds: 8));
+    final json = snap.data()?['json'];
+    if (json is! String || json.isEmpty) return;
+    if (Hive.box('settings').get(_cloudLessonsKey) == json) return;
+    await Hive.box('settings').put(_cloudLessonsKey, json);
+    _cloudAliases = null;
+    VoiceDiagnostics.log('cloud_lessons', {
+      'cows': cloudCowAliases().length,
+      'spellings': cloudCowAliases().values.fold<int>(
+        0,
+        (n, v) => n + v.length,
+      ),
+    });
+  } catch (error) {
+    VoiceDiagnostics.log('cloud_lessons_error', {'error': '$error'});
+  }
+}
+
 /// Words the recogniser should favour: the wake word, cow names in every
 /// spelling, customers, and words the owner taught VIMO.
 List<String> voiceHotwords({int limit = 120}) {
@@ -125,7 +188,9 @@ List<String> voiceHotwords({int limit = 120}) {
     words.add(cow);
     words.add(tamilCowName(cow));
   }
-  for (final extra in cowNameAliases().values) {
+  // Real names only: a learned mishearing ("strawberry") is understood,
+  // never favoured.
+  for (final extra in cowNameAliases(learned: false).values) {
     words.addAll(extra);
   }
   words.addAll(learnedVoiceWords());

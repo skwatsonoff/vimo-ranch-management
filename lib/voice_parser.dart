@@ -8,6 +8,8 @@
 /// key, so "மைனா", "Maina" and "Mayna" are the same cow.
 library;
 
+import 'voice_heard_fixes.dart';
+
 // --- phonetic keys -------------------------------------------------------------
 
 const _consonants = <String, String>{
@@ -207,11 +209,14 @@ List<String> voiceTokens(String text) {
   s = s.replaceAll(RegExp(r"(?<!\d)\.|\.(?!\d)"), ' ');
   s = s.replaceAll(RegExp(r"'s\b"), '');
   s = s.replaceAll("'", '');
-  return s
-      .split(RegExp(r'\s+'))
-      .map((t) => t.replaceAll('-', '').trim())
-      .where((t) => t.isNotEmpty)
-      .toList();
+  // Spellings recognisers really write for dairy words ("லேட்டர்").
+  return fixHeardTokens(
+    s
+        .split(RegExp(r'\s+'))
+        .map((t) => t.replaceAll('-', '').trim())
+        .where((t) => t.isNotEmpty)
+        .toList(),
+  );
 }
 
 // --- words ---------------------------------------------------------------------

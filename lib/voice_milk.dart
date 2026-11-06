@@ -223,16 +223,23 @@ Future<void> settleVoiceDraftBeforeManual(BuildContext context) async {
 
 /// Other spellings of each cow's name (its saved Tamil and English names),
 /// so "லட்சுமி" and "Lakshmi" both find the cow.
-Map<String, List<String>> cowNameAliases() {
+/// Other names of each cow: its Tamil and English names and, when
+/// [learned], the spellings learned from the owner's recordings.
+Map<String, List<String>> cowNameAliases({bool learned = true}) {
   final aliases = <String, List<String>>{};
   if (!Hive.isBoxOpen('animals')) return aliases;
+  final cloud = learned ? cloudCowAliases() : const <String, List<String>>{};
   for (final animal in animals()) {
     final name = txt(animal, 'name').trim();
     if (name.isEmpty) continue;
-    final extra = [
-      txt(animal, 'nameTamil'),
-      txt(animal, 'nameEnglish'),
-    ].map((n) => n.trim()).where((n) => n.isNotEmpty && n != name);
+    final extra = <String>{
+      for (final n in [
+        txt(animal, 'nameTamil'),
+        txt(animal, 'nameEnglish'),
+        ...?cloud[name],
+      ])
+        if (n.trim().isNotEmpty && n.trim() != name) n.trim(),
+    };
     if (extra.isNotEmpty) aliases[name] = extra.toList();
   }
   return aliases;
@@ -400,6 +407,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   @override
   void initState() {
+    // What VIMO learned from the owner's recordings, for this session.
+    unawaited(refreshVoiceLessons());
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _entries.addAll(_loadVoiceDraft());

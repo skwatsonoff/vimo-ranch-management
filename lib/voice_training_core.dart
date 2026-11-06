@@ -174,6 +174,9 @@ String trainingDocId(String uid, String id) => '${uid}_$id';
 const trainingAudioCollection = 'voice_training_audio';
 const trainingLexiconCollection = 'voice_training_lexicon';
 
+/// What the cloud learned from the recordings, read by the phone.
+const trainingLessonsCollection = 'voice_training_lessons';
+
 /// Status words written by the cloud workflow, in order.
 const trainingStatuses = [
   'requested',

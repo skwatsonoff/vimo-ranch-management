@@ -121,6 +121,34 @@ def publish(packs_dir: pathlib.Path) -> dict:
     return manifest
 
 
+def learn_from_recordings(db, owner: str, data: pathlib.Path) -> int:
+    """VIMO's understanding, taught by the owner's recordings: cow names as
+    the owner says them, written to voice_training_lessons/<owner> for the
+    phone. Returns how many spellings were learned."""
+    from google.cloud import firestore
+
+    from learn_lessons import learn
+    from transcribe import transcribe
+
+    ref = db.collection("voice_training_lessons").document(owner)
+    old = ref.get()
+    cache = {}
+    if old.exists:
+        cache = json.loads((old.to_dict() or {}).get("json") or "{}").get("heard", {})
+    rows = transcribe(data, cache)
+    lexicon = read_json(data / "lexicon.json", {})
+    cows = [c for c in lexicon.get("cows", []) if c.get("name")]
+    lessons = learn(rows, cows)
+    lessons["recordings"] = len(rows)
+    lessons["createdAt"] = time.time()
+    # What was heard, so the next run only listens to new recordings.
+    lessons["heard"] = {r["id"]: r["asr"] for r in rows}
+    ref.set({"json": json.dumps(lessons, ensure_ascii=False), "updatedAt": firestore.SERVER_TIMESTAMP})
+    learned = sum(len(v) for v in lessons["aliases"].values())
+    print(f"lessons: {learned} spellings for {len(lessons['aliases'])} cows from {len(rows)} recordings")
+    return learned
+
+
 def run(job_id: str):
     db = _firestore()
     jobs = _jobs(db)
@@ -133,6 +161,16 @@ def run(job_id: str):
     try:
         data = WORK / "data"
         count = download(db, owner, data)
+        learned = learn_from_recordings(db, owner, data)
+        # Taps on "Start training" that were waiting are answered by this run.
+        for other in jobs:
+            if other["id"] != job_id and other.get("ownerUid") == owner and other.get("status") == "requested":
+                _set(db, other["id"], status="ready", lessons=learned, files=count, note=f"Answered by {job_id}")
+        if os.environ.get("VIMO_FINETUNE") != "1":
+            # VIMO's own listening model waits for the offline engine on
+            # the phone; until then the lessons are what helps.
+            _set(db, job_id, status="ready", lessons=learned, files=count)
+            return
         lexicon = read_json(data / "lexicon.json", {})
         subprocess.run([sys.executable, "make_synthetic_text.py", str(data / "lexicon.json"), str(WORK / "synthetic.txt")], check=False)
         budget = os.environ.get("VIMO_MAX_MINUTES", "300")

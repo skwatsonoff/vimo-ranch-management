@@ -1,7 +1,9 @@
 name: Train VIMO voice
-# Trains VIMO's own listening model when the owner taps "Start training" in
-# the app (Settings → Train VIMO), which writes a voice_training_jobs
-# document with status "requested".
+# Runs when the owner taps "Start training" in the app (Settings → Train
+# VIMO), which writes a voice_training_jobs document with status
+# "requested". It listens to the owner's recordings with Whisper large-v3
+# and learns how the cows' names are said (voice_training_lessons/<owner>,
+# read by the phone before voice milk listens).
 #
 # - Every 3 hours a tiny check looks for a requested job and stops in
 #   seconds when there is none.
@@ -23,6 +25,11 @@ on:
     - cron: '17 */3 * * *'
 permissions:
   contents: read
+# Learning from the recordings (cow names as the owner says them) always
+# runs. Fine-tuning VIMO's own listening model waits for the offline engine
+# on the phone: set to '1' to run it too.
+env:
+  VIMO_FINETUNE: '0'
 concurrency:
   group: voice-training
   cancel-in-progress: false
@@ -68,18 +75,26 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: tools/voice_training/requirements.txt
+          cache-dependency-path: tools/voice_training/requirements*.txt
       - name: Keep the model checkpoint between runs
         uses: actions/cache@v4
         with:
           path: tools/voice_training/work/checkpoint
           key: voice-ckpt-${{ github.run_id }}
           restore-keys: voice-ckpt-
+      - name: Keep the speech recogniser between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-large-v3
       - name: Install training tools (CPU)
         working-directory: tools/voice_training
         run: |
-          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --quiet -r requirements.txt
+          pip install --quiet -r requirements-lessons.txt
+          if [ "$VIMO_FINETUNE" = "1" ]; then
+            pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+            pip install --quiet -r requirements.txt
+          fi
       - name: Check the training scripts
         working-directory: tools/voice_training
         run: python -m pytest -q tests

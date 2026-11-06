@@ -62,6 +62,15 @@ const fs = require('node:fs');
     await assertFails(setDoc(lexRef(other, 'owner'), lex())); checks++;
     await assertFails(getDoc(lexRef(other, 'owner'))); checks++;
     await assertSucceeds(getDoc(lexRef(owner))); checks++;
+    const lessonRef = (ctx, uid = 'owner') => doc(ctx.firestore(), 'voice_training_lessons/' + uid);
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), 'voice_training_lessons/owner'), { json: '{"aliases":{}}' });
+    });
+    await assertSucceeds(getDoc(lessonRef(owner))); checks++;
+    await assertFails(getDoc(lessonRef(other, 'owner'))); checks++;
+    await assertFails(getDoc(lessonRef(anon, 'owner'))); checks++;
+    await assertFails(setDoc(lessonRef(owner), { json: '{"aliases":{"Lakshmi":["x"]}}' })); checks++; // only the workflow writes
+    await assertFails(deleteDoc(lessonRef(owner))); checks++;
     console.log(`voice training rules: ${checks} checks passed`);
   } finally {
     await env.cleanup();

@@ -1,0 +1,5 @@
+# Learning from the owner's recordings (always runs; CPU only, free runner).
+google-cloud-firestore>=2.16
+faster-whisper>=1.1
+numpy>=1.26
+pytest>=8
