@@ -1,0 +1,587 @@
+{
+ "schema": 1,
+ "cows": [
+  "Lakshmi",
+  "Kaveri",
+  "Gowri",
+  "Rani"
+ ],
+ "utterances": [
+  {
+   "text": "லட்சுமி 5 லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "லட்சுமிக்கு அஞ்சு லிட்டர் சேர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று காலை லட்சுமி 8 லிட்டர் பால் கொடுத்தது",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 8,
+    "session": "Morning",
+    "date": "today"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "நேற்று மாலை லட்சுமி மாடு ரெண்டரை லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 2.5,
+    "session": "Evening",
+    "date": "yesterday"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "lakshmi ku anju litre podu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "lakshmi maadu 7 lit kuduthuchu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 7
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "nethu kaalaila lakshmi 3.5 lit",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 3.5,
+    "session": "Morning",
+    "date": "yesterday"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "add 6 litres for Lakshmi",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 6
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Lakshmi gave 4 litres of milk this evening",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 4,
+    "session": "Evening"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Lakshmi pathu litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Lakshmi",
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "காவேரி 5 லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "காவேரிக்கு அஞ்சு லிட்டர் சேர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று காலை காவேரி 8 லிட்டர் பால் கொடுத்தது",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 8,
+    "session": "Morning",
+    "date": "today"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "நேற்று மாலை காவேரி மாடு ரெண்டரை லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 2.5,
+    "session": "Evening",
+    "date": "yesterday"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "kaveri ku anju litre podu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "kaveri maadu 7 lit kuduthuchu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 7
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "nethu kaalaila kaveri 3.5 lit",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 3.5,
+    "session": "Morning",
+    "date": "yesterday"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "add 6 litres for Kaveri",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 6
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Kaveri gave 4 litres of milk this evening",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 4,
+    "session": "Evening"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Kaveri pathu litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Kaveri",
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "கௌரி 5 லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "கௌரிக்கு அஞ்சு லிட்டர் சேர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று காலை கௌரி 8 லிட்டர் பால் கொடுத்தது",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 8,
+    "session": "Morning",
+    "date": "today"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "நேற்று மாலை கௌரி மாடு ரெண்டரை லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 2.5,
+    "session": "Evening",
+    "date": "yesterday"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "gowri ku anju litre podu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "gowri maadu 7 lit kuduthuchu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 7
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "nethu kaalaila gowri 3.5 lit",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 3.5,
+    "session": "Morning",
+    "date": "yesterday"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "add 6 litres for Gowri",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 6
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Gowri gave 4 litres of milk this evening",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 4,
+    "session": "Evening"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Gowri pathu litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Gowri",
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "ராணி 5 லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ராணிக்கு அஞ்சு லிட்டர் சேர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 5
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "இன்று காலை ராணி 8 லிட்டர் பால் கொடுத்தது",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 8,
+    "session": "Morning",
+    "date": "today"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "நேற்று மாலை ராணி மாடு ரெண்டரை லிட்டர்",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 2.5,
+    "session": "Evening",
+    "date": "yesterday"
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "rani ku anju litre podu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "rani maadu 7 lit kuduthuchu",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 7
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "nethu kaalaila rani 3.5 lit",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 3.5,
+    "session": "Morning",
+    "date": "yesterday"
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "add 6 litres for Rani",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 6
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Rani gave 4 litres of milk this evening",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 4,
+    "session": "Evening"
+   },
+   "lang": "en"
+  },
+  {
+   "text": "Rani pathu litre",
+   "intent": "milk_record",
+   "slots": {
+    "cow": "Rani",
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "செல்விக்கு 2 லிட்டர் பால் விற்றேன்",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 2
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "ரவி 3 லிட்டர் பால் வாங்கினார்",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 3
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "murugan anna ku 4 litre koduthaen",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 4
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "selvikku 0.5 L paal kuduthen",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 0.5
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "sold 5 litres of milk to Kumar",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 5
+   },
+   "lang": "en"
+  },
+  {
+   "text": "I gave Ravi 2 litres",
+   "intent": "sell_milk",
+   "slots": {
+    "liters": 2
+   },
+   "lang": "en"
+  },
+  {
+   "text": "5 இல்லை 6 லிட்டர்",
+   "intent": "edit_last",
+   "slots": {
+    "liters": 6
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "9 illa 10 litre",
+   "intent": "edit_last",
+   "slots": {
+    "liters": 10
+   },
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "not 3, 4 litres",
+   "intent": "edit_last",
+   "slots": {
+    "liters": 4
+   },
+   "lang": "en"
+  },
+  {
+   "text": "தவறு, 7 லிட்டர் என்று மாற்று",
+   "intent": "edit_last",
+   "slots": {
+    "liters": 7
+   },
+   "lang": "ta"
+  },
+  {
+   "text": "கடைசி பதிவை நீக்கு",
+   "intent": "delete_last",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "adha azhichidu",
+   "intent": "delete_last",
+   "slots": {},
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "remove that",
+   "intent": "delete_last",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "cancel",
+   "intent": "delete_last",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "பால் கறந்து முடிச்சிட்டேன்",
+   "intent": "finish",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "mudinchu",
+   "intent": "finish",
+   "slots": {},
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "finish",
+   "intent": "finish",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "போதும்",
+   "intent": "finish",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "ஆமா",
+   "intent": "yes",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "சரி",
+   "intent": "yes",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "yes",
+   "intent": "yes",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "aama",
+   "intent": "yes",
+   "slots": {},
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "வேண்டாம்",
+   "intent": "no",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "illa",
+   "intent": "no",
+   "slots": {},
+   "lang": "ta-Latn"
+  },
+  {
+   "text": "no",
+   "intent": "no",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "ஹே விமோ",
+   "intent": "wake",
+   "slots": {},
+   "lang": "ta"
+  },
+  {
+   "text": "hey vimo",
+   "intent": "wake",
+   "slots": {},
+   "lang": "en"
+  },
+  {
+   "text": "விமோ",
+   "intent": "wake",
+   "slots": {},
+   "lang": "ta"
+  }
+ ]
+}

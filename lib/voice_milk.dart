@@ -284,6 +284,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   /// Ends a sentence once the words stop changing. Browsers mark nothing as
   /// final until the microphone stops, so VIMO decides itself, as Siri does.
   Timer? _settle;
+  DateTime? _listenStartedAt;
+  bool _firstWordsLogged = false;
+  double? _lastConfidence;
   List<String> _pendingAlternatives = const [];
 
   /// The sentence already acted on in this listening session.
@@ -496,6 +499,16 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
     _initialised = true;
     _running = true;
+    VoiceDiagnostics.log('voice_session_start', {
+      'appVersion': vimoAppVersion,
+      'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+      'appLanguage': appLanguage.mode,
+      'voiceLocale': _locale,
+      'engine': 'system',
+      'tamilVoice': _tamilVoice,
+      'cows': cowNames().length,
+    });
+    unawaited(_logLocales());
     _micError = null;
     _micProblem = null;
     _keepAwake(true);
@@ -549,6 +562,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     if (!mounted || !_running || _report || _speaking || _starting) return;
     if (_micError != null || _stt.isListening) return;
     _starting = true;
+    _listenStartedAt = DateTime.now();
+    _firstWordsLogged = false;
     _consumed = '';
     try {
       await _stt.listen(
@@ -575,7 +590,28 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
+  Future<void> _logLocales() async {
+    try {
+      final locales = await _stt.locales();
+      final ids = [for (final l in locales) l.localeId];
+      VoiceDiagnostics.log('speech_locales', {
+        'count': ids.length,
+        'tamil': ids.any((id) => id.toLowerCase().startsWith('ta')),
+        'locales': ids.take(40).toList(),
+      });
+    } catch (error) {
+      VoiceDiagnostics.log('speech_locales_error', {'error': '$error'});
+    }
+  }
+
   void _onStatus(String status) {
+    VoiceDiagnostics.log('speech_status', {
+      'status': status,
+      if (_listenStartedAt != null && status != SpeechToText.listeningStatus)
+        'msListening': DateTime.now()
+            .difference(_listenStartedAt!)
+            .inMilliseconds,
+    });
     if (!mounted) return;
     final listening = status == SpeechToText.listeningStatus;
     if (listening != _listeningNow) setState(() => _listeningNow = listening);
@@ -589,6 +625,11 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _onError(SpeechRecognitionError error) {
     if (!mounted) return;
     final message = error.errorMsg;
+    VoiceDiagnostics.log('speech_error', {
+      'code': message,
+      'permanent': error.permanent,
+      'phase': _phase.name,
+    });
     if (const {
       'error_permission',
       'not-allowed',
@@ -634,6 +675,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       words,
       for (final a in result.alternates) a.recognizedWords,
     ];
+    _lastConfidence = result.hasConfidenceRating ? result.confidence : null;
     if (!result.finalResult) {
       try {
         // Keep the microphone open past VIMO's own end-of-sentence pause.
@@ -642,6 +684,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       if (words.length > _partial.length) {
         // The first words of a sentence: a light tap, like Siri noticing.
         if (_partial.isEmpty) HapticFeedback.selectionClick();
+        if (!_firstWordsLogged && _listenStartedAt != null) {
+          _firstWordsLogged = true;
+          VoiceDiagnostics.log('first_words', {
+            'ms': DateTime.now().difference(_listenStartedAt!).inMilliseconds,
+          });
+        }
         _hear.forward(from: 0);
       }
       setState(() => _partial = words);
@@ -676,6 +724,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     // adding new words to this one.
     _quietly(_stt.cancel);
     _scheduleListen(const Duration(milliseconds: 200));
+    VoiceDiagnostics.log('heard', {
+      'text': words,
+      'alternatives': alternatives.skip(1).take(4).toList(),
+      'confidence': _lastConfidence,
+      'phase': _phase.name,
+    });
     _handle(alternatives);
   }
 
@@ -683,6 +737,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   /// and listening resumes when the voice ends.
   void _say(_Say say, {bool show = true}) {
     final text = _tamilReplies ? say.ta : say.en;
+    VoiceDiagnostics.log('reply', {'text': say.en, 'phase': _phase.name});
     if (show) _line(_LineKind.vimo, text);
     final spoken = _tamilReplies
         ? (_tamilVoice ? say.ta : say.tanglish)
@@ -717,7 +772,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       });
       await Future.any([_tts.speak(text), ended.future]);
       timer.cancel();
-    } catch (_) {}
+    } catch (error) {
+      VoiceDiagnostics.log('tts_error', {
+        'language': language,
+        'error': '$error',
+      });
+    }
     await Future.delayed(const Duration(milliseconds: 220));
     if (!mounted) return;
     setState(() => _speaking = false);
@@ -799,11 +859,25 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
             pending.choices.length > 1
         ? pending.choices
         : cowNames();
-    final command = bestVoiceCommand(
-      alternatives,
-      cows,
-      aliases: cowNameAliases(),
-    );
+    // The owner's own corrections come first (on-device learning).
+    final heard = [for (final a in alternatives) voiceRewrite(a)];
+    final command = bestVoiceCommand(heard, cows, aliases: cowNameAliases());
+    final reading = readingFromCommand(command);
+    VoiceDiagnostics.log('understood', {
+      'input': command.text,
+      'rewritten': heard.first != alternatives.first,
+      'intent': reading.intent,
+      'slots': reading.slots,
+      'cow': command.cow?.name,
+      'cowScore': command.cow?.score,
+      'cowKey': command.cow == null ? null : phoneticKey(command.cow!.name),
+      'heardKey': phoneticKey(command.text),
+      'closeCows': command.closeCows,
+      'phase': _phase.name,
+      'pending': _pending == null
+          ? null
+          : {'cow': _pending!.cow, 'liters': _pending!.litres},
+    });
     if (command.isEmpty && !command.wake) return;
 
     if (_phase == _VoicePhase.sleeping) {
@@ -972,6 +1046,10 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       _phase = _VoicePhase.awake;
     });
     unawaited(_storeVoiceDraft(_entries));
+    VoiceDiagnostics.log('entry_corrected', {
+      'cow': target.cow,
+      'liters': litres,
+    });
     HapticFeedback.lightImpact();
     final n = _litreWord(litres);
     _say(
@@ -1122,6 +1200,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     HapticFeedback.lightImpact();
     UiSound.play(UiSoundKind.success);
     _line(_LineKind.entry, '', entryId: entry.id);
+    VoiceDiagnostics.log('entry_added', {
+      'cow': entry.cow,
+      'liters': entry.litres,
+      'session': entry.session,
+      'heard': entry.heard,
+    });
     final n = _litreWord(entry.litres);
     _say(
       _Say(
@@ -1160,6 +1244,10 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _undo() {
     if (_entries.isEmpty) return;
     final removed = _entries.removeLast();
+    VoiceDiagnostics.log('entry_removed', {
+      'cow': removed.cow,
+      'liters': removed.litres,
+    });
     setState(() {
       _lines.removeWhere((l) => l.entryId == removed.id);
       _phase = _VoicePhase.awake;
@@ -1387,6 +1475,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     try {
       final total = _entries.fold<double>(0, (s, e) => s + e.litres);
       final count = await saveVoiceMilkEntries(_entries);
+      VoiceDiagnostics.log('saved', {'entries': count, 'liters': total});
       _entries.clear();
       if (!mounted) return;
       final messenger = ScaffoldMessenger.maybeOf(context);

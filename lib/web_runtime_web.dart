@@ -36,6 +36,15 @@ class BrowserRuntime {
 
   /// A first guess at a low-end phone from the memory the browser reports
   /// (Chromium only). Safari reports nothing, so frame timing decides there.
+  /// The browser's description of itself (for the voice report).
+  String get userAgent {
+    try {
+      return web.window.navigator.userAgent;
+    } catch (_) {
+      return '';
+    }
+  }
+
   bool get lowEndHint {
     try {
       final navigator = web.window.navigator as JSObject;

@@ -56,6 +56,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'voice_parser.dart';
 import 'mic_permission.dart';
+import 'voice_diagnostics.dart';
+import 'voice_understanding.dart';
 
 part 'interface.dart';
 part 'business.dart';
@@ -95,6 +97,8 @@ part 'shop_reviews.dart';
 part 'shop_social.dart';
 part 'vendor_walkin_fridge.dart';
 part 'voice_milk.dart';
+part 'voice_report_screen.dart';
+part 'voice_learning.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -222,6 +226,10 @@ Future<void> main() async {
     // Route maps stay on this device and never enter ranch backups or sync.
     Hive.openBox(VendorRoutes.boxName),
   ]);
+
+  // The voice log stays on this phone: never backed up or synced.
+  await startVoiceDiagnostics();
+  await openVoiceLearning();
 
   await applyPrelaunchResetOnce();
   await seedAnimals();
@@ -578,6 +586,22 @@ Future<bool> downloadJsonFile(String fileName, String jsonContent) async {
     type: FileType.custom,
     allowedExtensions: const ['json'],
     bytes: Uint8List.fromList(utf8.encode(jsonContent)),
+  );
+  return path != null;
+}
+
+/// Saves plain text (a Markdown report) through the same save dialog.
+Future<bool> downloadTextFile(
+  String fileName,
+  String content, {
+  String extension = 'txt',
+}) async {
+  final path = await FilePicker.platform.saveFile(
+    dialogTitle: 'Save VIMO report',
+    fileName: fileName,
+    type: FileType.custom,
+    allowedExtensions: [extension],
+    bytes: Uint8List.fromList(utf8.encode(content)),
   );
   return path != null;
 }
@@ -20037,6 +20061,12 @@ class AppSettingsScreen extends StatelessWidget {
                   label: 'Preferences',
                   onTap: () => push(context, const PreferencesScreen()),
                 ),
+                if (workspaceEnabled('Ranch') && canManageRanch)
+                  _ActionRow(
+                    icon: CupertinoIcons.waveform,
+                    label: bi('Voice test & report', 'குரல் சோதனை & அறிக்கை'),
+                    onTap: () => push(context, const VoiceReportScreen()),
+                  ),
                 if ((workspaceEnabled('Vendor') || workspaceEnabled('Ranch')) &&
                     MarketService.available)
                   _ActionRow(

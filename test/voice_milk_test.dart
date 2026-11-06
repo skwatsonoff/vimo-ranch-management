@@ -383,4 +383,33 @@ void main() {
     expect(find.text('மீண்டும் முயற்சி'), findsOneWidget);
     await closeVoice(tester);
   });
+
+  testWidgets('the voice report screen runs the self-test on the phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    MicPermission.backend = FakeMicBackend(statuses: [MicAccess.granted]);
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: const [Locale('en'), Locale('ta')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: const VoiceReportScreen(),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('அறிக்கையைப் பதிவிறக்கு'), findsOneWidget);
+    expect(find.text('பெயர்களை மறை'), findsOneWidget);
+    await tester.tap(find.text('சோதனையைத் தொடங்கு'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 300)),
+    );
+    for (int i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.textContaining('வெற்றி'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -24,6 +24,9 @@ class BrowserRuntime {
   /// Native apps judge the phone by frame timing alone.
   bool get lowEndHint => false;
 
+  /// The browser's description of itself; empty outside a browser.
+  String get userAgent => '';
+
   /// Reduce Transparency is reported only by browsers.
   bool get reducedTransparency => false;
 

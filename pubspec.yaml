@@ -89,6 +89,7 @@ flutter:
     - assets/images/
     - assets/l10n/
     - assets/sounds/
+    - assets/voice/
 
   fonts:
     - family: Parisienne
