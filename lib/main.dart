@@ -58,6 +58,9 @@ import 'voice_parser.dart';
 import 'mic_permission.dart';
 import 'voice_diagnostics.dart';
 import 'voice_understanding.dart';
+import 'language_packs.dart';
+import 'language_pack_store.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 part 'interface.dart';
 part 'business.dart';
@@ -99,6 +102,7 @@ part 'vendor_walkin_fridge.dart';
 part 'voice_milk.dart';
 part 'voice_report_screen.dart';
 part 'voice_learning.dart';
+part 'language_pack_screen.dart';
 
 bool firebaseReady = false;
 final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -20055,6 +20059,15 @@ class AppSettingsScreen extends StatelessWidget {
                       await setSetting('languageMode', v);
                     },
                   ),
+                ),
+                // After choosing a language: its offline voice packs.
+                _ActionRow(
+                  icon: CupertinoIcons.cloud_download,
+                  label: bi(
+                    'Download for offline voice',
+                    'Offline குரலுக்குப் பதிவிறக்கு',
+                  ),
+                  onTap: () => push(context, const LanguagePacksScreen()),
                 ),
                 _ActionRow(
                   icon: CupertinoIcons.slider_horizontal_3,

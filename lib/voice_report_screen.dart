@@ -15,10 +15,10 @@ Future<void> startVoiceDiagnostics() async {
     await HiveDiagnosticsStore.open();
   } catch (_) {}
   MicPermission.log = VoiceDiagnostics.log;
+  try {
+    if (!Hive.isBoxOpen(languagePackBox)) await Hive.openBox(languagePackBox);
+  } catch (_) {}
 }
-
-/// Installed offline voice packs, for the device check.
-String installedLanguagePacksSummary() => 'none installed';
 
 /// The sentences of the built-in corpus (assets/voice/voice_corpus.json).
 Future<List<VoiceTestCase>> loadVoiceCorpus() async {
