@@ -96,3 +96,25 @@ weak spots in the owner's samples:
   samples) are not recognised as sickness.
 - Expenses phrased only as "vet fee expense yesterday" (no amount) can be
   read as a doctor visit.
+
+## Learning from the owner's recordings
+
+"Start training" (Settings → Train VIMO) runs `.github/workflows/voice-training.yml`
+on GitHub's free runner. It listens to every Train VIMO recording with
+Whisper large-v3 (`tools/voice_training/transcribe.py`), lines each up with
+the sentence that was read, and learns how each cow's name is said
+(`learn_lessons.py`: "Shomperi" heard as "strawberry", "Maina" as "Miner").
+The lessons go to `voice_training_lessons/<uid>` (only the owner can read
+it; only the workflow writes it). The phone reads them each time voice milk
+opens and uses them as extra names for the cows, never as recogniser hints.
+Recordings already heard are cached in that document, so each run only
+listens to new ones. One run answers every "Start training" tap waiting.
+
+The same study found how recognisers write everyday dairy words
+("சினை உருதியானது", "நொந்துது", "லேட்டர்", "நேர்த்து மாலை"); those
+fixes are in `lib/voice_heard_fixes.dart` for everyone.
+
+First study (224 recordings, three speakers): sentences understood the
+same as what was read went from **58.9%** to **92.0%**; the 7,464 sample
+sentences stay at **99.0%**. What is left is mostly the recogniser
+mishearing numbers ("1000" for "aaru").
