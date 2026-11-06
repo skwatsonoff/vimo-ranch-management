@@ -314,6 +314,30 @@ Deploy needs rules too: `firebase deploy --only hosting,firestore:rules --projec
 
 **Released 2026-09-27 15:28 JST** by the user with a `VIMO_DEPLOY.bat` pointed at branch `claude/beautiful-euler-2v4ayi` (hosting + firestore:rules, "Deploy complete"). PR #4 into `main` is still open: until it is merged, a deploy from `main` (`CLAUDE_DEPLOY.bat`) would publish the older 1.3.1 app. The rules compiler warnings at lines 372–380 are in the pre-existing `validRanchEntry` helper, not new.
 
+### 6d. 1.5.0+8 — Voice milk mode (Claude, 2026-11-05) — on `main`, deployed
+
+"Hey Vimo, Maina 5 litre": wake word, Tamil/Tanglish/English/Hindi milk sentences, follow-up questions, corrections, sale detection, editable report before saving. `lib/voice_parser.dart` (pure, tested on the owner's 6,324 milk samples), `lib/voice_milk.dart`. Deployed 2026-11-05 via `deploy-web.yml`.
+
+### 6e. 1.5.0+9 — Offline voice, training, mic fix, voice report (Claude, 2026-11-06) — branch `feature/offline-voice-training`, not merged, not deployed
+
+Done from the owner's prompt `CLAUDE_CODE_PROMPT_VOICE.md`, one commit per phase.
+
+| Phase | What changed | Files |
+| --- | --- | --- |
+| 1 Mic permission | The speech plugin cached its first start, so a permission taken back later ("Only this time", auto-revoke, browser) could never be asked again. One helper `ensureMicPermission()` (permission_handler on phones, Permissions API + getUserMedia on the web) runs before every listen, on resume and on a tap after a permission error; error card with Allow microphone / Open Settings / browser steps; speech-service errors told apart; voice notes use it too | `mic_permission*.dart`, `voice_milk.dart`, `interface.dart`, `social.dart`, `vendor_routes.dart`, `main.dart` `ensureRecordingMic`, `ios/Podfile` |
+| 2 Voice report | Hive `voice_diagnostics` ring buffer (2000, never synced), report JSON (header + schema 1) and Markdown, names hidden by default, contacts and money always removed; Settings → Voice test & report: self-test, live mic test, device check, Download / Copy / Clear | `voice_diagnostics.dart`, `voice_report_screen.dart` |
+| 3 Language packs | Manifest + per-language bundles (Tamil → ta + en + ta-Latn), SHA-256 and size checked, Range resume, Wi-Fi only, manage/delete (English stays); phone file store, browser small-pack store | `language_packs.dart`, `language_pack_store*.dart`, `language_pack_screen.dart`, `docs/LANGUAGE_PACKS.md` |
+| 4 Voice engine | `VoiceEngine` interface; `SystemSpeechEngine` (phone's ta_IN spelling, onDevice on Android when offered); `OfflineSpeechEngine` placeholder throws `UnsupportedError` → system fallback; setting "Use VIMO offline voice (beta)" | `voice_engine.dart` |
+| 5 Understanding | Expenses, feed stock, new cow (Luna dialogue: profile → photo → age → breed), calf, doctor, injection, insemination, pregnancy, sickness, diagnosis, cow sale, payment, questions answered from records; Tamil numbers to நூறு; on-device learning (`voice_learning`, Improve VIMO, learned words list); corpus 315/315, owner samples 99.0% | `voice_intents_extra.dart`, `voice_understanding.dart`, `voice_dialogue.dart`, `voice_actions.dart`, `voice_learning.dart`, `assets/voice/voice_corpus.json` |
+| 6 Training | Settings → Train VIMO (Record / Fix mistakes / Train / Data), WAV 16 kHz, local first then Wi-Fi upload to `training_data/<uid>/`; `voice_training_jobs` request + live status + install only if WER improved; `storage.rules`; Firestore job rules; cloud pipeline + workflow + Colab notebooks | `voice_training_core.dart`, `voice_training_screen.dart`, `storage.rules`, `firestore.rules`, `tools/voice_training/`, `.github/workflows/voice-training.yml` |
+| 7 Finish | 164 new interface strings in all nine language files, build 1.5.0+9 | `assets/l10n/*.json`, `pubspec.yaml` |
+
+Validation: `flutter analyze` no errors or warnings (infos only, pre-existing); Flutter tests all green (see the phase commits); Firestore + Storage emulator: all 13 rules files pass (new `voice_training_rules_test.cjs`, 25 checks); `flutter build web --release` passes; `pytest tools/voice_training/tests` 7 passed.
+
+Not done / placeholders (honest): the offline recogniser runtime on the phone (needs native ONNX libraries and a trained model); the fine-tuning and ONNX export have never run on real recordings; voice replies for languages other than Tamil are spoken and shown in English; cow sales and payments are recognised but not saved by voice.
+
+How to continue: merge `feature/offline-voice-training` → `deploy-web.yml` deploys hosting and Firestore rules. Storage rules are **not** in that workflow: deploy them once with `firebase deploy --only storage --project my-ranch-sync`. Then record on Train VIMO, tap Start training, and run "Train VIMO voice" in GitHub Actions (or the Colab notebook). Give Claude the Voice test & report file for the next round.
+
 ## 7. Open items, limitations and questions
 
 | Item | Actual state / next action if requested |
