@@ -28,14 +28,16 @@ jobs:
           python-version: '3.11'
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Install converters (CPU)
         run: |
           pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
           pip install --quiet "optimum[exporters]==1.24.0" "transformers==4.48.3" "onnx==1.17.0" "onnxruntime==1.20.1" google-cloud-firestore
       - name: Install the browser runtime (for the check)
         working-directory: tools/voice_training
-        run: npm install --no-save --silent @huggingface/transformers@4.3.1
+        run: |
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund @huggingface/transformers@4.3.1
       - name: Build the models
         working-directory: tools/voice_training
         env:
