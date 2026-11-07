@@ -318,6 +318,10 @@ class _Line {
 
 // --- the screen ----------------------------------------------------------------
 
+/// Previews and browser checks: listen with VIMO's own ear everywhere.
+@visibleForTesting
+bool debugVoiceEar = false;
+
 class VoiceMilkScreen extends StatefulWidget {
   const VoiceMilkScreen({super.key});
 
@@ -402,6 +406,82 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   Future<void> _speech = Future.value();
 
   final Map<String, TextEditingController> _litreFields = {};
+
+  /// VIMO's own ear waiting to be downloaded (the card offers it), and how
+  /// far the download is.
+  EarModel? _earOffer;
+  double? _earProgress;
+
+  /// The browser's speech service refused (no Tamil, or blocked): listen
+  /// with VIMO's own ear instead.
+  bool _earChosen = false;
+
+  /// Where the browser's speech service cannot help: Tamil on an iPhone
+  /// (Apple's service has no Tamil) and the Home Screen web app (Apple
+  /// blocks the service there).
+  bool get _wantEar =>
+      kIsWeb &&
+      earSupported &&
+      (_earChosen ||
+          debugVoiceEar ||
+          // English too: Apple's English mishears the cows' names, and
+          // Whistle is told them (17 MB, fast).
+          (_browserRuntime.appleMobile &&
+              (_browserRuntime.standaloneApp ||
+                  _locale.startsWith('ta') ||
+                  _locale.startsWith('en'))));
+
+  void _listenTo(VoiceEngine engine) => _engineSubs.addAll([
+    engine.results.listen(_onResult),
+    engine.statuses.listen(_onStatus),
+    engine.errors.listen(_onError),
+    engine.soundLevels.listen((level) {
+      if (mounted) setState(() => _level = level);
+    }),
+  ]);
+
+  /// Lets go of the current ear so the next start picks the right one.
+  Future<void> _dropEngine() async {
+    for (final sub in _engineSubs) {
+      unawaited(sub.cancel());
+    }
+    _engineSubs.clear();
+    final old = _engine;
+    _engine = null;
+    _initialised = false;
+    if (old != null) _quietly(old.dispose);
+  }
+
+  /// Downloads VIMO's own ear (the card's button), then listens with it.
+  Future<void> _downloadEar() async {
+    final model = _earOffer;
+    if (model == null || _earProgress != null) return;
+    setState(() => _earProgress = 0);
+    try {
+      await prepareEar(model, (p) {
+        if (mounted) setState(() => _earProgress = p.clamp(0, 1).toDouble());
+      });
+      VoiceDiagnostics.log('ear_downloaded', {'model': model.id});
+      if (!mounted) return;
+      setState(() {
+        _earOffer = null;
+        _earProgress = null;
+      });
+      await _start();
+    } catch (error) {
+      VoiceDiagnostics.log('ear_download_error', {'error': '$error'});
+      if (!mounted) return;
+      setState(() => _earProgress = null);
+      snack(
+        context,
+        bi(
+          'The download stopped. Check the internet and try again.',
+          'பதிவிறக்கம் நின்றுவிட்டது. இணையத்தைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
+        ),
+        tone: SnackTone.error,
+      );
+    }
+  }
 
   bool get _tamilReplies => _locale.startsWith('ta');
 
@@ -670,6 +750,22 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
+  bool get _canSwitchToEar =>
+      kIsWeb && earSupported && _engine is! BrowserEarEngine;
+
+  Future<void> _switchToEar(String reason) async {
+    VoiceDiagnostics.log('ear_switch', {'reason': reason, 'locale': _locale});
+    _running = false;
+    await _dropEngine();
+    if (!mounted) return;
+    setState(() {
+      _earChosen = true;
+      _micError = null;
+      _micProblem = null;
+    });
+    await _start();
+  }
+
   // --- start, listen, speak ----------------------------------------------------
 
   Future<void> _start() async {
@@ -688,7 +784,18 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     await _setupVoice();
     bool ok = false;
     try {
-      if (_engine == null) {
+      if (_engine == null && _wantEar) {
+        final model = await earModelReadyFor(_locale);
+        if (!await earDownloaded(model)) {
+          // One download, offered on a card: nothing starts until then.
+          if (mounted) setState(() => _earOffer = model);
+          return;
+        }
+        final engine = BrowserEarEngine(model);
+        _engine = engine;
+        _listenTo(engine);
+        ok = await engine.initialize();
+      } else if (_engine == null) {
         final (engine, started) = await createVoiceEngine(
           offlineEnabled: voiceOfflineBetaEnabled(),
           offlineModelPath: offlineVoiceModelPath(_locale),
@@ -696,14 +803,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         );
         _engine = engine;
         ok = started;
-        _engineSubs.addAll([
-          engine.results.listen(_onResult),
-          engine.statuses.listen(_onStatus),
-          engine.errors.listen(_onError),
-          engine.soundLevels.listen((level) {
-            if (mounted) setState(() => _level = level);
-          }),
-        ]);
+        _listenTo(engine);
       } else {
         ok = await _engine!.initialize();
       }
@@ -825,7 +925,14 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
+  /// VIMO's own ear is writing down what was said (a few seconds).
+  bool _thinking = false;
+
   void _onStatus(String status) {
+    if (status == earThinking || status == earThought) {
+      if (mounted) setState(() => _thinking = status == earThinking);
+      return;
+    }
     VoiceDiagnostics.log('speech_status', {
       'status': status,
       if (_listenStartedAt != null && status != VoiceStatus.listening)
@@ -857,8 +964,33 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       'service-not-allowed',
       'error_insufficient_permissions',
     }.contains(message)) {
+      if (message == 'service-not-allowed' && _canSwitchToEar) {
+        // The browser's speech service is blocked: VIMO's own ear.
+        unawaited(_switchToEar(message));
+        return;
+      }
       _running = false;
       unawaited(_onPermissionError(message));
+      return;
+    }
+    if (message == 'audio-suspended') {
+      // The iPhone wants a tap before the microphone can be heard.
+      setState(
+        () => _micError = bi(
+          'Tap the microphone to start listening',
+          'கேட்கத் தொடங்க மைக்கைத் தட்டுங்கள்',
+        ),
+      );
+      return;
+    }
+    if (const {
+          'error_language_not_supported',
+          'language-not-supported',
+          'error_language_unavailable',
+        }.contains(message) &&
+        _canSwitchToEar) {
+      // This browser cannot listen in this language: VIMO's own ear can.
+      unawaited(_switchToEar(message));
       return;
     }
     if (const {
@@ -1726,10 +1858,23 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     try {
       await _cancelEar();
     } catch (_) {}
+    final before = _engine;
+    final ear = before is BrowserEarEngine ? before.model : null;
     setState(() {
       _locale = chosen;
       _micError = null;
+      _earOffer = null;
+      _earChosen = false;
     });
+    // A different ear for this language (Tamil model, other model, or the
+    // browser's own service): start again with the right one.
+    final wantsEar = _wantEar;
+    if (ear != null ? (!wantsEar || earModelFor(chosen) != ear) : wantsEar) {
+      _running = false;
+      await _dropEngine();
+      if (mounted) await _start();
+      return;
+    }
     if (!_running && _initialised) _running = true;
     _scheduleListen();
   }
@@ -2000,6 +2145,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       return bi('Starting the microphone…', 'மைக் தயாராகிறது…');
     }
     if (_speaking) return bi('VIMO is speaking…', 'VIMO பேசுகிறது…');
+    if (_thinking) {
+      return bi(
+        'Understanding what you said…',
+        'நீங்கள் சொன்னதைப் புரிந்துகொள்கிறேன்…',
+      );
+    }
     return switch (_phase) {
       _VoicePhase.sleeping => bi('Say "Hey Vimo"', '"ஹே விமோ" சொல்லுங்க'),
       _VoicePhase.awake => bi(
@@ -2044,7 +2195,19 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           level: _level,
         ),
         const SizedBox(height: Space.s8),
-        if (_micProblem != null)
+        if (_earOffer != null)
+          Flexible(
+            flex: 3,
+            child: SingleChildScrollView(
+              child: _EarOfferCard(
+                model: _earOffer!,
+                tamil: _locale.startsWith('ta'),
+                progress: _earProgress,
+                onDownload: () => unawaited(_downloadEar()),
+              ),
+            ),
+          )
+        else if (_micProblem != null)
           // The help card scrolls on small phones instead of overflowing.
           Flexible(
             child: SingleChildScrollView(
@@ -2101,7 +2264,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           ),
         ),
         Expanded(
-          child: _lines.isEmpty
+          child: _earOffer != null
+              ? const SizedBox.shrink()
+              : _lines.isEmpty
               ? _VoiceHelp(tamil: _tamilReplies)
               : ListView.builder(
                   controller: _scroll,
@@ -3244,6 +3409,96 @@ class _MicProblemCard extends StatelessWidget {
                 label: bi('Type instead', 'கையால் பதிவு செய்'),
                 icon: CupertinoIcons.keyboard,
                 onTap: onType,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Offers VIMO's own ear: one download, then listening on the phone itself.
+class _EarOfferCard extends StatelessWidget {
+  final EarModel model;
+  final bool tamil;
+  final double? progress;
+  final VoidCallback onDownload;
+  const _EarOfferCard({
+    required this.model,
+    required this.tamil,
+    required this.progress,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = progress;
+    final mb = model.megabytes;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Space.s16),
+      child: Glass(
+        radius: Gold.r21,
+        tint: Ink.violet.withValues(alpha: .06),
+        padding: const EdgeInsets.all(Space.s16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(CupertinoIcons.ear, size: 22, color: Ink.violetDeep),
+                const SizedBox(width: Space.s8),
+                Expanded(
+                  child: AppText(
+                    tamil
+                        ? bi(
+                            "VIMO's own ear for Tamil",
+                            'தமிழுக்கு VIMO-வின் சொந்தக் காது',
+                          )
+                        : bi("VIMO's own ear", 'VIMO-வின் சொந்தக் காது'),
+                    style: TextStyle(
+                      fontSize: Gold.t16 + 1,
+                      fontWeight: FontWeight.w700,
+                      color: Ink.navy,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.s8),
+            AppText(
+              bi(
+                "This phone's speech service cannot listen here, so VIMO listens itself, on this phone. One download of about $mb MB (Wi-Fi is best); after that it works even without the internet.",
+                'இந்த போனின் குரல் சேவை இங்கே கேட்காது; அதனால் VIMO தானே இந்த போனிலேயே கேட்கும். ஒரு முறை மட்டும் சுமார் $mb MB பதிவிறக்கம் (Wi-Fi நல்லது); அதன் பிறகு இணையம் இல்லாமலும் வேலை செய்யும்.',
+              ),
+              style: TextStyle(fontSize: 14, height: 1.4, color: Ink.body),
+            ),
+            const SizedBox(height: Space.s12),
+            if (p == null)
+              LiquidButton(
+                label: bi('Download ($mb MB)', 'பதிவிறக்கு ($mb MB)'),
+                icon: CupertinoIcons.arrow_down_circle_fill,
+                height: Space.target,
+                onPressed: onDownload,
+              )
+            else ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(Space.s4),
+                child: LinearProgressIndicator(
+                  value: p <= 0 ? null : p,
+                  minHeight: Space.s8,
+                  color: Ink.tint,
+                  backgroundColor: Ink.lavender,
+                ),
+              ),
+              const SizedBox(height: Space.s8),
+              AppText(
+                bi(
+                  'Downloading… ${(p * 100).round()}%. Keep this screen open.',
+                  'பதிவிறக்குகிறது… ${(p * 100).round()}%. இந்தத் திரையைத் திறந்தே வையுங்கள்.',
+                ),
+                style: TextStyle(fontSize: 13, color: Ink.muted),
               ),
             ],
           ],

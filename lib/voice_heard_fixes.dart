@@ -120,6 +120,20 @@ const _timesOfDay = {'காலை', 'மாலை', 'ராத்திரி',
 const _beforeLitre = {'ஆர்': 'ஆறு', 'பத்தி': 'பத்து', 'எட்டுரி': 'எட்டு'};
 const _litreWords = {'லிட்டர்', 'litre', 'liter', 'litres', 'liters'};
 
+/// "litres" as English recognisers write it after a number ("five
+/// leaders").
+const _litreHeard = {
+  'leaders',
+  'leader',
+  'letters',
+  'litters',
+  'lighters',
+  'liters.',
+};
+final _numberish = RegExp(
+  r'^(\d+(\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|half)$',
+);
+
 /// "சினை" as heard before "உறுதி" ("சன உருதியானது").
 const _sinaiHeard = {'சன', 'சண', 'சனா', 'சென்னை', 'செனை', 'சனை'};
 
@@ -128,10 +142,27 @@ final _gluedLitre = RegExp(
   r'^(.{2,}?)(லிட்டர்|லேட்டர்|லைட்டர்|லீட்டர்|லிட்டார்|லைட்டார்|ரிட்டார்)$',
 );
 
+/// "ஹே விமோ" as Whisper writes it: glued ("தேய்விமோ", "கேய்விமோ") or
+/// split ("தேவி மோ").
+final _gluedWake = RegExp(r'^(ஹே|ஹேய்|தேய்|கேய்|தே|ஏ|ஏய்|ஹாய்)விமோ$');
+const _wakeHalves = {'தேவி', 'ஹேவி', 'ஏவி', 'கேவி', 'தேய்வி'};
+
 /// [tokens] with heard spellings put back to the words VIMO knows.
 List<String> fixHeardTokens(List<String> tokens) {
   final split = <String>[];
-  for (final t in tokens) {
+  for (int k = 0; k < tokens.length; k++) {
+    final t = tokens[k];
+    if (_gluedWake.hasMatch(t)) {
+      split.addAll(const ['ஹே', 'விமோ']);
+      continue;
+    }
+    if (_wakeHalves.contains(t) &&
+        k + 1 < tokens.length &&
+        tokens[k + 1] == 'மோ') {
+      split.addAll(const ['ஹே', 'விமோ']);
+      k++;
+      continue;
+    }
     final glued = _gluedLitre.firstMatch(t);
     final words = glued != null ? [glued[1]!, glued[2]!] : [t];
     for (final w in words) {
@@ -152,6 +183,10 @@ List<String> fixHeardTokens(List<String> tokens) {
       out.add('நேத்து');
     } else if (_beforeLitre.containsKey(t) && _litreWords.contains(next)) {
       out.add(_beforeLitre[t]!);
+    } else if (_litreHeard.contains(t) &&
+        out.isNotEmpty &&
+        _numberish.hasMatch(out.last)) {
+      out.add('litres');
     } else if (_sinaiHeard.contains(t) && next == 'உறுதி') {
       out.add('சினை');
     } else {

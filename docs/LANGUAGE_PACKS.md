@@ -118,3 +118,33 @@ First study (224 recordings, three speakers): sentences understood the
 same as what was read went from **58.9%** to **92.0%**; the 7,464 sample
 sentences stay at **99.0%**. What is left is mostly the recogniser
 mishearing numbers ("1000" for "aaru").
+
+## VIMO's own ear (speech to text in the browser)
+
+Apple's browser speech service has no Tamil, and a Home Screen web app may
+not use the service at all. There VIMO listens itself, on the phone
+(`web/vimo_ear.js`, `lib/voice_ear*.dart`):
+
+| Language | Model | Download | On the owner's 224 recordings |
+| --- | --- | --- | --- |
+| Tamil + English | `whisper-tamil-small` (vasista22, IIT Madras, Apache-2.0), 8-bit ONNX via transformers.js | ~290 MB once | Tamil words 74%, Tanglish 70%, cow names 84% |
+| English | Cactus "Whistle" (Apache-2.0), WASM in a worker, told the cows' names | ~18 MB once | about 0.5 s a sentence |
+| Others | `onnx-community/whisper-base` (multilingual) | ~80 MB once | Tamil words 40%, cow names 53% (why Tamil gets its own model) |
+
+- Used on iPhones for Tamil and English, in the Home Screen app for every
+  language, and wherever the browser's service refuses (`service-not-allowed`,
+  `language-not-supported`). Elsewhere the browser's own service is kept.
+- The first time, a card offers the download (size shown); files stay in the
+  browser's cache, so listening then needs no internet.
+- The ear finds speech itself (a noise floor that follows the room), and
+  sends each finished sentence; replies are not heard because listening
+  pauses while VIMO speaks.
+- Tamil models are built and scored by `.github/workflows/voice-model-build.yml`
+  and served from the `voice-models` branch (raw.githubusercontent.com allows
+  browser downloads; free). If the Tamil model is missing, the multilingual one
+  is used.
+- Whisper always listens to a 30-second window, so on a phone a Tamil
+  sentence takes a few seconds; the screen says "புரிந்துகொள்கிறேன்…"
+  meanwhile. The voice report logs the real time per sentence (`lastMs`).
+- Not used, after testing: Cactus Needle3 (tool calling) recorded "300
+  rupees petrol" as 300 litres of milk and knows no Tamil.

@@ -60,4 +60,25 @@ void main() {
   test('"twenty five kilos" is 25', () {
     expect(read('bought twenty five kilos of bran').slots['qty'], 25);
   });
+
+  test('"five leaders" is five litres (Whistle, English)', () {
+    final r = read('K. Vimo, add five leaders for Maina.');
+    expect(r.intent, 'milk_record');
+    expect(r.slots['liters'], 5);
+    expect(r.slots['cow'], 'Maina');
+    expect(voiceTokens('our leaders came'), contains('leaders'));
+  });
+
+  test('"ஹே விமோ" as the Tamil ear writes it wakes VIMO', () {
+    for (final heard in [
+      'தேய்விமோ மைனா அஞ்சு லிட்டர்',
+      'கேய்விமோ மைனா அஞ்சு லிட்டர்',
+      'தேவி மோ மைனா அஞ்சு லிட்டர்',
+    ]) {
+      final c = parseVoiceCommand(heard, cows, aliases: aliases);
+      expect(c.wake, isTrue, reason: heard);
+      expect(c.cow?.name, 'Maina', reason: heard);
+      expect(c.litres, 5, reason: heard);
+    }
+  });
 }
