@@ -35,8 +35,12 @@ jobs:
           node-version: '22'
       - name: Install converters (CPU)
         run: |
-          pip install --quiet torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-          pip install --quiet "optimum[exporters]==1.24.0" "transformers==4.48.3" "onnx==1.17.0" "onnxruntime==1.20.1" onnxscript google-cloud-firestore
+          # One install, so nothing upgrades torch past 2.5 (newer versions
+          # switch to an exporter these models do not survive).
+          pip install --quiet --extra-index-url https://download.pytorch.org/whl/cpu \
+            "torch==2.5.1+cpu" "optimum[exporters]==1.24.0" "transformers==4.48.3" \
+            "onnx==1.17.0" "onnxruntime==1.20.1" "numpy<2.2" google-cloud-firestore
+          python -c "import torch; print('torch', torch.__version__)"
           # A torchvision built for another torch breaks transformers' imports;
           # nothing here needs it.
           pip uninstall --yes --quiet torchvision || true
