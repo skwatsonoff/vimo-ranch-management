@@ -1,0 +1,20 @@
+{
+ "whisper-tamil-base": {
+  "recordings": 224,
+  "words": {
+   "en": 0.546,
+   "ta": 0.521,
+   "ta-Latn": 0.366
+  },
+  "cowNames": 0.663
+ },
+ "whisper-tamil-small": {
+  "recordings": 224,
+  "words": {
+   "en": 0.299,
+   "ta": 0.738,
+   "ta-Latn": 0.7
+  },
+  "cowNames": 0.843
+ }
+}
