@@ -36,9 +36,9 @@ jobs:
       - name: Install converters (CPU)
         run: |
           # One install, so nothing upgrades torch past 2.5 (newer versions
-          # switch to an exporter these models do not survive). The versions
-X
-          # decoder input ("cache_position") the browser runtime does not give.
+          # switch to an exporter these models do not survive). Transformers
+          # before 4.42: later Whisper exports add a decoder input
+          # ("cache_position") the browser runtime does not give.
           pip install --quiet --extra-index-url https://download.pytorch.org/whl/cpu \
             "torch==2.5.1+cpu" "optimum[exporters]==1.20.0" "transformers==4.41.2" \
             "onnx==1.16.1" "onnxruntime==1.18.1" "numpy<2" google-cloud-firestore
