@@ -37,11 +37,11 @@ jobs:
         run: |
           # One install, so nothing upgrades torch past 2.5 (newer versions
           # switch to an exporter these models do not survive). The versions
-          # transformers.js's own converter uses: newer transformers adds a
+X
           # decoder input ("cache_position") the browser runtime does not give.
           pip install --quiet --extra-index-url https://download.pytorch.org/whl/cpu \
-            "torch==2.5.1+cpu" "optimum[exporters]==1.21.3" "transformers==4.43.4" \
-            "onnx==1.16.2" "onnxruntime==1.19.2" "numpy<2" google-cloud-firestore
+            "torch==2.5.1+cpu" "optimum[exporters]==1.20.0" "transformers==4.41.2" \
+            "onnx==1.16.1" "onnxruntime==1.18.1" "numpy<2" google-cloud-firestore
           python -c "import torch; print('torch', torch.__version__)"
           # A torchvision built for another torch breaks transformers' imports;
           # nothing here needs it.
