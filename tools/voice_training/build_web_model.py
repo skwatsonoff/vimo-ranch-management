@@ -68,7 +68,7 @@ def split_external(path: pathlib.Path) -> int:
 def build(model_id: str, base_id: str, out: pathlib.Path) -> dict:
     from onnxruntime.quantization import QuantType, quantize_dynamic
     from optimum.exporters.onnx import main_export
-    from transformers import GenerationConfig, WhisperProcessor
+    from transformers import GenerationConfig, WhisperFeatureExtractor, WhisperTokenizerFast
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "onnx").mkdir(exist_ok=True)
@@ -88,7 +88,12 @@ def build(model_id: str, base_id: str, out: pathlib.Path) -> dict:
     # The fine-tuned models keep an old generation config: the base model's
     # one knows the languages and tasks ("tamil", "transcribe").
     GenerationConfig.from_pretrained(base_id).save_pretrained(out)
-    WhisperProcessor.from_pretrained(model_id).save_pretrained(out)
+    # The browser needs tokenizer.json, which only the fast tokenizer writes
+    # (the fine-tuned models ship the older vocab.json + merges.txt).
+    WhisperTokenizerFast.from_pretrained(model_id).save_pretrained(out)
+    WhisperFeatureExtractor.from_pretrained(model_id).save_pretrained(out)
+    if not (out / "tokenizer.json").exists():
+        raise RuntimeError("tokenizer.json was not written")
     chunks = {}
     for name in ("encoder_model_quantized.onnx", "decoder_model_merged_quantized.onnx"):
         n = split_external(out / "onnx" / name)
