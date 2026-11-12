@@ -129,9 +129,18 @@ void main() {
   test(
     'voice entries save as milk records with their own time and session',
     () async {
+      for (final (id, name) in [('C001', 'Maina'), ('C002', 'Ponni')]) {
+        await Hive.box('animals').add({
+          'id': id,
+          'name': name,
+          'type': 'cow',
+          'status': 'Active',
+          'gender': 'Female',
+        });
+      }
       final morning = DateTime(2026, 11, 5, 6, 12);
       final evening = DateTime(2026, 11, 5, 17, 40);
-      final saved = await saveVoiceMilkEntries([
+      final draft = [
         VoiceMilkEntry(
           id: '1',
           cow: 'Maina',
@@ -146,26 +155,63 @@ void main() {
           at: evening,
           heard: '',
         ),
-        // Rows without litres are never written.
-        VoiceMilkEntry(
-          id: '3',
-          cow: 'Kutty',
-          litres: 0,
-          at: evening,
-          heard: '',
-        ),
+      ];
+      final saved = await Future.wait([
+        saveVoiceMilkEntries(draft),
+        saveVoiceMilkEntries(draft),
       ]);
-      expect(saved, 2);
+      expect(saved.reduce((a, b) => a + b), 2);
+      expect(await saveVoiceMilkEntries(draft), 0);
       final rows = Hive.box('milk_records').values.map(asMap).toList();
       expect(rows, hasLength(2));
       expect(rows[0]['cow'], 'Maina');
+      expect(rows[0]['cowId'], 'animal_c001');
       expect(rows[0]['quantity'], 5);
       expect(rows[0]['date'], '2026-11-05');
       expect(rows[0]['time'], '06:12');
       expect(rows[0]['session'], 'Morning');
       expect(rows[0]['source'], 'voice');
+      expect(rows[0].containsKey('voiceText'), isFalse);
       expect(rows[1]['session'], 'Evening');
       expect(Hive.box('settings').get('voiceMilkDraft'), isNull);
+    },
+  );
+
+  test(
+    'a malformed voice batch leaves valid rows and draft untouched',
+    () async {
+      await Hive.box(
+        'animals',
+      ).add({'id': 'C001', 'name': 'Maina', 'type': 'cow'});
+      final now = DateTime.now();
+      final good = VoiceMilkEntry(
+        id: 'valid',
+        cow: 'Maina',
+        litres: 5,
+        at: now,
+        heard: '',
+      );
+      for (final (cow, litres, session) in [
+        ('Unknown', 5.0, 'Morning'),
+        ('Maina', double.nan, 'Morning'),
+        ('Maina', 100.0, 'Morning'),
+        ('Maina', 5.0, 'Noon'),
+      ]) {
+        final invalid = VoiceMilkEntry(
+          id: 'invalid',
+          cow: cow,
+          litres: litres,
+          at: now,
+          heard: '',
+          session: session,
+        );
+        await expectLater(
+          saveVoiceMilkEntries([good, invalid]),
+          throwsStateError,
+        );
+        expect(milkRows(), isEmpty);
+      }
+      expect(CloudSyncService.isLocalSetting('voiceMilkDraft'), isTrue);
     },
   );
 
@@ -263,14 +309,19 @@ void main() {
       expect(find.text('11.5 L'), findsWidgets);
       expect(Hive.box('milk_records').isEmpty, isTrue);
 
+      await tester.runAsync(() => tester.tap(find.text('சேமி')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(Hive.box('milk_records').isEmpty, isTrue);
       await tester.runAsync(() async {
-        await tester.tap(find.text('சேமி'));
+        await tester.tap(find.byKey(const ValueKey('milk-session-Morning')));
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });
       await settle();
       final rows = Hive.box('milk_records').values.map(asMap).toList();
-      expect(rows.map((r) => r['cow']), ['Maina', 'Meena', 'Ponni']);
-      expect(rows.map((r) => r['quantity']), [6, 3, 2.5]);
+      expect(
+        {for (final row in rows) row['cow']: row['quantity']},
+        {'Maina': 6, 'Meena': 3, 'Ponni': 2.5},
+      );
       expect(tester.takeException(), isNull);
 
       await tester.pumpWidget(const SizedBox());

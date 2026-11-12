@@ -18,6 +18,7 @@ const fs = require('node:fs');
       await setDoc(doc(db, 'ranches/farm-a/members/owner'), { role: 'Admin', status: 'active', active: true });
       await setDoc(doc(db, 'ranches/farm-a/members/manager'), { role: 'Admin', status: 'active', active: true });
       await setDoc(doc(db, 'ranches/farm-a/members/helper'), { role: 'Data Entry', status: 'active', active: true });
+      await setDoc(doc(db, 'ranches/farm-a/animals/animal_c001'), { type: 'cow', name: 'Ponni', gender: 'Female' });
       await setDoc(doc(db, 'ranches/farm-a/milk_records/m1'), { cow: 'Lakshmi', quantity: 4 });
       await setDoc(doc(db, 'ranches/farm-b'), { ranchId: 'farm-b', farmName: 'Farm B', ownerUid: 'other' });
       await setDoc(doc(db, 'ranches/farm-b/members/other'), { role: 'Admin', status: 'active', active: true });
@@ -45,7 +46,24 @@ const fs = require('node:fs');
 
     // 2. One ranch cannot see or change another ranch.
     await assertSucceeds(getDoc(doc(owner, 'ranches/farm-a/milk_records/m1'))); checks++;
-    await assertSucceeds(setDoc(doc(helper, 'ranches/farm-a/milk_records/m2'), { cow: 'Ponni', quantity: 3 })); checks++;
+    const milk = { cow: 'Ponni', cowId: 'animal_c001', date: '2024-02-29', time: '06:05', session: 'Morning', quantity: 3 };
+    const voiceId = 'voice_' + 'a'.repeat(64);
+    const milkRef = doc(helper, 'ranches/farm-a/milk_records', voiceId);
+    await assertSucceeds(setDoc(milkRef, milk)); checks++;
+    await assertSucceeds(updateDoc(milkRef, {quantity: 5.5, notes: 'Corrected'})); checks++;
+    await assertSucceeds(updateDoc(doc(helper, 'ranches/farm-a/milk_records/m1'), { notes: 'Legacy note' })); checks++;
+    for (const invalid of [
+      {cow: 'Unknown'}, {cowId: 'unknown'}, {quantity: -5}, {quantity: 100},
+      {quantity: NaN}, {quantity: Infinity}, {date: '2026-02-29'},
+      {date: '2026-11-31'}, {time: '25:00'}, {session: 'Noon'},
+    ]) {
+      await assertFails(setDoc(doc(helper, 'ranches/farm-a/milk_records/invalid'), {...milk, ...invalid})); checks++;
+    }
+    const {cowId, ...legacyMilk} = milk;
+    await assertFails(setDoc(doc(helper, 'ranches/farm-a/milk_records', 'voice_' + 'b'.repeat(64)), legacyMilk)); checks++;
+    await assertSucceeds(setDoc(doc(helper, 'ranches/farm-a/milk_records/legacy-queued'), legacyMilk)); checks++;
+    await assertFails(updateDoc(milkRef, {cow: 'Different cow'})); checks++;
+    await assertFails(updateDoc(milkRef, {quantity: -5})); checks++;
     await assertFails(getDoc(doc(other, 'ranches/farm-a/milk_records/m1'))); checks++;
     await assertFails(getDocs(collection(other, 'ranches/farm-a/milk_records'))); checks++;
     await assertFails(setDoc(doc(other, 'ranches/farm-a/milk_records/evil'), { quantity: 99 })); checks++;

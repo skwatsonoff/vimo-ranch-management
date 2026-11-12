@@ -1988,12 +1988,12 @@ class MarketProducts extends StatefulWidget {
 }
 
 class _MarketProductsState extends State<MarketProducts> {
-  late Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _load =
+  late Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _load =
       _fetch();
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _fetch() =>
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _fetch() =>
       widget.query.trim().length >= 2
-      ? ShopService.search(widget.query, category: widget.category)
+      ? ShopService.search(widget.query, category: widget.category).asStream()
       : ShopService.recent(category: widget.category);
 
   @override
@@ -2008,12 +2008,9 @@ class _MarketProductsState extends State<MarketProducts> {
   Widget build(BuildContext context) {
     if (!ShopService.available) return const SizedBox.shrink();
     final searching = widget.query.trim().length >= 2;
-    return FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      future: _load,
+    return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      stream: _load,
       builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const SkeletonList(rows: 2, padding: EdgeInsets.zero);
-        }
         if (snap.hasError) {
           return _MarketNote(
             bi(
@@ -2021,6 +2018,9 @@ class _MarketProductsState extends State<MarketProducts> {
               'பொருட்களை ஏற்ற முடியவில்லை. கீழே இழுத்து மீண்டும் முயற்சிக்கவும்.',
             ),
           );
+        }
+        if (!snap.hasData || snap.connectionState == ConnectionState.waiting) {
+          return const SkeletonList(rows: 2, padding: EdgeInsets.zero);
         }
         final docs = sortShopProducts(
           snap.data ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[],

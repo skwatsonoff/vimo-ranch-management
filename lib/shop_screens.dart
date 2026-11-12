@@ -333,9 +333,6 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
       snack(context, problem, tone: SnackTone.error);
       return;
     }
-    // Market is local: selling needs location allowed.
-    if (!await MarketLocation.require(context) || !mounted) return;
-    if (!await VimoTeam.marketAllowed(context) || !mounted) return;
     setState(() => _saving = true);
     final features = [
       for (final f in _features)
@@ -347,6 +344,9 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
     final title = _title.text.trim();
     final brand = _brand.text.trim();
     try {
+      // Lock the form before prompting for location or checking the account.
+      if (!await MarketLocation.require(context) || !mounted) return;
+      if (!await VimoTeam.marketAllowed(context) || !mounted) return;
       final id = await ShopService.save(
         id: widget.productId,
         photos: _photos,

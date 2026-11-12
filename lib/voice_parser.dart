@@ -10,6 +10,8 @@ library;
 
 import 'voice_heard_fixes.dart';
 
+const maxMilkLitres = 99.0;
+
 // --- phonetic keys -------------------------------------------------------------
 
 const _consonants = <String, String>{
@@ -201,6 +203,10 @@ List<String> voiceTokens(String text) {
       .toLowerCase()
       .replaceAll(RegExp('[\u200b-\u200d\ufeff]'), '')
       .replaceAll('½', ' 1/2 ');
+  s = s.replaceAllMapped(
+    RegExp(r'(^|[\s(,;])[-−–]\s*(?=[0-9.])'),
+    (match) => '${match[1]}minus ',
+  );
   s = s.replaceAllMapped(RegExp(r'(\d),(\d)'), (m) => '${m[1]}.${m[2]}');
   // Split digits glued to words: "5litre", "5லிட்டர்", "maina5".
   s = s.replaceAllMapped(RegExp(r'(\d)([^\d\s./])'), (m) => '${m[1]} ${m[2]}');
@@ -859,6 +865,33 @@ class _NumberHit {
 double? extractLitres(List<String> tokens, {Set<int> skip = const {}}) =>
     readLitres(tokens, skip: skip).value;
 
+const _quantityChoiceWords = {'or', 'அல்லது', 'இல்லையா'};
+
+double? _quantityOption(String word) {
+  if (word.endsWith('ா')) {
+    final stem = word.substring(0, word.length - 1);
+    return _tamilNumbers['$stemு'] ?? _tamilNumbers[stem];
+  }
+  return _numberValue(word);
+}
+
+List<double> _quantityOptions(List<String> words, Set<int> skip) {
+  final hasSeparator = words.any(_quantityChoiceWords.contains);
+  final suffixes = words.where((word) => word.endsWith('ா')).length;
+  if (!hasSeparator && suffixes < 2) return const [];
+  final options = <double>{};
+  for (var i = 0; i < words.length; i++) {
+    if (skip.contains(i) || (!hasSeparator && !words[i].endsWith('ா'))) {
+      continue;
+    }
+    final option = _quantityOption(words[i]);
+    if (option != null && option > 0 && option <= maxMilkLitres) {
+      options.add(option);
+    }
+  }
+  return options.length > 1 ? options.toList(growable: false) : const [];
+}
+
 // --- cows ----------------------------------------------------------------------
 
 /// One cow the utterance may name, with how sure the match is (0..1).
@@ -1088,6 +1121,8 @@ class VoiceCommand {
   final List<String> rest;
   final List<CowGuess> cows;
   final double? litres;
+  final List<double> quantityOptions;
+  final bool invalidQuantity;
   final bool yes;
   final bool no;
   final bool cancel;
@@ -1112,6 +1147,8 @@ class VoiceCommand {
     required this.rest,
     required this.cows,
     required this.litres,
+    this.quantityOptions = const [],
+    this.invalidQuantity = false,
     required this.yes,
     required this.no,
     required this.cancel,
@@ -1146,7 +1183,13 @@ class VoiceCommand {
         .toList();
   }
 
-  bool get hasEntryData => cow != null || litres != null;
+  bool get hasEntryData =>
+      cow != null ||
+      litres != null ||
+      quantityOptions.isNotEmpty ||
+      invalidQuantity;
+
+  bool get hasMilkUnit => rest.any(_isUnit);
 
   /// Nothing useful at all: only filler or noise.
   bool get isEmpty =>
@@ -1156,7 +1199,7 @@ class VoiceCommand {
   /// the recogniser's alternatives.
   double get information =>
       (cow == null ? 0 : 2 + cow!.score) +
-      (litres == null ? 0 : 2) +
+      (litres == null && quantityOptions.isEmpty ? 0 : 2) +
       (finish ? 1.5 : 0) +
       (yes || no ? 1 : 0) +
       (wake ? .5 : 0);
@@ -1189,9 +1232,17 @@ VoiceCommand parseVoiceCommand(
   final best = guesses.isNotEmpty && guesses.first.score >= cowMaybeScore
       ? guesses.first
       : null;
-  final reading = readLitres(words, skip: best?.tokens ?? const {});
+  final skip = best?.tokens ?? const <int>{};
+  final reading = readLitres(words, skip: skip);
   final litres = reading.value;
-  final valid = litres != null && litres > 0 && litres <= 99 ? litres : null;
+  final quantityOptions = _quantityOptions(words, skip);
+  final negative = words.indexOf('minus');
+  final invalidQuantity =
+      (negative >= 0 &&
+          negative + 1 < words.length &&
+          _numberValue(words[negative + 1]) != null) ||
+      (litres != null && (litres <= 0 || litres > maxMilkLitres));
+  final valid = !invalidQuantity && quantityOptions.isEmpty ? litres : null;
   final sureCow = best != null && best.score >= cowSureScore;
   // Milk to a person, not from a cow: a sale word ("விற்றேன்", "kuduthen",
   // "bought", "gave … to"), or a name with "-க்கு"/"kitta" that is no cow.
@@ -1246,6 +1297,8 @@ VoiceCommand parseVoiceCommand(
     rest: words,
     cows: guesses,
     litres: valid,
+    quantityOptions: quantityOptions,
+    invalidQuantity: invalidQuantity,
     yes: _anyWord(words, _yesWords),
     no: _anyWord(words, _noWords),
     cancel: _anyWord(words, _cancelWords),
@@ -1259,6 +1312,47 @@ VoiceCommand parseVoiceCommand(
         : null,
     yesterday: _anyWord(words, _yesterdayWords),
   );
+}
+
+final _milkBatchPunctuation = RegExp(r'(?<!\d),|,(?!\d)|[;\n]');
+final _milkBatchConjunction = RegExp(
+  r'\s+(?:and|மற்றும்|அப்புறம்)\s+',
+  caseSensitive: false,
+);
+
+/// Null is a single utterance. An empty list is a multi-cow request with a
+/// clause that needs to be repeated, so no subset is silently recorded.
+List<VoiceCommand>? parseMilkBatch(
+  String text,
+  List<String> cows, {
+  Map<String, List<String>> aliases = const {},
+}) {
+  final punctuated = _milkBatchPunctuation.hasMatch(text);
+  final parts = text
+      .split(punctuated ? _milkBatchPunctuation : _milkBatchConjunction)
+      .where((part) => part.trim().isNotEmpty)
+      .toList();
+  if (parts.length < 2) return null;
+  if (parts.length > 20) return const [];
+  final commands = [
+    for (final part in parts) parseVoiceCommand(part, cows, aliases: aliases),
+  ];
+  final names = {for (final command in commands) ?command.cow?.name};
+  final quantities = commands.where(
+    (command) =>
+        command.litres != null ||
+        command.quantityOptions.isNotEmpty ||
+        command.invalidQuantity,
+  );
+  if (names.length < 2 &&
+      (!punctuated || names.isEmpty || quantities.length < 2)) {
+    return null;
+  }
+  if (names.length != commands.length ||
+      commands.any((c) => !c.cowIsSure || c.litres == null || c.sale)) {
+    return const [];
+  }
+  return commands;
 }
 
 /// The best reading among the recogniser's alternatives for one sentence.

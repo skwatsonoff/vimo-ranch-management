@@ -1157,9 +1157,62 @@ service cloud.firestore {
         allow create, update, delete: if isAdmin(ranchId);
       }
 
+      function validMilkDate(date) {
+        return date is string
+          && date.matches('^(19[0-9]{2}|[2-9][0-9]{3})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')
+          && validMilkCalendarDate(date.split('-'));
+      }
+
+      function validMilkCalendarDate(parts) {
+        let year = int(parts[0]);
+        let month = int(parts[1]);
+        let day = int(parts[2]);
+        return month == 2
+          ? day <= (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) ? 29 : 28)
+          : day <= (month in [4, 6, 9, 11] ? 30 : 31);
+      }
+
+      function validMilkFields(d) {
+        return d.cow is string && d.cow.size() <= 120 && d.cow.matches('.*\\S.*')
+          && d.quantity is number && d.quantity > 0 && d.quantity <= 99
+          && validMilkDate(d.date)
+          && d.time is string && d.time.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+          && d.session in ['Morning', 'Evening'];
+      }
+
+      function milkCowMatches(d, ranchId) {
+        let path = /databases/$(database)/documents/ranches/$(ranchId)/animals/$(d.cowId);
+        return exists(path)
+          && get(path).data.get('type', '') == 'cow'
+          && get(path).data.get('gender', 'Female') != 'Male'
+          && get(path).data.get('name', '') == d.cow;
+      }
+
+      function validMilkCow(d, ranchId, documentId) {
+        // Old device queues have the display name only. Current voice
+        // submissions carry a stable document ID and a registered cow link.
+        return ('cowId' in d && d.cowId is string
+                && d.cowId.matches('^[A-Za-z0-9_-]{1,250}$')
+                && milkCowMatches(d, ranchId))
+          || (!('cowId' in d) && !documentId.matches('^voice_[0-9a-f]{64}$'));
+      }
+
       match /milk_records/{documentId} {
         allow read: if isMember(ranchId);
-        allow create, update, delete: if canRecordEntries(ranchId);
+        allow create: if canRecordEntries(ranchId)
+          && validMilkFields(request.resource.data)
+          && validMilkCow(request.resource.data, ranchId, documentId);
+        allow update: if canRecordEntries(ranchId)
+          && request.resource.data.get('cowId', '') == resource.data.get('cowId', '')
+          && request.resource.data.get('cow', '') == resource.data.get('cow', '')
+          && request.resource.data.get('date', '') == resource.data.get('date', '')
+          && request.resource.data.get('time', '') == resource.data.get('time', '')
+          && request.resource.data.get('session', '') == resource.data.get('session', '')
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['quantity'])
+            || (request.resource.data.quantity is number
+              && request.resource.data.quantity > 0
+              && request.resource.data.quantity <= 99));
+        allow delete: if canRecordEntries(ranchId);
       }
 
       match /food_records/{documentId} {

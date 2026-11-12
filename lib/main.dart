@@ -63,6 +63,7 @@ import 'voice_dialogue.dart';
 import 'voice_training_core.dart';
 import 'language_pack_store.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:crypto/crypto.dart';
 
 part 'interface.dart';
 part 'business.dart';
@@ -102,6 +103,7 @@ part 'shop_reviews.dart';
 part 'shop_social.dart';
 part 'vendor_walkin_fridge.dart';
 part 'voice_milk.dart';
+part 'milk_entry.dart';
 part 'voice_report_screen.dart';
 part 'voice_learning.dart';
 part 'language_pack_screen.dart';
@@ -5264,6 +5266,9 @@ class CloudSyncService {
     'followNotices',
     'workspaceSyncEnabled',
     'activeDeviceWorkspace',
+    _voiceDraftKey,
+    _voiceLocaleKey,
+    _cloudLessonsKey,
   };
 
   static FirebaseFirestore get db => FirebaseFirestore.instance;
@@ -5328,17 +5333,17 @@ class CloudSyncService {
 
   static Future<void> uploadAll() async {
     if (!ready) return;
-    // Upload everyday entries first. Settings or a large animal photo cannot
-    // block them; failures remain visible after all independent work is tried.
+    // Milk can reference a newly registered cow. Keep the attempts independent
+    // so an unrelated animal or settings error still lets milk sync.
     await runSyncSteps({
       for (final name in [
+        'animals',
         'milk_records',
         'food_records',
         'stock_records',
         'expense_records',
         'doctor_records',
         'sale_records',
-        'animals',
         'purchase_records',
         'death_records',
         'calving_records',
@@ -10048,6 +10053,9 @@ Future<void> editRecentEntry(
                 if (value == null ||
                     !value.isFinite ||
                     value < 0 ||
+                    (boxName == 'milk_records' &&
+                        field == 'quantity' &&
+                        !validMilkQuantity(value)) ||
                     ({
                           'quantity',
                           'quantityKg',
@@ -15186,7 +15194,8 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
       }
       if (_mode == 0) {
         final quantity = toDouble(_milk.text);
-        if (_cow.isEmpty) {
+        final cow = milkCowByName(_cow);
+        if (cow == null) {
           snack(
             context,
             tamilUi ? 'மாட்டை தேர்வு செய்யவும்' : 'Please select a cow',
@@ -15194,7 +15203,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           );
           return;
         }
-        if (quantity <= 0) {
+        if (!validMilkQuantity(quantity)) {
           snack(
             context,
             tamilUi ? 'பால் அளவை உள்ளிடவும்' : 'Please enter the milk quantity',
@@ -15203,16 +15212,15 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           return;
         }
         setState(() => _saving = true);
-        await Hive.box('milk_records').add({
-          'cow': _cow,
-          'date': todayDate(),
-          'time': currentTime(),
-          'session': _session,
-          'quantity': quantity,
-          'notes': _notes.text.trim(),
-          'addedBy': currentUserName(),
-          'createdAt': DateTime.now().toIso8601String(),
-        });
+        await Hive.box('milk_records').add(
+          milkRecord(
+            cow,
+            quantity,
+            DateTime.now(),
+            _session,
+            _notes.text.trim(),
+          ),
+        );
         saved = bi(
           'Saved ${formatLitres(quantity)} · $_cow · ${ui(_session)}',
           '${formatLitres(quantity)} சேமிக்கப்பட்டது · $_cow · ${ui(_session)}',

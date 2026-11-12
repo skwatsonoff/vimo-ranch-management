@@ -236,7 +236,7 @@ void main() {
     }
     expect(before, 0);
     final rows = Hive.box('milk_records').values.map(asMap).toList();
-    expect(rows.map((r) => r['quantity']), [4, 2]);
+    expect(rows.map((r) => r['quantity']), unorderedEquals([4, 2]));
     expect(Hive.box('settings').get('voiceMilkDraft'), isNull);
     expect(speech.listens, greaterThan(0));
     await closeVoice(tester);
