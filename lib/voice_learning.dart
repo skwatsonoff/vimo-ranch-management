@@ -17,25 +17,40 @@ Future<void> openVoiceLearning() async {
 }
 
 VoiceLexicon? _lexicon;
+String? _lexiconScope;
+
+Iterable<(String, Map<String, dynamic>)> _lessonRows() sync* {
+  if (!Hive.isBoxOpen(voiceLearningBox)) return;
+  final box = Hive.box(voiceLearningBox);
+  final prefix = _voicePrefix(_voiceScope());
+  for (final key in box.keys.whereType<String>()) {
+    // Legacy lessons remain readable on their original device.
+    if (!key.startsWith('text:') && !key.startsWith('word:') &&
+        (prefix.isEmpty || !key.startsWith(prefix))) {
+      continue;
+    }
+    final row = asMap(box.get(key));
+    if (row.isNotEmpty && row['deleted'] != true) yield (key, row);
+  }
+}
 
 /// The owner's lessons, read once from the box and kept until they change.
 VoiceLexicon voiceLexicon() {
+  final scope = _voiceScope();
   final cached = _lexicon;
-  if (cached != null) return cached;
+  if (cached != null && _lexiconScope == scope) return cached;
   final lexicon = VoiceLexicon();
-  if (Hive.isBoxOpen(voiceLearningBox)) {
-    for (final raw in Hive.box(voiceLearningBox).values.whereType<Map>()) {
-      final row = asMap(raw);
-      final heard = txt(row, 'heard');
-      final meant = txt(row, 'meant');
-      if (heard.isEmpty || meant.isEmpty) continue;
-      if (txt(row, 'kind') == 'word') {
-        lexicon.words[phoneticKey(heard)] = meant;
-      } else {
-        lexicon.sentences[heard.toLowerCase()] = meant;
-      }
+  for (final (_, row) in _lessonRows()) {
+    final heard = txt(row, 'heard');
+    final meant = txt(row, 'meant');
+    if (heard.isEmpty || meant.isEmpty) continue;
+    if (row['kind'] == 'word') {
+      lexicon.words[phoneticKey(heard)] = meant;
+    } else if (row['kind'] == 'text') {
+      lexicon.sentences[heard.toLowerCase()] = meant;
     }
   }
+  _lexiconScope = scope;
   return _lexicon = lexicon;
 }
 
@@ -44,26 +59,28 @@ VoiceLexicon voiceLexicon() {
 Future<void> rememberVoiceCorrection(String heard, String corrected) async {
   final from = heard.trim();
   final to = corrected.trim();
-  if (from.isEmpty || to.isEmpty || from == to) return;
-  if (!Hive.isBoxOpen(voiceLearningBox)) return;
-  final box = Hive.box(voiceLearningBox);
+  if (from.isEmpty || to.isEmpty || from == to ||
+      from.length > 400 || to.length > 400 || !Hive.isBoxOpen(voiceLearningBox)) {
+    return;
+  }
+  final scope = _voiceScope();
+  final prefix = _voicePrefix(scope);
   final pairs = VoiceLexicon().learn(from, to);
-  Future<void> put(String key, String kind, String a, String b) async {
-    final old = asMap(box.get(key));
-    await box.put(key, {
-      'kind': kind,
-      'heard': a,
-      'meant': b,
-      'count': toInt(old['count']) + 1,
-      'updatedAt': DateTime.now().toIso8601String(),
-    });
-  }
-
-  await put('text:${from.toLowerCase()}', 'text', from, to);
-  for (final (a, b) in pairs) {
-    await put('word:${phoneticKey(a)}', 'word', a, b);
-  }
+  final command = parseVoiceCommand(to, cowNames(), aliases: cowNameAliases());
+  final share = scope.isNotEmpty && command.cowIsSure &&
+      command.litres != null && command.hasMilkUnit && !command.sale;
+  final box = Hive.box(voiceLearningBox);
+  await box.putAll({
+    '${prefix}text:${from.toLowerCase()}': _makeVoiceLesson(
+      box, '${prefix}text:${from.toLowerCase()}', 'text', from, to, share: share,
+    ),
+    for (final (a, b) in pairs)
+      '${prefix}word:${phoneticKey(a)}': _makeVoiceLesson(
+        box, '${prefix}word:${phoneticKey(a)}', 'word', a, b,
+      ),
+  });
   _lexicon = null;
+  if (share) _queueDriveSync();
   VoiceDiagnostics.log('learned', {
     'heard': from,
     'meant': to,
@@ -71,24 +88,63 @@ Future<void> rememberVoiceCorrection(String heard, String corrected) async {
   });
 }
 
+Map<String, dynamic> _makeVoiceLesson(
+  Box box, String key, String kind, String heard, String meant, {
+  bool share = false,
+  bool deleted = false,
+}) {
+  final previous = asMap(box.get(key));
+  final now = DateTime.now().toUtc();
+  return {
+    'kind': kind,
+    'heard': heard,
+    'meant': meant,
+    'count': toInt(previous['count']) + 1,
+    'updatedAt': now.toIso8601String(),
+    'changed': math.max(now.millisecondsSinceEpoch, toInt(previous['changed']) + 1),
+    'share': share,
+    'deleted': deleted,
+  };
+}
+
+Future<void> rememberConfirmedMilkCow(String heard, String cow, double litres) async {
+  final scope = _voiceScope();
+  if (scope.isEmpty || heard.isEmpty || heard.length > 400 ||
+      !Hive.isBoxOpen(voiceLearningBox)) return;
+  final original = parseVoiceCommand(heard, cowNames(), aliases: cowNameAliases());
+  if (original.cowIsSure || original.litres != litres ||
+      original.sale || !original.hasMilkUnit) return;
+  final box = Hive.box(voiceLearningBox);
+  final key = '${_voicePrefix(scope)}example:${heard.toLowerCase()}';
+  await box.put(key, _makeVoiceLesson(
+    box, key, 'example', heard, '$cow $litres litres', share: true,
+  ));
+  _lexicon = null;
+  _queueDriveSync();
+}
+
 /// The owner's fixes applied to a heard sentence.
 String voiceRewrite(String text) => voiceLexicon().apply(text);
 
 /// Every lesson, newest first, for the "Learned words" list.
 List<Map<String, dynamic>> learnedVoiceRows() {
-  if (!Hive.isBoxOpen(voiceLearningBox)) return const [];
-  final box = Hive.box(voiceLearningBox);
-  final rows = [
-    for (final key in box.keys)
-      if (box.get(key) is Map) {...asMap(box.get(key)), 'key': '$key'},
-  ];
+  final rows = [for (final (key, row) in _lessonRows()) {...row, 'key': key}];
   rows.sort((a, b) => txt(b, 'updatedAt').compareTo(txt(a, 'updatedAt')));
   return rows;
 }
 
 Future<void> forgetVoiceLesson(String key) async {
   if (!Hive.isBoxOpen(voiceLearningBox)) return;
-  await Hive.box(voiceLearningBox).delete(key);
+  final box = Hive.box(voiceLearningBox);
+  final row = asMap(box.get(key));
+  if (row['share'] == true) {
+    await box.put(key, _makeVoiceLesson(
+      box, key, txt(row, 'kind'), '', '', share: true, deleted: true,
+    ));
+    _queueDriveSync();
+  } else {
+    await box.delete(key);
+  }
   _lexicon = null;
   VoiceDiagnostics.log('unlearned', {'key': key});
 }
@@ -151,35 +207,6 @@ Map<String, List<String>> cloudCowAliases() {
   return _cloudAliases = out;
 }
 
-/// Reads the latest lessons (Firestore voice_training_lessons/<uid>,
-/// written by the training workflow) into the phone. Quietly does nothing
-/// when signed out or offline; the last copy keeps working.
-Future<void> refreshVoiceLessons() async {
-  try {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || !Hive.isBoxOpen('settings')) return;
-    final snap = await FirebaseFirestore.instance
-        .collection(trainingLessonsCollection)
-        .doc(uid)
-        .get()
-        .timeout(const Duration(seconds: 8));
-    final json = snap.data()?['json'];
-    if (json is! String || json.isEmpty) return;
-    if (Hive.box('settings').get(_cloudLessonsKey) == json) return;
-    await Hive.box('settings').put(_cloudLessonsKey, json);
-    _cloudAliases = null;
-    VoiceDiagnostics.log('cloud_lessons', {
-      'cows': cloudCowAliases().length,
-      'spellings': cloudCowAliases().values.fold<int>(
-        0,
-        (n, v) => n + v.length,
-      ),
-    });
-  } catch (error) {
-    VoiceDiagnostics.log('cloud_lessons_error', {'error': '$error'});
-  }
-}
-
 /// Words the recogniser should favour: the wake word, cow names in every
 /// spelling, customers, and words the owner taught VIMO.
 List<String> voiceHotwords({int limit = 120}) {
@@ -199,10 +226,29 @@ List<String> voiceHotwords({int limit = 120}) {
 }
 
 /// Everything the owner taught, as words to favour.
-List<String> learnedVoiceWords() {
-  if (!Hive.isBoxOpen(voiceLearningBox)) return const [];
-  return [
-    for (final row in Hive.box(voiceLearningBox).values.whereType<Map>())
-      if ('${row['meant'] ?? ''}'.trim().isNotEmpty) '${row['meant']}'.trim(),
-  ];
+List<String> learnedVoiceWords() => [
+  for (final (_, row) in _lessonRows())
+    if (row['kind'] != 'example' && txt(row, 'meant').trim().isNotEmpty)
+      txt(row, 'meant').trim(),
+];
+
+MilkRecognitionModel? _milkModel;
+VoiceLexicon? _milkModelLexicon;
+String? _milkModelCows;
+
+MilkRecognitionModel milkRecognitionModel() {
+  final lexicon = voiceLexicon();
+  final cows = cowNames();
+  final aliases = cowNameAliases();
+  final fingerprint = jsonEncode([cows, aliases]);
+  final cached = _milkModel;
+  if (cached != null && identical(lexicon, _milkModelLexicon) &&
+      fingerprint == _milkModelCows) return cached;
+  _milkModelLexicon = lexicon;
+  _milkModelCows = fingerprint;
+  return _milkModel = MilkRecognitionModel.train([
+    ...lexicon.sentences.entries.map((entry) => (entry.key, entry.value)),
+    for (final (_, row) in _lessonRows())
+      if (row['kind'] == 'example') (txt(row, 'heard'), txt(row, 'meant')),
+  ], cows, aliases: aliases);
 }

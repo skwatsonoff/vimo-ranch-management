@@ -14,7 +14,7 @@ import 'voice_parser.dart' show phoneticKey, soundSimilarity;
 
 /// The app version written into reports. Keep equal to `version:` in
 /// pubspec.yaml (a test checks this).
-const vimoAppVersion = '1.5.1+10';
+const vimoAppVersion = '1.5.3+12';
 
 /// Bumped whenever the report's JSON layout changes.
 const voiceReportSchemaVersion = 1;

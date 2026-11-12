@@ -53,6 +53,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'voice_parser.dart';
+import 'milk_recognition_model.dart';
 import 'mic_permission.dart';
 import 'voice_diagnostics.dart';
 import 'voice_understanding.dart';
@@ -106,6 +107,7 @@ part 'voice_milk.dart';
 part 'milk_entry.dart';
 part 'voice_report_screen.dart';
 part 'voice_learning.dart';
+part 'voice_bridge.dart';
 part 'language_pack_screen.dart';
 part 'voice_actions.dart';
 part 'voice_training_screen.dart';
@@ -6259,7 +6261,10 @@ class AutoSyncService {
     }
 
     _browserRuntime.start(
-      onOnline: () => scheduleSync(reason: 'network back'),
+      onOnline: () {
+        scheduleSync(reason: 'network back');
+        _queueDriveSync();
+      },
       onFocus: () => scheduleSync(reason: 'app focus'),
     );
 
@@ -20114,6 +20119,12 @@ class AppSettingsScreen extends StatelessWidget {
                     icon: CupertinoIcons.bag,
                     label: bi('Market listing', 'சந்தைப் பட்டியல்'),
                     onTap: () => push(context, const MarketListingScreen()),
+                  ),
+                if (signedInUid.isNotEmpty)
+                  _ActionRow(
+                    icon: CupertinoIcons.doc_on_doc,
+                    label: bi('Product drafts', 'பொருள் வரைவுகள்'),
+                    onTap: () => push(context, const ShopDraftsScreen()),
                   ),
               ],
             ),

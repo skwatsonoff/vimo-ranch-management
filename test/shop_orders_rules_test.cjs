@@ -1,7 +1,7 @@
 // Run with the demo-vimo emulator only. Never targets a production project.
 // Products and Mercari-style orders: who may write what, and every step.
 const {initializeTestEnvironment, assertSucceeds, assertFails} = require('@firebase/rules-unit-testing');
-const {doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs, writeBatch, increment, serverTimestamp, deleteField} = require('firebase/firestore');
+const {doc, setDoc, getDoc, updateDoc, deleteDoc, collection, query, where, getDocs, writeBatch, runTransaction, increment, serverTimestamp, deleteField} = require('firebase/firestore');
 const fs = require('node:fs');
 
 (async () => {
@@ -42,6 +42,21 @@ const fs = require('node:fs');
     batch.set(pRef(seller), product());
     batch.set(doc(seller, 'shop_products/p1/photos/0'), {data: jpeg});
     await assertSucceeds(batch.commit()); checks++;
+    const phoneListing = doc(seller, 'shop_products/phone-listing');
+    const photo = 'data:image/jpeg;base64,' + 'A'.repeat(400000);
+    const cover = 'data:image/jpeg;base64,' + 'A'.repeat(78000);
+    await assertSucceeds(runTransaction(seller, async (tx) => {
+      const existing = await tx.get(phoneListing);
+      if (existing.exists()) return;
+      tx.set(phoneListing, product({
+        sku: '001', weightGrams: 250, origin: 'India', manufacturer: 'vimo',
+        gstPercent: 5, hsn: '5325', photoCount: 5, cover,
+      }));
+      for (let i = 0; i < 5; i++) {
+        tx.set(doc(seller, `shop_products/phone-listing/photos/${i}`), {data: photo});
+      }
+    })); checks++;
+    await assertSucceeds(getDoc(doc(buyer, 'shop_products/phone-listing/photos/4'))); checks++;
     // Existing shops may still have multiple methods. Orders and stock
     // updates must work until the seller saves the listing with one method.
     await env.withSecurityRulesDisabled(async (ctx) => {

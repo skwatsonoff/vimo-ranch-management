@@ -3,12 +3,8 @@ part of 'main.dart';
 // =============================================================================
 //  Train VIMO (Settings, ranch owner).
 //
-//  Honest about where the work happens: training a speech model needs a
-//  strong computer, so the phone records sentences and asks for a training
-//  run; the training itself runs on free cloud machines (GitHub Actions, or
-//  Google Colab for a faster GPU). The new model then downloads to the
-//  phone as a language pack and works offline. "Improve VIMO" gives an
-//  instant improvement on the phone in the meantime.
+//  Trains command recognition on-device and lets the owner upload
+//  recorded speech to their private Google Drive for speech training.
 // =============================================================================
 
 const _trainingBox = 'voice_training';
@@ -27,23 +23,13 @@ List<Map<String, dynamic>> _recordings() {
   final box = Hive.box(_trainingBox);
   final rows = [
     for (final key in box.keys)
-      if (box.get(key) is Map) {...asMap(box.get(key)), 'id': '$key'},
+      if (box.get(key) is Map && (asMap(box.get(key))['scope'] == null ||
+          asMap(box.get(key))['scope'] == _voiceScope()))
+        {...asMap(box.get(key)), 'id': '$key'},
   ];
   rows.sort((a, b) => txt(b, 'createdAt').compareTo(txt(a, 'createdAt')));
   return rows;
 }
-
-String? _trainingUid() {
-  if (!firebaseReady) return null;
-  try {
-    return FirebaseAuth.instance.currentUser?.uid;
-  } catch (_) {
-    return null;
-  }
-}
-
-/// The training job whose lessons this phone already read.
-String? _lessonsReadFor;
 
 class TrainVimoScreen extends StatefulWidget {
   const TrainVimoScreen({super.key});
@@ -95,7 +81,6 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
       _ready = true;
       _index = next < 0 ? 0 : next;
     });
-    unawaited(_uploadPending());
   }
 
   @override
@@ -224,7 +209,8 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
       'durationMs': _takeMs,
       'device': kIsWeb ? 'web' : defaultTargetPlatform.name,
       'createdAt': DateTime.now().toIso8601String(),
-      'uploaded': false,
+      'scope': _voiceScope(),
+      'driveUploaded': false,
       'fromCorrection': _custom != null,
     });
     VoiceDiagnostics.log('training_saved', {
@@ -236,7 +222,6 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
       _custom = null;
       _index = (_index + 1) % _prompts.length;
     });
-    unawaited(_uploadPending());
   }
 
   void _skip() => setState(() {
@@ -247,60 +232,42 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
 
   // --- upload -------------------------------------------------------------------------
 
-  Future<void> _uploadPending({bool force = false}) async {
+  Future<void> _uploadPending() async {
     if (_uploading || !Hive.isBoxOpen(_trainingBox)) return;
-    final uid = _trainingUid();
-    if (uid == null) return;
-    if (!force && settingValue(_packsWifiOnlyKey, true) != false) {
-      try {
-        final kinds = await Connectivity().checkConnectivity();
-        if (!kinds.contains(ConnectivityResult.wifi) &&
-            !kinds.contains(ConnectivityResult.ethernet)) {
-          return;
-        }
-      } catch (_) {}
+    final bridge = _VoiceBridge.current;
+    if (bridge == null) {
+      await push(context, const VoiceBridgeScreen());
+      return;
     }
-    final pending = _recordings().where((r) => r['uploaded'] != true).toList();
-    if (pending.isEmpty) return;
+    final pending = _recordings().where((row) =>
+      row['scope'] == bridge.scope && row['driveUploaded'] != true).toList();
     setState(() => _uploading = true);
-    var sent = 0;
     try {
-      final audio = FirebaseFirestore.instance.collection(
-        trainingAudioCollection,
-      );
-      for (final r in pending) {
-        final id = txt(r, 'id');
+      for (final row in pending) {
+        final id = txt(row, 'id');
         final bytes = await Hive.lazyBox(_trainingAudioBox).get(id);
         if (bytes is! Uint8List || bytes.length >= 1000000) continue;
-        final lang = txt(r, 'lang', 'ta');
-        // One Firestore document per recording: the WAV and what was said.
-        await audio.doc(trainingDocId(uid, id)).set({
-          'ownerUid': uid,
+        final result = await bridge.call('recording', {
+          'id': id,
+          'wav': base64Encode(bytes),
           'sidecar': trainingSidecar(
-            id: id,
-            transcript: txt(r, 'text'),
-            language: lang,
-            speaker: txt(r, 'speaker'),
-            noise: txt(r, 'noise'),
-            durationMs: toInt(r['durationMs']),
-            device: txt(r, 'device'),
-            recordedAt:
-                DateTime.tryParse(txt(r, 'createdAt')) ?? DateTime.now(),
+            id: id, transcript: txt(row, 'text'), language: txt(row, 'lang', 'ta'),
+            speaker: txt(row, 'speaker'), noise: txt(row, 'noise'),
+            durationMs: toInt(row['durationMs']), device: txt(row, 'device'),
+            recordedAt: DateTime.tryParse(txt(row, 'createdAt')) ?? DateTime.now(),
           ),
-          'wav': Blob(bytes),
-          'createdAt': FieldValue.serverTimestamp(),
         });
-        await Hive.box(
-          _trainingBox,
-        ).put(id, {...asMap(Hive.box(_trainingBox).get(id)), 'uploaded': true});
-        sent++;
+        if (result['ok'] != true) throw StateError('recording');
+        final box = Hive.box(_trainingBox);
+        await box.put(id, {...asMap(box.get(id)), 'driveUploaded': true});
       }
-      VoiceDiagnostics.log('training_uploaded', {'count': sent});
-    } catch (error) {
-      VoiceDiagnostics.log('training_upload_error', {
-        'error': '$error',
-        'sent': sent,
-      });
+      if (mounted) {
+        snack(context, bi('Recordings synced to Google Drive', 'பதிவுகள் Google Drive-ல் ஒத்திசைந்தன'), tone: SnackTone.success);
+      }
+    } catch (_) {
+      if (mounted) {
+        snack(context, bi('Google Drive upload stopped. Try again to continue.', 'Google Drive பதிவேற்றம் நின்றது. தொடர மீண்டும் முயலுங்கள்.'), tone: SnackTone.error);
+      }
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -309,17 +276,26 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
   // --- data -------------------------------------------------------------------------------
 
   Future<void> _delete(String id, String lang) async {
-    await Hive.box(_trainingBox).delete(id);
-    await Hive.lazyBox(_trainingAudioBox).delete(id);
-    final uid = _trainingUid();
-    if (uid != null) {
+    if (_uploading) return;
+    final box = Hive.box(_trainingBox);
+    final row = asMap(box.get(id));
+    if (row['driveUploaded'] == true) {
+      final bridge = _VoiceBridge.current;
       try {
-        await FirebaseFirestore.instance
-            .collection(trainingAudioCollection)
-            .doc(trainingDocId(uid, id))
-            .delete();
-      } catch (_) {}
+        if (bridge == null || row['scope'] != bridge.scope) {
+          throw StateError('session');
+        }
+        final reply = await bridge.call('deleteRecording', {'id': id});
+        if (reply['ok'] != true) throw StateError('recording');
+      } catch (_) {
+        if (mounted) {
+          snack(context, bi('Connect Google Drive to delete this recording.', 'இந்தப் பதிவை நீக்க Google Drive-ஐ இணைக்கவும்.'), tone: SnackTone.error);
+        }
+        return;
+      }
     }
+    await box.delete(id);
+    await Hive.lazyBox(_trainingAudioBox).delete(id);
     if (mounted) setState(() {});
   }
 
@@ -370,67 +346,16 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
   // --- training job ---------------------------------------------------------------------
 
   Future<void> _startTraining() async {
-    final uid = _trainingUid();
-    if (uid == null) {
-      snack(
-        context,
-        bi(
-          'Sign in to VIMO to start training',
-          'பயிற்சி தொடங்க VIMO-வில் sign in செய்யுங்கள்',
-        ),
-        tone: SnackTone.error,
-      );
-      return;
-    }
-    final rows = _recordings();
-    final minutes = minutesByLanguage(rows);
-    try {
-      // The words pack: cow names in every spelling and the owner's lessons.
-      try {
-        await FirebaseFirestore.instance
-            .collection(trainingLexiconCollection)
-            .doc(uid)
-            .set({
-              'ownerUid': uid,
-              'json': jsonEncode(voiceLexiconExport()),
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-      } catch (error) {
-        VoiceDiagnostics.log('training_lexicon_error', {'error': '$error'});
-      }
-      await FirebaseFirestore.instance.collection('voice_training_jobs').add({
-        'ownerUid': uid,
-        'ranchId': ranchId(),
-        'languages': minutes.keys.isEmpty
-            ? ['ta']
-            : minutes.keys.take(4).toList(),
-        'status': 'requested',
-        'createdAt': FieldValue.serverTimestamp(),
-        'recordingCount': rows.length,
-        'minutes': double.parse(
-          minutes.values.fold<double>(0, (s, m) => s + m).toStringAsFixed(1),
-        ),
-      });
-      VoiceDiagnostics.log('training_requested', {'recordings': rows.length});
-      if (mounted) {
-        snack(
-          context,
-          bi('Training requested', 'பயிற்சி கோரப்பட்டது'),
-          tone: SnackTone.success,
-        );
-      }
-    } catch (error) {
-      VoiceDiagnostics.log('training_request_error', {'error': '$error'});
-      if (mounted) {
-        snack(
-          context,
-          bi(
-            'Could not start training. Please try again.',
-            'பயிற்சி தொடங்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
-          ),
-          tone: SnackTone.error,
-        );
-      }
+    if (_uploading) return;
+    setState(() => _uploading = true);
+    await refreshVoiceLessons();
+    final model = milkRecognitionModel();
+    if (mounted) {
+      setState(() => _uploading = false);
+      snack(context, bi(
+        'VIMO trained on ${model.examples} corrected milk commands.',
+        'திருத்திய ${model.examples} பால் கட்டளைகளில் VIMO பயிற்சி பெற்றது.',
+      ), tone: SnackTone.success);
     }
   }
 
@@ -719,156 +644,26 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
   }
 
   Widget _trainTab() {
-    final uid = _trainingUid();
-    final rows = _recordings();
-    final minutes = minutesByLanguage(
-      rows,
-    ).values.fold<double>(0, (s, m) => s + m);
-    final intro = _ReportSection(
-      icon: CupertinoIcons.cloud,
-      title: bi('Train VIMO\'s voice', 'VIMO குரல் பயிற்சி'),
+    final examples = milkRecognitionModel().examples;
+    return _ReportSection(
+      icon: CupertinoIcons.bolt,
+      title: bi('VIMO milk recognition', 'VIMO பால் கட்டளை அறிதல்'),
       subtitle: bi(
-        'Training needs a strong computer, so it runs on free cloud machines (GitHub Actions; Google Colab is faster). When it is better than the current model, you can install it here and it works offline.',
-        'பயிற்சிக்கு வலுவான கணினி தேவை; அதனால் இலவச cloud கணினிகளில் (GitHub Actions; Google Colab வேகமானது) நடக்கும். தற்போதைய model-ஐ விடச் சிறப்பாக இருந்தால் இங்கே நிறுவலாம்; offline-இல் வேலை செய்யும்.',
+        'Learns from corrected milk commands and suggests a cow for you to confirm. Works offline with the examples on this device.',
+        'திருத்திய பால் கட்டளைகளிலிருந்து கற்று, உறுதிசெய்ய மாட்டுப் பெயரைப் பரிந்துரைக்கும். சாதனத்தில் உள்ள உதாரணங்களுடன் இணையமின்றியும் இயங்கும்.',
       ),
       children: [
-        Text(
-          bi(
-            '${rows.length} recordings · ${minutes.toStringAsFixed(1)} min',
-            '${rows.length} பதிவுகள் · ${minutes.toStringAsFixed(1)} நிமிடம்',
-          ),
-          style: TextStyle(
-            fontSize: Gold.t16,
-            fontWeight: FontWeight.w700,
-            color: Ink.navy,
-          ),
-        ),
+        Text(bi('$examples examples on this device', 'இந்தச் சாதனத்தில் $examples உதாரணங்கள்')),
         const SizedBox(height: Space.s12),
         LiquidButton(
-          label: bi('Start training', 'பயிற்சியைத் தொடங்கு'),
+          label: bi('Train VIMO', 'VIMO-க்குப் பயிற்சி'),
           icon: CupertinoIcons.bolt_fill,
-          onPressed: rows.isEmpty || uid == null ? null : _startTraining,
+          busy: _uploading,
+          onPressed: _startTraining,
         ),
-        if (uid == null)
-          Padding(
-            padding: const EdgeInsets.only(top: Space.s8),
-            child: AppText(
-              bi(
-                'Sign in to VIMO to train.',
-                'பயிற்சிக்கு VIMO-வில் sign in செய்யுங்கள்.',
-              ),
-              style: TextStyle(fontSize: 13, color: Ink.muted),
-            ),
-          ),
-      ],
-    );
-    if (uid == null) return intro;
-    return Column(
-      children: [
-        intro,
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('voice_training_jobs')
-              .where('ownerUid', isEqualTo: uid)
-              .snapshots(),
-          builder: (context, snap) {
-            final docs = [...?snap.data?.docs];
-            if (docs.isEmpty) return const SizedBox.shrink();
-            docs.sort((a, b) {
-              final ta = a.data()['createdAt'];
-              final tb = b.data()['createdAt'];
-              return (tb is Timestamp ? tb.millisecondsSinceEpoch : 0)
-                  .compareTo(ta is Timestamp ? ta.millisecondsSinceEpoch : 0);
-            });
-            final job = docs.first.data();
-            final status = txt(job, 'status', 'requested');
-            final step = trainingStatuses.indexOf(status);
-            final lessons = job['lessons'];
-            if (status == 'ready' &&
-                lessons is num &&
-                _lessonsReadFor != docs.first.id) {
-              // New lessons in the cloud: bring them to the phone now.
-              _lessonsReadFor = docs.first.id;
-              unawaited(refreshVoiceLessons());
-            }
-            return _ReportSection(
-              icon: CupertinoIcons.gauge,
-              title: bi('Latest training', 'சமீபத்திய பயிற்சி'),
-              subtitle: status,
-              children: [
-                if (status != 'failed')
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(Space.s4),
-                    child: LinearProgressIndicator(
-                      value: step < 0 ? null : (step + 1) / 5,
-                      minHeight: Space.s8,
-                      color: Ink.tint,
-                      backgroundColor: Ink.lavender,
-                    ),
-                  ),
-                if (lessons is num)
-                  Padding(
-                    padding: const EdgeInsets.only(top: Space.s8),
-                    child: AppText(
-                      lessons > 0
-                          ? bi(
-                              'VIMO learned ${lessons.toInt()} ways your cows\' names are said, from ${toInt(job['files'])} recordings. Voice milk uses them now.',
-                              'உங்கள் ${toInt(job['files'])} பதிவுகளிலிருந்து, மாட்டுப் பெயர்கள் சொல்லப்படும் ${lessons.toInt()} விதங்களை VIMO கற்றுக்கொண்டது. குரல் பால் பதிவு இப்போதே இவற்றைப் பயன்படுத்தும்.',
-                            )
-                          : bi(
-                              'VIMO already understands every cow name in your ${toInt(job['files'])} recordings.',
-                              'உங்கள் ${toInt(job['files'])} பதிவுகளிலும் எல்லா மாட்டுப் பெயர்களும் VIMO-வுக்கு ஏற்கனவே புரிகின்றன.',
-                            ),
-                      style: TextStyle(fontSize: 14, color: Ink.body),
-                    ),
-                  ),
-                if (job['wer'] is num)
-                  Padding(
-                    padding: const EdgeInsets.only(top: Space.s8),
-                    child: Text(
-                      '${bi('Word error rate', 'வார்த்தைப் பிழை விகிதம்')}: ${(numv(job, 'wer') * 100).toStringAsFixed(1)}%'
-                      '${job['previousWer'] is num ? ' (${bi('before', 'முன்பு')} ${(numv(job, 'previousWer') * 100).toStringAsFixed(1)}%)' : ''}',
-                      style: TextStyle(fontSize: 14, color: Ink.body),
-                    ),
-                  ),
-                if (txt(job, 'error').isNotEmpty)
-                  Text(
-                    txt(job, 'error'),
-                    style: TextStyle(fontSize: 13, color: Ink.redText),
-                  ),
-                if (txt(job, 'logUrl').isNotEmpty)
-                  TextButton(
-                    onPressed: () => unawaited(
-                      launchUrl(
-                        Uri.parse(txt(job, 'logUrl')),
-                        mode: LaunchMode.externalApplication,
-                      ),
-                    ),
-                    child: AppText(
-                      bi('Open the training log', 'பயிற்சி பதிவேட்டைத் திற'),
-                    ),
-                  ),
-                if (trainingImproved(job)) ...[
-                  const SizedBox(height: Space.s8),
-                  LiquidButton(
-                    label: bi('Install new model', 'புதிய model-ஐ நிறுவு'),
-                    icon: CupertinoIcons.arrow_down_circle_fill,
-                    onPressed: () => push(context, const LanguagePacksScreen()),
-                  ),
-                ] else if (status == 'ready' && job['wer'] is num)
-                  Padding(
-                    padding: const EdgeInsets.only(top: Space.s8),
-                    child: AppText(
-                      bi(
-                        'This model is not better than the current one, so it is not offered.',
-                        'இந்த model தற்போதையதை விடச் சிறப்பாக இல்லை; அதனால் வழங்கப்படவில்லை.',
-                      ),
-                      style: TextStyle(fontSize: 13, color: Ink.muted),
-                    ),
-                  ),
-              ],
-            );
-          },
+        TextButton(
+          onPressed: _uploading ? null : () => push(context, const VoiceBridgeScreen()),
+          child: Text(bi('Google Drive & Gemini', 'Google Drive & Gemini')),
         ),
       ],
     );
@@ -876,14 +671,14 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
 
   List<Widget> _dataTab() {
     final rows = _recordings();
-    final uploaded = rows.where((r) => r['uploaded'] == true).length;
+    final uploaded = rows.where((r) => r['driveUploaded'] == true).length;
     return [
       _ReportSection(
         icon: CupertinoIcons.lock_shield,
         title: bi('Your training data', 'உங்கள் பயிற்சி தரவு'),
         subtitle: bi(
-          'Your recordings go only to your own private records in VIMO\'s cloud database, readable only by you and the training workflow, used only to train VIMO\'s voice for you. Speaker tags are labels you chose; no names go into file paths. You can delete any recording or all of them at any time.',
-          'உங்கள் பதிவுகள் VIMO cloud database-இல் உங்களுக்கு மட்டுமான பதிவுகளாகச் சேமிக்கப்படும் (நீங்களும் பயிற்சி workflow-உம் மட்டுமே படிக்க முடியும்); உங்களுக்கான VIMO குரல் பயிற்சிக்கு மட்டுமே பயன்படும். பேசுபவர் குறிச்சொற்கள் நீங்கள் தேர்ந்தவை; கோப்புப் பாதைகளில் பெயர்கள் இல்லை. எப்போது வேண்டுமானாலும் நீக்கலாம்.',
+          'Recordings are saved on this device. Use Upload to Drive to copy recordings made under this account to your private folder.',
+          'குரல் பதிவுகள் இந்தச் சாதனத்தில் சேமிக்கப்படும். இந்தக் கணக்கில் செய்த பதிவுகளைத் தனிப்பட்ட கோப்புறைக்கு நகலெடுக்க Drive-க்கு பதிவேற்றுங்கள்.',
         ),
         children: [
           Text(
@@ -904,11 +699,11 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
                 child: _SecondaryPill(
                   label: _uploading
                       ? bi('Uploading…', 'Upload ஆகிறது…')
-                      : bi('Upload now', 'இப்போது upload'),
+                      : bi('Upload to Drive', 'Drive-க்கு பதிவேற்று'),
                   icon: CupertinoIcons.cloud_upload,
                   onTap: _uploading
                       ? null
-                      : () => unawaited(_uploadPending(force: true)),
+                      : () => unawaited(_uploadPending()),
                 ),
               ),
               const SizedBox(width: Space.s8),
@@ -932,7 +727,7 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
               ),
               subtitle: Text(
                 '${packLanguageName(txt(r, 'lang'))} · ${txt(r, 'speaker')} · ${(toInt(r['durationMs']) / 1000).toStringAsFixed(1)} s'
-                '${r['uploaded'] == true ? ' · ☁︎' : ''}',
+                '${r['driveUploaded'] == true ? ' · ☁︎' : ''}',
               ),
               trailing: IconButton(
                 tooltip: bi('Delete', 'நீக்கு'),

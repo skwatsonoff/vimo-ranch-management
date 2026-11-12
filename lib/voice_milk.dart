@@ -919,12 +919,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   void _scheduleListen([Duration delay = const Duration(milliseconds: 300)]) {
     _restart?.cancel();
-    if (!_running || _report) return;
+    if (!_running || _report || _geminiBusy) return;
     _restart = Timer(delay, _listen);
   }
 
   Future<void> _listen() async {
-    if (!mounted || !_running || _report || _speaking || _starting) return;
+    if (!mounted || !_running || _report || _speaking || _starting || _geminiBusy) return;
     final engine = _engine;
     if (engine == null || _micError != null || engine.isListening) return;
     _starting = true;
@@ -1258,8 +1258,66 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     _armSleep();
   }
 
+  bool _geminiBusy = false;
+
+  Future<void> _readMilkWithGemini(
+    _VoiceBridge bridge,
+    VoiceCommand command,
+    List<String> cows,
+    String? selectedSession,
+  ) async {
+    if (_geminiBusy) return;
+    _geminiBusy = true;
+    _sleep?.cancel();
+    _restart?.cancel();
+    _quietly(_cancelEar);
+    final available = cows.where((cow) => cow.length <= 100).take(80).toList();
+    try {
+      final result = await bridge.call('milk', {'text': command.text, 'cows': available});
+      if (!mounted || _report || _pending != null) return;
+      final index = result['cowIndex'];
+      final litres = result['litres'];
+      final cow = index is int && index >= 0 && index < available.length
+          ? available[index] : null;
+      final amount = litres is num && litres.isFinite && litres > 0 &&
+          litres <= maxMilkLitres ? litres.toDouble() : null;
+      _stageMilkSuggestion(command, cow, amount, selectedSession);
+    } catch (_) {
+      if (!mounted || _report || _pending != null) return;
+      _running = false;
+      snack(context, bi(
+        'Gemini is unavailable. Enter the milk manually.',
+        'Gemini இப்போது கிடைக்கவில்லை. பால் அளவை நீங்களே உள்ளிடுங்கள்.',
+      ), tone: SnackTone.error);
+      await _typeInstead();
+    } finally {
+      _geminiBusy = false;
+      if (mounted && !_report && _running) {
+        _scheduleListen();
+        if (_pending == null) _armSleep();
+      }
+    }
+  }
+
+  void _stageMilkSuggestion(
+    VoiceCommand command,
+    String? cow,
+    double? litres,
+    String? selectedSession,
+  ) {
+    if (_phase == _VoicePhase.sleeping) _wake(silent: true);
+    _line(_LineKind.me, command.text);
+    _merge(command, selectedSession);
+    final pending = _pending!;
+    pending.cow ??= cow;
+    pending.litres ??= litres;
+    pending.needsConfirmation = true;
+    _evaluate();
+    _armSleep();
+  }
+
   void _handle(List<String> alternatives, {String? typedSession}) {
-    if (_report) return;
+    if (_report || _geminiBusy) return;
     final pending = _pending;
     // When VIMO asked "Maina or Meena?", only those cows are possible.
     final cows =
@@ -1308,6 +1366,33 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       cows: cowNames(),
       aliases: aliases,
     );
+    final eligibleForSuggestion = pending == null &&
+        !_dialogue.active &&
+        (typed || _phase == _VoicePhase.awake || command.wake) &&
+        command.hasMilkUnit &&
+        !command.sale &&
+        !command.finish &&
+        !command.cancel &&
+        !command.correction &&
+        !command.invalidQuantity &&
+        command.quantityOptions.isEmpty &&
+        command.closeCows.length < 2 &&
+        (command.cow == null || command.litres == null) &&
+        (full.intent == 'unknown' || full.intent == 'milk_record');
+    if (eligibleForSuggestion) {
+      final suggestion = command.cow == null
+          ? milkRecognitionModel().suggestCow(command.text)
+          : null;
+      if (suggestion != null) {
+        _stageMilkSuggestion(command, suggestion, null, typedSession);
+        return;
+      }
+      final bridge = _VoiceBridge.current;
+      if (bridge != null && bridge.gemini && cows.isNotEmpty && command.text.length <= 400) {
+        unawaited(_readMilkWithGemini(bridge, command, cows, typedSession));
+        return;
+      }
+    }
     if (typed) {
       if (_dialogue.active) _dialogue.reset();
       if ((!const {
@@ -1838,6 +1923,11 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       _phase = _VoicePhase.awake;
     });
     unawaited(_storeVoiceDraft(_entries));
+    if (pending.needsConfirmation && pending.heard.isNotEmpty) {
+      unawaited(rememberConfirmedMilkCow(
+        pending.heard.first, entry.cow, entry.litres,
+      ).catchError((Object _) {}));
+    }
     HapticFeedback.lightImpact();
     UiSound.play(UiSoundKind.success);
     _line(_LineKind.entry, '', entryId: entry.id);

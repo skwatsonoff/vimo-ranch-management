@@ -1,19 +1,6 @@
 name: Train VIMO voice
-# Runs when the owner taps "Start training" in the app (Settings → Train
-# VIMO), which writes a voice_training_jobs document with status
-# "requested". It listens to the owner's recordings with Whisper large-v3
-# and learns how the cows' names are said (voice_training_lessons/<owner>,
-# read by the phone before voice milk listens).
-#
-# - Every 3 hours a tiny check looks for a requested job and stops in
-#   seconds when there is none.
-# - Or run it now: GitHub app → this repository → Actions → "Train VIMO
-#   voice" → Run workflow (optionally paste a job id).
-#
-# Uses the same Google credentials as deploy-web.yml (secret
-# FIREBASE_SERVICE_ACCOUNT) to read the recordings in Firestore, and the
-# workflow's own GitHub token to publish packs. Free plans only; no token
-# is ever put in the app.
+# Legacy Firestore jobs can still be run explicitly. New recording
+# and lesson files are stored in the owner's private Drive.
 on:
   workflow_dispatch:
     inputs:
@@ -21,8 +8,6 @@ on:
         description: Job id (leave empty to take the oldest requested job)
         required: false
         default: ''
-  schedule:
-    - cron: '17 */3 * * *'
 permissions:
   contents: read
 # Learning from the recordings (cow names as the owner says them) always
