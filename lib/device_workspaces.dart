@@ -7,6 +7,9 @@ class DeviceWorkspaces {
     'pendingSettingKeys',
     'settingsQueueInitialized',
     'pendingAnimalEntryUpdates',
+    _voiceDraftKey,
+    _voiceLocaleKey,
+    _cloudLessonsKey,
   };
   static Future<Box> get _archive async => Hive.isBoxOpen('device_workspaces')
       ? Hive.box('device_workspaces')
@@ -42,6 +45,13 @@ class DeviceWorkspaces {
     final saved = asMap((await _archive).get(scope));
     AutoSyncService.beginRemoteWrite();
     try {
+      if (settings.containsKey('activeDeviceWorkspace') || saved.isNotEmpty) {
+        await settings.deleteAll(const [
+          _voiceDraftKey,
+          _voiceLocaleKey,
+          _cloudLessonsKey,
+        ]);
+      }
       if (saved.isNotEmpty) {
         final boxes = asMap(saved['boxes']);
         for (final name in backupBoxNames) {

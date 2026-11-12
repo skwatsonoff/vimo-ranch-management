@@ -162,6 +162,19 @@ void main() {
       expect(ShopOffers.usable({'status': 'pending'}, now), isFalse);
     });
 
+    test('a seller can browse their active listing with buyers', () {
+      final product = {
+        'status': 'active',
+        'category': 'ghee',
+        'sellerUid': 'owner',
+      };
+      expect(marketProductVisible(product), isTrue);
+      expect(marketProductVisible(product, category: 'ghee'), isTrue);
+      expect(marketProductVisible(product, category: 'feed'), isFalse);
+      expect(marketProductVisible({...product, 'status': 'paused'}), isFalse);
+      expect(marketProductVisible({...product, 'pausedByTeam': true}), isFalse);
+    });
+
     test('products sort by price or newest, and hide sold out on ask', () {
       final rows = [
         {'id': 'a', 'price': 300, 'stock': 0, 'status': 'active'},

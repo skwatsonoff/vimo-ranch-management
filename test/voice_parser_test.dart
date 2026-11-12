@@ -66,6 +66,39 @@ void main() {
     expect(p('5 litre add pannu').litres, 5);
   });
 
+  test('asks about alternatives and rejects signed negative quantities', () {
+    for (final input in [
+      'Maina five or six litres',
+      'மைனா அஞ்சா ஆறா லிட்டர்',
+    ]) {
+      final command = p(input);
+      expect(command.cow?.name, 'Maina');
+      expect(command.litres, isNull);
+      expect(command.quantityOptions, [5.0, 6.0]);
+    }
+    for (final input in ['Maina -5 litres', 'மைனா − 5 லிட்டர்']) {
+      expect(p(input).litres, isNull);
+      expect(p(input).invalidQuantity, isTrue);
+    }
+  });
+
+  test('a milk batch pairs each cow with its own quantity', () {
+    final batch = parseMilkBatch('Maina 5, Lakshmi 7', cows)!;
+    expect(batch.map((c) => (c.cow?.name, c.litres)), [
+      ('Maina', 5.0),
+      ('Lakshmi', 7.0),
+    ]);
+    expect(
+      parseMilkBatch(
+        '5,5 litres Maina and 7 litres Lakshmi',
+        cows,
+      )!.map((c) => c.litres),
+      [5.5, 7.0],
+    );
+    expect(parseMilkBatch('Maina 5, unregistered 7', cows), isEmpty);
+    expect(parseMilkBatch('Maina five and a half litres', cows), isNull);
+  });
+
   group('wake word', () {
     for (final text in [
       'hey vimo',

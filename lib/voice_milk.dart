@@ -24,6 +24,7 @@ class VoiceMilkEntry {
 
   /// "Morning" or "Evening" when it was said; otherwise taken from [at].
   String? sessionOverride;
+  final bool requiresSessionConfirmation;
 
   VoiceMilkEntry({
     required this.id,
@@ -32,6 +33,7 @@ class VoiceMilkEntry {
     required this.at,
     required this.heard,
     String? session,
+    this.requiresSessionConfirmation = false,
   }) : sessionOverride = session;
 
   String get session => sessionOverride ?? milkSessionForTime(at);
@@ -43,6 +45,8 @@ class VoiceMilkEntry {
     'at': at.toIso8601String(),
     'heard': heard,
     if (sessionOverride != null) 'session': sessionOverride,
+    if (requiresSessionConfirmation && sessionOverride == null)
+      'confirmSession': true,
   };
 
   static VoiceMilkEntry? fromMap(dynamic raw) {
@@ -56,6 +60,7 @@ class VoiceMilkEntry {
       at: at,
       heard: txt(m, 'heard'),
       session: txt(m, 'session').isEmpty ? null : txt(m, 'session'),
+      requiresSessionConfirmation: m['confirmSession'] == true,
     );
   }
 }
@@ -113,27 +118,41 @@ Future<void> _storeVoiceDraft(List<VoiceMilkEntry> entries) async {
 /// Writes voice entries into the ranch's milk records, each with the time it
 /// was spoken and the milking session that time belongs to.
 Future<int> saveVoiceMilkEntries(List<VoiceMilkEntry> entries) async {
+  if (!canRecordEntries) throw StateError('Ranch entry permission required');
   final box = Hive.box('milk_records');
-  int saved = 0;
+  final settings = Hive.box('settings');
+  final draft = settings.get(_voiceDraftKey);
+  final now = DateTime.now();
+  final rows = <String, Map<String, dynamic>>{};
   for (final e in entries) {
-    if (e.cow.trim().isEmpty || e.litres <= 0) continue;
+    final key = 'voice_${sha256.convert(utf8.encode(e.id))}';
+    if (box.containsKey(key)) continue;
+    final cow = milkCowByName(e.cow);
     final at = e.at;
-    await box.add({
-      'cow': e.cow,
-      'date': _dayOf(at),
-      'time': '${two(at.hour)}:${two(at.minute)}',
-      'session': e.session,
-      'quantity': e.litres,
-      'notes': '',
+    if (e.id.isEmpty ||
+        rows.containsKey(key) ||
+        cow == null ||
+        (e.requiresSessionConfirmation && e.sessionOverride == null) ||
+        !validMilkQuantity(e.litres) ||
+        !const {'Morning', 'Evening'}.contains(e.session) ||
+        at.year < 1900 ||
+        at.year > 9999 ||
+        DateTime(at.year, at.month, at.day).isAfter(now)) {
+      throw StateError('Review cow, litres, date and session before saving');
+    }
+    rows[key] = {
+      ...milkRecord(cow, e.litres, at, e.session, ''),
       'source': 'voice',
-      'voiceText': e.heard,
-      'addedBy': currentUserName(),
-      'createdAt': at.toIso8601String(),
-    });
-    saved++;
+      'cloudId': key,
+    };
   }
-  await _storeVoiceDraft(const []);
-  return saved;
+  if (rows.isNotEmpty) await box.putAll(rows);
+  final submittedIds = entries.map((entry) => entry.id).toSet();
+  if (sameSyncValue(draft, settings.get(_voiceDraftKey)) &&
+      _loadVoiceDraft().every((entry) => submittedIds.contains(entry.id))) {
+    await _storeVoiceDraft(const []);
+  }
+  return rows.length;
 }
 
 // --- old drafts ------------------------------------------------------------------
@@ -204,7 +223,22 @@ Future<void> settleVoiceDraftBeforeManual(BuildContext context) async {
   if (draft.isEmpty || !context.mounted) return;
   final choice = await askAboutVoiceDraft(context, draft, review: false);
   if (choice == 'save') {
-    final count = await saveVoiceMilkEntries(draft);
+    final int count;
+    try {
+      count = await saveVoiceMilkEntries(draft);
+    } on StateError {
+      if (context.mounted) {
+        snack(
+          context,
+          bi(
+            'Review the voice draft before saving',
+            'குரல் வரைவைக் சரிபாருங்கள்',
+          ),
+          tone: SnackTone.error,
+        );
+      }
+      return;
+    }
     VoiceDiagnostics.log('draft_saved', {'entries': count, 'from': 'manual'});
     if (context.mounted) {
       snack(
@@ -301,6 +335,8 @@ class _Pending {
   double? litres;
   bool cowSure = false;
   List<String> choices = const [];
+  List<double> quantities = const [];
+  bool needsConfirmation = false;
   String? session;
   bool yesterday = false;
   final List<String> heard = [];
@@ -536,7 +572,13 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     switch (choice) {
       case 'save':
         final total = _entries.fold<double>(0, (s, e) => s + e.litres);
-        final count = await saveVoiceMilkEntries(_entries);
+        final int count;
+        try {
+          count = await saveVoiceMilkEntries(_entries);
+        } on StateError {
+          if (mounted) _openReport();
+          return;
+        }
         if (!mounted) return;
         setState(() {
           _entries.clear();
@@ -1216,7 +1258,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     _armSleep();
   }
 
-  void _handle(List<String> alternatives) {
+  void _handle(List<String> alternatives, {String? typedSession}) {
     if (_report) return;
     final pending = _pending;
     // When VIMO asked "Maina or Meena?", only those cows are possible.
@@ -1227,8 +1269,19 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         ? pending.choices
         : cowNames();
     // The owner's own corrections come first (on-device learning).
-    final heard = [for (final a in alternatives) voiceRewrite(a)];
-    final command = bestVoiceCommand(heard, cows, aliases: cowNameAliases());
+    final typed = typedSession != null;
+    final heard = [for (final a in alternatives) typed ? a : voiceRewrite(a)];
+    final aliases = cowNameAliases();
+    final command = bestVoiceCommand(heard, cows, aliases: aliases);
+    if (pending == null &&
+        !_dialogue.active &&
+        (typed || _phase != _VoicePhase.sleeping || command.wake)) {
+      final batch = parseMilkBatch(command.text, cows, aliases: aliases);
+      if (batch != null) {
+        _stageMilkBatch(batch, typedSession);
+        return;
+      }
+    }
     final reading = readingFromCommand(command);
     VoiceDiagnostics.log('understood', {
       'input': command.text,
@@ -1253,8 +1306,27 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     final full = understandVoice(
       spoken.isEmpty ? command.text : spoken,
       cows: cowNames(),
-      aliases: cowNameAliases(),
+      aliases: aliases,
     );
+    if (typed) {
+      if (_dialogue.active) _dialogue.reset();
+      if ((!const {
+            'milk_record',
+            'edit_last',
+            'yes',
+            'no',
+            'delete_last',
+          }.contains(full.intent)) ||
+          (command.cow == null && pending == null && !command.hasMilkUnit)) {
+        _notUnderstood(command);
+        return;
+      }
+      if (_phase == _VoicePhase.sleeping) _wake(silent: true);
+      _sleep?.cancel();
+      _line(_LineKind.me, command.text);
+      _process(command, selectedSession: typedSession);
+      return;
+    }
     final milkBusy = _pending != null || _phase == _VoicePhase.confirmUndo;
     final otherWork =
         !milkBusy && !_dialogue.active && dialogueIntents.contains(full.intent);
@@ -1358,7 +1430,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
-  void _process(VoiceCommand c) {
+  void _process(VoiceCommand c, {String? selectedSession}) {
     if (c.finish && !c.hasEntryData) {
       _finish();
       return;
@@ -1377,7 +1449,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     switch (_phase) {
       case _VoicePhase.confirmAdd:
         if (c.hasEntryData) {
-          _merge(c);
+          _merge(c, selectedSession);
           _evaluate();
         } else if (c.yes) {
           _commit();
@@ -1399,7 +1471,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           _undo();
         } else if (c.hasEntryData) {
           setState(() => _phase = _VoicePhase.awake);
-          _merge(c);
+          _merge(c, selectedSession);
           _evaluate();
         } else {
           setState(() => _phase = _VoicePhase.awake);
@@ -1416,9 +1488,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       case _VoicePhase.askCow:
       case _VoicePhase.askLitres:
         if (!c.hasEntryData) {
-          if (c.cancel || (c.no && _pending == null)) {
+          if ((c.cancel || c.no) && _pending == null) {
             _askUndo();
-          } else if (c.no && _pending != null) {
+          } else if ((c.cancel || c.no) && _pending != null) {
             _pending = null;
             setState(() => _phase = _VoicePhase.awake);
             _say(
@@ -1437,26 +1509,118 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           }
           return;
         }
-        _merge(c);
+        _merge(c, selectedSession);
         _evaluate();
     }
     if (c.finish && c.hasEntryData) _finishAfterSpeech = true;
   }
 
-  void _merge(VoiceCommand c) {
+  void _merge(VoiceCommand c, String? selectedSession) {
     final pending = _pending ??= _Pending();
     final cow = c.cow;
     if (cow != null) {
       pending.cow = cow.name;
-      pending.cowSure =
-          c.cowIsSure ||
-          (_phase == _VoicePhase.askCow && pending.choices.contains(cow.name));
+      pending.cowSure = c.cowIsSure;
+      pending.needsConfirmation |= _phase == _VoicePhase.askCow;
       pending.choices = c.cowIsClear ? const [] : c.closeCows;
     }
-    if (c.litres != null) pending.litres = c.litres;
+    if (c.quantityOptions.isNotEmpty || c.invalidQuantity) {
+      pending.litres = null;
+      pending.quantities = c.quantityOptions;
+      pending.needsConfirmation = true;
+    } else if (c.litres != null) {
+      pending.litres = c.litres;
+      pending.quantities = const [];
+    }
     if (c.session != null) pending.session = c.session;
+    pending.session ??= selectedSession;
     if (c.yesterday) pending.yesterday = true;
     pending.heard.add(c.text);
+  }
+
+  void _stageMilkBatch(List<VoiceCommand> commands, String? selectedSession) {
+    if (commands.isEmpty) {
+      if (_phase == _VoicePhase.sleeping) _wake(silent: true);
+      _say(
+        const _Say(
+          'ஒவ்வொரு மாட்டின் பெயரையும் லிட்டரையும் தனித்தனியாகச் சொல்லுங்க.',
+          'Ovvoru maadu perum litre-um thanithaniya sollunga.',
+          'Please give one registered cow and quantity at a time.',
+        ),
+      );
+      return;
+    }
+    final now = DateTime.now();
+    final staged = [
+      for (final (index, command) in commands.indexed)
+        VoiceMilkEntry(
+          id: '${deviceId()}-${now.microsecondsSinceEpoch}-$index',
+          cow: command.cow!.name,
+          litres: command.litres!,
+          at: command.yesterday
+              ? DateTime(now.year, now.month, now.day - 1, now.hour, now.minute)
+              : now,
+          heard: command.text,
+          session: command.session ?? selectedSession,
+          requiresSessionConfirmation: true,
+        ),
+    ];
+    setState(() => _entries.addAll(staged));
+    unawaited(_storeVoiceDraft(_entries));
+    _openReport();
+  }
+
+  Future<void> _showTypedMilkCommand() async {
+    _sleep?.cancel();
+    var input = '';
+    String? session = _pending?.session;
+    final result = await showDialog<(String, String)>(
+      context: context,
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, update) => AppleAlert(
+          title: Text(bi('Type milk entry', 'பால் பதிவைத் தட்டச்சிடுங்கள்')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                autofocus: true,
+                maxLength: 400,
+                onChanged: (value) => update(() => input = value),
+                decoration: InputDecoration(
+                  hintText: bi('Kanmani 5 litres', 'கண்மணி அஞ்சு லிட்டர்'),
+                ),
+              ),
+              Wrap(
+                spacing: Space.s8,
+                children: [
+                  for (final option in ['Morning', 'Evening'])
+                    ChoiceChip(
+                      label: Text(ui(option)),
+                      selected: session == option,
+                      onSelected: (_) => update(() => session = option),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog),
+              child: Text(ui('Cancel')),
+            ),
+            TextButton(
+              onPressed: input.trim().isEmpty || session == null
+                  ? null
+                  : () => Navigator.pop(dialog, (input.trim(), session!)),
+              child: Text(bi('Check entry', 'பதிவைச் சரிபார்')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted && result != null) {
+      _handle([result.$1], typedSession: result.$2);
+    }
   }
 
   /// "நேற்று மாலை " when the sentence named the day or milking.
@@ -1553,7 +1717,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
     final already = _sessionTotal(pending.cow!);
     final big = pending.litres! > 30;
-    if (!pending.cowSure || big || already > 0) {
+    if (pending.needsConfirmation || !pending.cowSure || big || already > 0) {
       _askConfirm();
       return;
     }
@@ -1588,6 +1752,17 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _askLitres() {
     setState(() => _phase = _VoicePhase.askLitres);
     final cow = _pending?.cow ?? '';
+    final options = _pending?.quantities.map(_litreWord).toList() ?? [];
+    if (options.length > 1) {
+      _say(
+        _Say(
+          '${tamilDative(_name(cow))} எத்தனை லிட்டர்? ${options.join('-ஆ அல்லது ')}-ஆ?',
+          '$cow-ku ethana litre? ${options.join(' or ')}?',
+          'How many litres for $cow? ${options.join(' or ')}?',
+        ),
+      );
+      return;
+    }
     _say(
       _Say(
         '${tamilDative(_name(cow))} எத்தனை லிட்டர்?',
@@ -1648,12 +1823,13 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
     final now = DateTime.now();
     final entry = VoiceMilkEntry(
-      id: now.microsecondsSinceEpoch.toString(),
+      id: '${deviceId()}-${now.microsecondsSinceEpoch}',
       cow: pending.cow!,
       litres: pending.litres!,
       at: pending.yesterday ? now.subtract(const Duration(days: 1)) : now,
       heard: pending.heard.join(' · '),
       session: pending.session,
+      requiresSessionConfirmation: true,
     );
     final when = _when(pending);
     _pending = null;
@@ -2011,13 +2187,15 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       final field = _litreFields[e.id];
       if (field != null) e.litres = toDouble(field.text);
     }
-    final invalid = _entries.where((e) => e.cow.isEmpty || e.litres <= 0);
+    final invalid = _entries.where(
+      (e) => milkCowByName(e.cow) == null || !validMilkQuantity(e.litres),
+    );
     if (invalid.isNotEmpty) {
       snack(
         context,
         bi(
-          'Every row needs a cow and litres above 0',
-          'ஒவ்வொரு வரிசைக்கும் மாடும் 0-க்கு மேல் லிட்டரும் தேவை',
+          'Choose a registered cow and enter up to 99 litres per row.',
+          'ஒவ்வொரு பதிவுக்கும் ஒரு மாட்டைத் தேர்ந்தெடுத்து 99 லிட்டர் வரை உள்ளிடுங்கள்.',
         ),
         tone: SnackTone.error,
       );
@@ -2025,6 +2203,22 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
     setState(() => _saving = true);
     try {
+      final missing = _entries
+          .where(
+            (e) => e.requiresSessionConfirmation && e.sessionOverride == null,
+          )
+          .toList();
+      if (missing.isNotEmpty) {
+        final session = await _chooseMilkSession(context);
+        if (!mounted) return;
+        if (session == null) {
+          setState(() => _saving = false);
+          return;
+        }
+        for (final entry in missing) {
+          entry.sessionOverride = session;
+        }
+      }
       final total = _entries.fold<double>(0, (s, e) => s + e.litres);
       final count = await saveVoiceMilkEntries(_entries);
       VoiceDiagnostics.log('saved', {'entries': count, 'liters': total});
@@ -2058,6 +2252,26 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
+  Future<String?> _chooseMilkSession(BuildContext context) =>
+      showCupertinoDialog<String>(
+        context: context,
+        builder: (dialog) => CupertinoAlertDialog(
+          title: Text(bi('Which milking session?', 'எந்த நேரப் பால் பதிவு?')),
+          actions: [
+            for (final option in ['Morning', 'Evening'])
+              CupertinoDialogAction(
+                key: ValueKey('milk-session-$option'),
+                onPressed: () => Navigator.pop(dialog, option),
+                child: Text(ui(option)),
+              ),
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialog),
+              child: Text(ui('Cancel')),
+            ),
+          ],
+        ),
+      );
+
   // --- build ---------------------------------------------------------------------
 
   @override
@@ -2089,6 +2303,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           ),
           leading: const _BackButton(),
           actions: [
+            if (!_report && canRecordEntries)
+              IconButton(
+                tooltip: bi('Type milk entry', 'பால் பதிவைத் தட்டச்சிடுங்கள்'),
+                icon: const Icon(CupertinoIcons.keyboard),
+                onPressed: _showTypedMilkCommand,
+              ),
             if (!_report)
               Padding(
                 padding: const EdgeInsets.only(right: Space.s12),
@@ -2263,6 +2483,10 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
             ),
           ),
         ),
+        if (_phase == _VoicePhase.askCow ||
+            _phase == _VoicePhase.askLitres ||
+            _phase == _VoicePhase.confirmAdd)
+          _milkClarificationChoices(),
         Expanded(
           child: _earOffer != null
               ? const SizedBox.shrink()
@@ -2342,6 +2566,69 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _milkClarificationChoices() {
+    final pending = _pending;
+    if (pending == null) return const SizedBox.shrink();
+    if (_phase == _VoicePhase.confirmAdd) {
+      return Wrap(
+        spacing: Space.s8,
+        children: [
+          OutlinedButton(
+            onPressed: () => setState(() {
+              _pending = null;
+              _phase = _VoicePhase.awake;
+            }),
+            child: Text(ui('Cancel')),
+          ),
+          FilledButton(
+            onPressed: _commit,
+            child: Text(bi('Confirm entry', 'பதிவை உறுதிசெய்')),
+          ),
+        ],
+      );
+    }
+    final cows = _phase == _VoicePhase.askCow
+        ? pending.choices
+        : const <String>[];
+    final quantities = _phase == _VoicePhase.askLitres
+        ? pending.quantities
+        : const <double>[];
+    if (cows.isEmpty && quantities.isEmpty) return const SizedBox.shrink();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: Space.s16),
+      child: Row(
+        children: [
+          for (final cow in cows)
+            Padding(
+              padding: const EdgeInsets.only(right: Space.s8),
+              child: ActionChip(
+                label: Text(_name(cow)),
+                onPressed: () {
+                  pending.cow = cow;
+                  pending.cowSure = false;
+                  pending.choices = const [];
+                  _evaluate();
+                },
+              ),
+            ),
+          for (final litres in quantities)
+            Padding(
+              padding: const EdgeInsets.only(right: Space.s8),
+              child: ActionChip(
+                label: Text(formatLitres(litres)),
+                onPressed: () {
+                  pending.litres = litres;
+                  pending.quantities = const [];
+                  _evaluate();
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -2845,18 +3132,18 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
                     ].join(' · '),
                     onTap: () => _editTime(e),
                   ),
-                  // Tap to switch the milking: morning ⇄ evening.
                   _chip(
-                    icon: e.session == 'Morning'
-                        ? CupertinoIcons.sun_max
-                        : CupertinoIcons.moon,
-                    label: ui(e.session),
-                    onTap: () {
-                      selectionFeedback();
+                    icon: CupertinoIcons.time,
+                    label:
+                        e.requiresSessionConfirmation &&
+                            e.sessionOverride == null
+                        ? bi('Choose session', 'நேரத்தைத் தேர்வுசெய்')
+                        : ui(e.session),
+                    onTap: () async {
+                      final session = await _chooseMilkSession(context);
+                      if (!mounted || session == null) return;
                       setState(() {
-                        e.sessionOverride = e.session == 'Morning'
-                            ? 'Evening'
-                            : 'Morning';
+                        e.sessionOverride = session;
                       });
                       unawaited(_storeVoiceDraft(_entries));
                     },

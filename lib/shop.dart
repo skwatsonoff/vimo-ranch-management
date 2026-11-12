@@ -45,6 +45,15 @@ const List<ShopChoice> shopCategories = [
 bool shopFarmItem(Map<String, dynamic> product) =>
     shopCategories.any((c) => c.$1 == product['category']);
 
+bool marketProductVisible(
+  Map<String, dynamic> product, {
+  String category = '',
+}) =>
+    product['status'] == 'active' &&
+    product['pausedByTeam'] != true &&
+    shopFarmItem(product) &&
+    (category.isEmpty || product['category'] == category);
+
 /// Mercari's condition scale.
 const List<ShopChoice> shopConditions = [
   ('new', 'New, unused', 'புதியது'),
@@ -346,7 +355,7 @@ class ShopService {
     final rest = words.skip(1).toList();
     return [
       for (final d in snap.docs)
-        if (shopFarmItem(d.data()) &&
+        if (marketProductVisible(d.data(), category: category) &&
             rest.every(
               (w) => ((d.data()['searchTerms'] as List?) ?? const []).any(
                 (t) => '$t'.startsWith(w),
@@ -357,26 +366,20 @@ class ShopService {
   }
 
   /// Recently listed active products, newest first. Sorted on the server
-  /// with the single-field index (no composite index to deploy), so new
-  /// listings are never cut off; active ones in the category are kept here.
-  static Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> recent({
+  /// with the single-field index. Apply the same visibility checks as search,
+  /// including when the signed-in user is the seller.
+  static Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> recent({
     String category = '',
-  }) async {
-    final snap = await products
-        .orderBy('updatedAt', descending: true)
-        .limit(200)
-        .get();
-    return snap.docs
-        .where(
-          (d) =>
-              d.data()['status'] == 'active' &&
-              shopFarmItem(d.data()) &&
-              d.data()['sellerUid'] != signedInUid &&
-              (category.isEmpty || d.data()['category'] == category),
-        )
-        .take(60)
-        .toList();
-  }
+  }) => products
+      .orderBy('updatedAt', descending: true)
+      .limit(200)
+      .snapshots()
+      .map(
+        (snap) => snap.docs
+            .where((d) => marketProductVisible(d.data(), category: category))
+            .take(60)
+            .toList(),
+      );
 
   // --- Orders -----------------------------------------------------------------
 

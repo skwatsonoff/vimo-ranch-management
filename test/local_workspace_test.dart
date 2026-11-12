@@ -283,6 +283,7 @@ void main() {
     () async {
       await DeviceWorkspaces.restore();
       await Hive.box('milk_records').put(7, {'quantity': 10});
+      await Hive.box('settings').put('voiceMilkDraft', ['owner draft']);
       await VendorLedger.record(
         id: 'milk',
         person: provider,
@@ -295,12 +296,15 @@ void main() {
       await Hive.box('settings').put('firebaseUid', 'other');
       await DeviceWorkspaces.restore();
       expect(Hive.box('vendor_entries').isEmpty, true);
+      expect(Hive.box('settings').get('voiceMilkDraft'), isNull);
+      await Hive.box('settings').put('voiceMilkDraft', ['other draft']);
       await Hive.box('milk_records').put('other', {'quantity': 2});
       await RanchAccessService.clearLocalRanchData();
       await Hive.box('settings').put('firebaseUid', 'owner');
       await DeviceWorkspaces.restore();
       expect(Hive.box('milk_records').get(7)['quantity'], 10);
       expect(Hive.box('milk_records').containsKey('other'), false);
+      expect(Hive.box('settings').get('voiceMilkDraft'), ['owner draft']);
       expect(vendorMilkBalance(vendorRows('vendor_entries')), 5);
     },
   );

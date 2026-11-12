@@ -132,7 +132,9 @@ const assert = require('node:assert/strict');
         tx.set(stock, {quantity:(balance.data()?.quantity || 0) + delta, entryId:entry.id});
       });
     }
-    await assertSucceeds(setDoc(doc(db, 'ranches/test/milk_records/m1'), {quantity:10})); checks++;
+    await assertSucceeds(setDoc(doc(db, 'ranches/test/milk_records/m1'), {
+      cow: 'Maina', date: '2026-11-07', time: '06:00', session: 'Morning', quantity: 10,
+    })); checks++;
     await assertFails(bridge(db, 'owner', 'm1', 100)); checks++;
     await assertFails(bridge(db, 'owner', 'm1')); checks++;
     await assertFails(bridge(helper, 'helper', 'm1')); checks++;
