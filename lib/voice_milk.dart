@@ -1322,6 +1322,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         return;
       }
       if (_phase == _VoicePhase.sleeping) _wake(silent: true);
+      _sleep?.cancel();
       _line(_LineKind.me, command.text);
       _process(command, selectedSession: typedSession);
       return;
@@ -1570,6 +1571,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   Future<void> _showTypedMilkCommand() async {
+    _sleep?.cancel();
     var input = '';
     String? session = _pending?.session;
     final result = await showDialog<(String, String)>(
@@ -2216,8 +2218,6 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         for (final entry in missing) {
           entry.sessionOverride = session;
         }
-        await _storeVoiceDraft(_entries);
-        if (!mounted) return;
       }
       final total = _entries.fold<double>(0, (s, e) => s + e.litres);
       final count = await saveVoiceMilkEntries(_entries);
