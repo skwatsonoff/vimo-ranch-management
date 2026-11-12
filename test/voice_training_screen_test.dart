@@ -146,10 +146,10 @@ void main() {
     expect(find.text('பதிவு செய்'), findsOneWidget);
     await tester.tap(find.text('தரவு'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.textContaining('private folder'), findsOneWidget);
+    expect(find.textContaining('தனிப்பட்ட கோப்புறைக்கு'), findsOneWidget);
     await tester.tap(find.text('பயிற்சி'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.textContaining('GitHub Actions'), findsOneWidget);
+    expect(find.text('Google Drive & Gemini'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
