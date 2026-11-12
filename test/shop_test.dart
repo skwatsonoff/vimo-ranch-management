@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+
+import 'package:image/image.dart' as image;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' hide Ink;
@@ -15,7 +19,7 @@ void main() {
   setUpAll(() async {
     dir = await Directory.systemTemp.createTemp('vimo_shop_');
     Hive.init(dir.path);
-    for (final name in backupBoxNames) {
+    for (final name in [...backupBoxNames, ShopDrafts.boxName]) {
       await Hive.openBox(name);
     }
   });
@@ -60,6 +64,46 @@ void main() {
     'photoCount': 1,
     'status': 'active',
   };
+
+  test('a panoramic listing photo fits the Firestore cover limit', () async {
+    final pixels = image.Image(width: 1080, height: 108);
+    final random = Random(42);
+    for (final pixel in pixels) {
+      pixel.setRgb(
+        random.nextInt(256),
+        random.nextInt(256),
+        random.nextInt(256),
+      );
+    }
+    final source =
+        'data:image/jpeg;base64,${base64Encode(image.encodeJpg(pixels))}';
+    final cover = await productThumbFrom(source);
+    expect(cover, isNotNull);
+    expect(cover!.length, lessThanOrEqualTo(80000));
+  });
+
+  test(
+    'drafts preserve form text and photos for the signed-in seller',
+    () async {
+      const draft = {
+        'text': {'title': 'Ghee', 'weight': '250', 'sku': '001', 'hsn': '5325'},
+        'photos': ['data:image/jpeg;base64,AAA='],
+        'method': 'courier',
+      };
+      await ShopDrafts.save('seller', 'listing', draft);
+      expect(ShopDrafts.forUser('buyer'), isEmpty);
+      expect(
+        ShopDrafts.forUser('seller').single,
+        containsPair('photos', draft['photos']),
+      );
+      expect(
+        ShopDrafts.forUser('seller').single,
+        containsPair('text', draft['text']),
+      );
+      await ShopDrafts.remove('seller', 'listing');
+      expect(ShopDrafts.forUser('seller'), isEmpty);
+    },
+  );
 
   group('helpers', () {
     test('search terms come from title, tags, brand and category', () {
@@ -228,8 +272,27 @@ void main() {
     expect(find.text('More details'), findsOneWidget);
     await tester.tap(find.text('List product'));
     await tester.pump();
-    expect(find.text('Add at least one photo'), findsOneWidget);
+    expect(find.text('Sign in to save your draft'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Only one delivery method can be selected', (tester) async {
+    tester.view.physicalSize = const Size(390, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(app(const ProductEditorScreen()));
+    await tester.pumpAndSettle();
+    final pickup = find.widgetWithText(ChoiceChip, 'Buyer picks up');
+    final courier = find.widgetWithText(ChoiceChip, 'Courier / post');
+    await tester.ensureVisible(pickup);
+    await tester.tap(pickup);
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(pickup).selected, isTrue);
+    await tester.tap(courier);
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(pickup).selected, isFalse);
+    expect(tester.widget<ChoiceChip>(courier).selected, isTrue);
   });
 
   testWidgets('Tags stop at five and are lower case', (tester) async {

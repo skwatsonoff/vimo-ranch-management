@@ -233,6 +233,7 @@ Future<void> main() async {
     for (final name in backupBoxNames) Hive.openBox(name),
     // Private account messages must never enter a ranch backup or shared box.
     Hive.openBox('community_outbox'),
+    Hive.openBox(ShopDrafts.boxName),
     // Route maps stay on this device and never enter ranch backups or sync.
     Hive.openBox(VendorRoutes.boxName),
   ]);
@@ -2003,12 +2004,14 @@ class Shell extends StatelessWidget {
   final Widget child;
   final double maxWidth;
   final bool edgeToEdge;
+  final bool absorbing;
 
   const Shell({
     super.key,
     required this.child,
     this.maxWidth = Gold.contentWidth + Space.s56,
     this.edgeToEdge = false,
+    this.absorbing = false,
   });
 
   @override
@@ -2017,7 +2020,10 @@ class Shell extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
-          child: SafeArea(bottom: !edgeToEdge, child: child),
+          child: SafeArea(
+            bottom: !edgeToEdge,
+            child: AbsorbPointer(absorbing: absorbing, child: child),
+          ),
         ),
       ),
     );

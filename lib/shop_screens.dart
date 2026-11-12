@@ -70,14 +70,26 @@ class _ChoiceChips extends StatelessWidget {
 class ProductEditorScreen extends StatefulWidget {
   final String? productId;
   final Map<String, dynamic>? product;
-  const ProductEditorScreen({super.key, this.productId, this.product});
+  final Map<String, dynamic>? draft;
+  const ProductEditorScreen({
+    super.key,
+    this.productId,
+    this.product,
+    this.draft,
+  });
 
   @override
   State<ProductEditorScreen> createState() => _ProductEditorScreenState();
 }
 
 class _ProductEditorScreenState extends State<ProductEditorScreen> {
-  late final Map<String, dynamic> _p = widget.product ?? const {};
+  late final Map<String, dynamic> _p =
+      widget.product ?? asMap(widget.draft?['product']);
+  late final String _uid = signedInUid;
+  late final String _id =
+      widget.productId ??
+      widget.draft?['id'] as String? ??
+      ShopService.newProductId();
   late final _title = TextEditingController(text: txt(_p, 'title'));
   late final _description = TextEditingController(text: txt(_p, 'description'));
   late final List<TextEditingController> _features = [
@@ -129,10 +141,16 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
   late String _category = txt(_p, 'category', 'dairy');
   late String _condition = txt(_p, 'condition', 'new');
   late String _unit = txt(_p, 'unit', 'piece');
-  late final Set<String> _methods = {
-    for (final m in (asMap(_p['delivery'])['methods'] as List?) ?? ['pickup'])
-      '$m',
-  };
+  late String? _method = _savedMethod();
+
+  String? _savedMethod() {
+    final methods = asMap(_p['delivery'])['methods'];
+    if (methods is! List || methods.length != 1) return null;
+    return shopDeliveryMethods.any((method) => method.$1 == methods.single)
+        ? methods.single as String
+        : null;
+  }
+
   late String _payer = txt(asMap(_p['delivery']), 'payer', 'seller');
   late String _days = txt(asMap(_p['delivery']), 'days', '1-2');
   late String _returns = txt(_p, 'returns', 'none');
@@ -147,6 +165,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
 
   List<String> _photos = [];
   bool _loadingPhotos = false;
+  bool _photoLoadFailed = false;
   bool _picking = false;
   bool _saving = false;
   bool _more = false;
@@ -156,19 +175,142 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
   @override
   void initState() {
     super.initState();
-    if (_editing) _loadPhotos();
+    final draft = widget.draft;
+    if (draft != null) {
+      for (final entry in _draftFields.entries) {
+        entry.value.text = txt(asMap(draft['text']), entry.key);
+      }
+      for (final value in (draft['features'] as List?) ?? const []) {
+        _features.add(TextEditingController(text: '$value'));
+      }
+      _category = txt(draft, 'category', _category);
+      _condition = txt(draft, 'condition', _condition);
+      _unit = txt(draft, 'unit', _unit);
+      _method = draft['method'] as String?;
+      _payer = txt(draft, 'payer', _payer);
+      _days = txt(draft, 'days', _days);
+      _returns = txt(draft, 'returns', _returns);
+      _gst = toInt(draft['gst']);
+      _single = draft['single'] == true;
+      _listed = !_takenDown && draft['listed'] == true;
+      _tags
+        ..clear()
+        ..addAll(((draft['tags'] as List?) ?? const []).whereType<String>());
+      _more = draft['more'] == true;
+    }
+    final draftPhotos = draft?['photos'];
+    if (draftPhotos is List) {
+      _photos = draftPhotos.whereType<String>().toList();
+    } else if (_editing) {
+      _loadPhotos();
+    }
     if (_features.isEmpty) _features.add(TextEditingController());
   }
 
+  Map<String, TextEditingController> get _draftFields => {
+    'title': _title,
+    'description': _description,
+    'price': _price,
+    'mrp': _mrp,
+    'unitSize': _unitSize,
+    'stock': _stock,
+    'maxPerOrder': _maxPerOrder,
+    'fee': _fee,
+    'shipsFrom': _shipsFrom,
+    'tag': _tag,
+    'brand': _brand,
+    'sku': _sku,
+    'weight': _weight,
+    'origin': _origin,
+    'manufacturer': _manufacturer,
+    'hsn': _hsn,
+  };
+
+  Future<void> _storeDraft() {
+    if (_uid.isEmpty || signedInUid != _uid) {
+      throw StateError(
+        bi('Sign in to save your draft', 'வரைவைச் சேமிக்க உள்நுழையவும்'),
+      );
+    }
+    return ShopDrafts.save(_uid, _id, {
+      if (_editing)
+        'product': {
+          'photoCount': toInt(_p['photoCount']),
+          'pausedByTeam': _takenDown,
+        },
+      'text': {
+        for (final entry in _draftFields.entries) entry.key: entry.value.text,
+      },
+      'features': [for (final feature in _features) feature.text],
+      'photos': _loadingPhotos || _photoLoadFailed
+          ? null
+          : List<String>.of(_photos),
+      'category': _category,
+      'condition': _condition,
+      'unit': _unit,
+      'method': _method,
+      'payer': _payer,
+      'days': _days,
+      'returns': _returns,
+      'gst': _gst,
+      'single': _single,
+      'listed': _listed,
+      'tags': List<String>.of(_tags),
+      'more': _more,
+    });
+  }
+
+  String get _draftSaved => bi(
+    'Draft saved on this device.',
+    'வரைவு இந்தச் சாதனத்தில் சேமிக்கப்பட்டது.',
+  );
+
+  Future<void> _saveDraft() async {
+    if (_saving || _picking) return;
+    setState(() => _saving = true);
+    try {
+      await _storeDraft();
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      Navigator.of(context).pop();
+      snack(
+        context,
+        _draftSaved,
+        tone: SnackTone.success,
+        messenger: messenger,
+      );
+    } catch (_) {
+      if (mounted) {
+        snack(
+          context,
+          bi(
+            'Could not save the draft. Keep this screen open and try again.',
+            'வரைவைச் சேமிக்க முடியவில்லை. இந்தத் திரையைத் திறந்தபடியே மீண்டும் முயலவும்.',
+          ),
+          tone: SnackTone.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _loadPhotos() async {
-    setState(() => _loadingPhotos = true);
+    setState(() {
+      _loadingPhotos = true;
+      _photoLoadFailed = false;
+    });
     try {
       final photos = await ShopService.photos(
         widget.productId!,
         toInt(_p['photoCount']),
       );
+      if (photos.length != toInt(_p['photoCount'])) {
+        throw StateError('Missing photos');
+      }
       if (mounted) setState(() => _photos = photos);
     } catch (_) {
+      if (mounted) setState(() => _photoLoadFailed = true);
     } finally {
       if (mounted) setState(() => _loadingPhotos = false);
     }
@@ -176,32 +318,20 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
 
   @override
   void dispose() {
-    for (final c in [
-      _title,
-      _description,
-      _price,
-      _mrp,
-      _unitSize,
-      _stock,
-      _maxPerOrder,
-      _fee,
-      _shipsFrom,
-      _tag,
-      _brand,
-      _sku,
-      _weight,
-      _origin,
-      _manufacturer,
-      _hsn,
-      ..._features,
-    ]) {
+    for (final c in [..._draftFields.values, ..._features]) {
       c.dispose();
     }
     super.dispose();
   }
 
   Future<void> _addPhoto() async {
-    if (_picking || _photos.length >= 5) return;
+    if (_saving ||
+        _loadingPhotos ||
+        _photoLoadFailed ||
+        _picking ||
+        _photos.length >= 5) {
+      return;
+    }
     setState(() => _picking = true);
     try {
       final picked = await pickImageDataUrl(social: true);
@@ -280,19 +410,29 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
         : double.tryParse(_mrp.text.trim());
     final stock = int.tryParse(_stock.text.trim());
     final most = int.tryParse(_maxPerOrder.text.trim());
-    final fee = _fee.text.trim().isEmpty
+    final fee =
+        _method == 'pickup' || _payer != 'buyer' || _fee.text.trim().isEmpty
         ? 0.0
         : double.tryParse(_fee.text.trim());
+    final weight = _weight.text.trim().isEmpty
+        ? 0
+        : int.tryParse(_weight.text.trim());
+    if (_photoLoadFailed || _loadingPhotos) {
+      return bi(
+        'Load the existing photos before publishing',
+        'பதிவிடுவதற்கு முன் பழைய படங்களை ஏற்றவும்',
+      );
+    }
     if (_photos.isEmpty) {
       return bi('Add at least one photo', 'குறைந்தது ஒரு படம் சேர்க்கவும்');
     }
     if (_title.text.trim().length < 3) {
       return bi('Write a title (3 letters or more)', 'தலைப்பை எழுதவும்');
     }
-    if (price == null || price <= 0 || price > 10000000) {
+    if (price == null || !price.isFinite || price <= 0 || price > 10000000) {
       return bi('Enter a price', 'விலையை உள்ளிடவும்');
     }
-    if (mrp == null || (mrp > 0 && mrp < price)) {
+    if (mrp == null || !mrp.isFinite || (mrp != 0 && mrp < price)) {
       return bi(
         'MRP must be the same as or more than the price',
         'MRP விலைக்குச் சமம் அல்லது அதிகமாக இருக்க வேண்டும்',
@@ -307,16 +447,22 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
         'ஒருவர் எத்தனை ஆர்டர் செய்யலாம் என்பதை உள்ளிடவும் (2 அல்லது அதிகம்)',
       );
     }
-    if (_methods.isEmpty) {
+    if (_method == null) {
       return bi(
         'Choose how buyers get it',
         'எப்படிக் கிடைக்கும் என்பதைத் தேர்வு செய்யவும்',
       );
     }
-    if (fee == null || fee < 0 || fee > 100000) {
+    if (fee == null || !fee.isFinite || fee < 0 || fee > 100000) {
       return bi(
         'Enter a valid delivery fee',
         'சரியான டெலிவரி கட்டணத்தை உள்ளிடவும்',
+      );
+    }
+    if (weight == null || weight < 0 || weight > 1000000) {
+      return bi(
+        'Enter a weight from 0 to 1,000,000 grams',
+        '0 முதல் 10,00,000 கிராம் வரை எடையை உள்ளிடவும்',
       );
     }
     if (_hsn.text.trim().isNotEmpty &&
@@ -327,30 +473,35 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
   }
 
   Future<void> _save() async {
-    if (_saving) return;
-    final problem = _problem();
-    if (problem != null) {
-      snack(context, problem, tone: SnackTone.error);
-      return;
-    }
+    if (_saving || _picking) return;
     setState(() => _saving = true);
-    final features = [
-      for (final f in _features)
-        if (f.text.trim().isNotEmpty)
-          f.text.trim().length > 100
-              ? f.text.trim().substring(0, 100)
-              : f.text.trim(),
-    ].take(5).toList();
-    final title = _title.text.trim();
-    final brand = _brand.text.trim();
+    var draftStored = false;
     try {
+      await _storeDraft();
+      draftStored = true;
+      if (!mounted) return;
+      final problem = _problem();
+      if (problem != null) {
+        snack(context, '$problem. $_draftSaved', tone: SnackTone.error);
+        return;
+      }
+      final features = [
+        for (final f in _features)
+          if (f.text.trim().isNotEmpty)
+            f.text.trim().length > 100
+                ? f.text.trim().substring(0, 100)
+                : f.text.trim(),
+      ].take(5).toList();
+      final title = _title.text.trim();
+      final brand = _brand.text.trim();
       // Lock the form before prompting for location or checking the account.
       if (!await MarketLocation.require(context) || !mounted) return;
       if (!await VimoTeam.marketAllowed(context) || !mounted) return;
       final id = await ShopService.save(
-        id: widget.productId,
+        id: _id,
+        uid: _uid,
+        editing: _editing,
         photos: _photos,
-        previousPhotoCount: toInt(_p['photoCount']),
         fields: {
           'title': title,
           'description': _description.text.trim(),
@@ -378,9 +529,12 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
           'gstPercent': _gst,
           'hsn': _hsn.text.trim(),
           'delivery': {
-            'methods': _methods.toList()..sort(),
-            'payer': _payer,
-            'fee': _payer == 'buyer' && _fee.text.trim().isNotEmpty
+            'methods': [_method!],
+            'payer': _method == 'pickup' ? 'seller' : _payer,
+            'fee':
+                _method != 'pickup' &&
+                    _payer == 'buyer' &&
+                    _fee.text.trim().isNotEmpty
                 ? double.parse(_fee.text.trim())
                 : 0.0,
             'days': _days,
@@ -390,6 +544,8 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
           'status': _listed && !_takenDown ? 'active' : 'paused',
         },
       );
+      // A local cleanup failure must never report a successful publish as failed.
+      await ShopDrafts.remove(_uid, _id).catchError((Object _) {});
       if (!mounted) return;
       final messenger = ScaffoldMessenger.maybeOf(context);
       Navigator.of(context).pop(id);
@@ -405,7 +561,14 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
       if (mounted) {
         snack(
           context,
-          error is StateError ? error.message : accountError(error),
+          !draftStored
+              ? (error is StateError
+                    ? error.message
+                    : bi(
+                        'Could not save the draft. Keep this screen open and try again.',
+                        'வரைவைச் சேமிக்க முடியவில்லை. இந்தத் திரையைத் திறந்தபடியே மீண்டும் முயலவும்.',
+                      ))
+              : '${error is StateError ? error.message : bi('Could not publish. Check your connection and try again from Drafts.', 'பதிவிட முடியவில்லை. இணையத்தைச் சரிபார்த்து வரைவுகளிலிருந்து மீண்டும் முயலவும்.')} $_draftSaved',
           tone: SnackTone.error,
         );
       }
@@ -441,6 +604,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
     if (sure != true || !mounted) return;
     try {
       await ShopService.delete(widget.productId!, toInt(_p['photoCount']));
+      await ShopDrafts.remove(_uid, _id).catchError((Object _) {});
       if (!mounted) return;
       final messenger = ScaffoldMessenger.maybeOf(context);
       Navigator.of(context).pop('deleted');
@@ -555,9 +719,7 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
     final price = double.tryParse(_price.text.trim()) ?? 0;
     final mrp = double.tryParse(_mrp.text.trim()) ?? 0;
     final off = shopDiscount(price, mrp);
-    final deliveryOnly =
-        _methods.isNotEmpty &&
-        !(_methods.length == 1 && _methods.contains('pickup'));
+    final deliveryOnly = _method != null && _method != 'pickup';
     return Scaffold(
       backgroundColor: Ink.canvasTop,
       appBar: AppBar(
@@ -569,15 +731,16 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: _saving ? null : _save,
+            onPressed: _saving || _picking ? null : _saveDraft,
             child: Text(
-              bi('Save', 'சேமி'),
+              bi('Save draft', 'வரைவைச் சேமி'),
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ],
       ),
       body: Shell(
+        absorbing: _saving,
         child: ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 48),
@@ -590,6 +753,13 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
               ),
             ),
             _photoStrip(),
+            if (_photoLoadFailed)
+              TextButton(
+                onPressed: _loadPhotos,
+                child: Text(
+                  bi('Retry loading photos', 'படங்களை மீண்டும் ஏற்று'),
+                ),
+              ),
             _shopSection(bi('About the product', 'பொருள் பற்றி')),
             TextField(
               controller: _title,
@@ -782,17 +952,14 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
             _shopSection(
               bi('Delivery', 'டெலிவரி'),
               note: bi(
-                'How buyers get it. Choose one or more.',
-                'வாங்குபவர்கள் எப்படிப் பெறுவார்கள். ஒன்று அல்லது மேற்பட்டவை.',
+                'Choose one delivery method.',
+                'ஒரு டெலிவரி முறையைத் தேர்வு செய்யவும்.',
               ),
             ),
             _ChoiceChips(
               choices: shopDeliveryMethods,
-              selected: _methods,
-              onTap: (v) => setState(
-                () =>
-                    _methods.contains(v) ? _methods.remove(v) : _methods.add(v),
-              ),
+              selected: {?_method},
+              onTap: (value) => setState(() => _method = value),
             ),
             if (deliveryOnly) ...[
               const SizedBox(height: 16),
@@ -1023,7 +1190,13 @@ class _ProductEditorScreenState extends State<ProductEditorScreen> {
                   : bi('List product', 'பொருளைப் பட்டியலிடு'),
               icon: CupertinoIcons.checkmark_alt,
               busy: _saving,
-              onPressed: _save,
+              onPressed: _picking ? null : _save,
+            ),
+            const SizedBox(height: 12),
+            GhostButton(
+              label: bi('Save draft', 'வரைவைச் சேமி'),
+              icon: CupertinoIcons.doc,
+              onPressed: _saving || _picking ? null : _saveDraft,
             ),
             if (_editing) ...[
               const SizedBox(height: 12),
@@ -1192,6 +1365,108 @@ class ProductGrid extends StatelessWidget {
 }
 
 /// The shop on a profile: products, and for the owner a pencil to add one.
+class ShopDraftsScreen extends StatelessWidget {
+  const ShopDraftsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = signedInUid;
+    return Scaffold(
+      appBar: AppBar(
+        leading: const _BackButton(),
+        title: Text(bi('Product drafts', 'பொருள் வரைவுகள்')),
+      ),
+      body: Shell(
+        child: ValueListenableBuilder<Box>(
+          valueListenable: Hive.box(ShopDrafts.boxName).listenable(),
+          builder: (context, box, _) {
+            final drafts = ShopDrafts.forUser(uid);
+            if (drafts.isEmpty) {
+              return Center(
+                child: Text(
+                  bi(
+                    'No drafts on this device',
+                    'இந்தச் சாதனத்தில் வரைவுகள் இல்லை',
+                  ),
+                ),
+              );
+            }
+            return ListView.builder(
+              itemCount: drafts.length,
+              itemBuilder: (context, index) {
+                final draft = drafts[index];
+                final id = txt(draft, 'id');
+                final title = txt(asMap(draft['text']), 'title').trim();
+                return ListTile(
+                  leading: const Icon(CupertinoIcons.doc),
+                  title: Text(
+                    title.isEmpty
+                        ? bi('Untitled product', 'தலைப்பில்லாத பொருள்')
+                        : title,
+                  ),
+                  subtitle: Text(
+                    bi(
+                      'Tap to edit or publish',
+                      'திருத்த அல்லது பட்டியலிடத் தொடவும்',
+                    ),
+                  ),
+                  onTap: () => push(
+                    context,
+                    ProductEditorScreen(
+                      productId: draft['product'] is Map ? id : null,
+                      draft: draft,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(CupertinoIcons.trash),
+                    tooltip: bi('Delete draft', 'வரைவை நீக்கு'),
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (dialog) => AppleAlert(
+                          title: Text(
+                            bi('Delete this draft?', 'இந்த வரைவை நீக்கவா?'),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialog, false),
+                              child: Text(ui('Cancel')),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialog, true),
+                              child: Text(bi('Delete draft', 'வரைவை நீக்கு')),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        try {
+                          await ShopDrafts.remove(uid, id);
+                        } catch (_) {
+                          if (context.mounted) {
+                            snack(
+                              context,
+                              bi(
+                                'Could not delete the draft',
+                                'வரைவை நீக்க முடியவில்லை',
+                              ),
+                              tone: SnackTone.error,
+                            );
+                          }
+                        }
+                      }
+                    },
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class ProfileShop extends StatelessWidget {
   final String uid;
   final bool own;
@@ -1283,6 +1558,13 @@ class ProfileShop extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () => push(context, const ShopDraftsScreen()),
+                icon: const Icon(CupertinoIcons.doc_on_doc),
+                label: Text(bi('Product drafts', 'பொருள் வரைவுகள்')),
+              ),
+            ),
             Center(
               child: TextButton.icon(
                 onPressed: () =>

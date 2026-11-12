@@ -19,7 +19,7 @@ const fs = require('node:fs');
       category: 'ghee', condition: 'new', brand: '', tags: ['a2'], searchTerms: ['a2', 'ghee'],
       price: 450, mrp: 500, unit: 'pack', unitSize: '500 ml', stock: 3, maxPerOrder: 2, sku: '', weightGrams: 520,
       origin: 'India', manufacturer: '', gstPercent: 5, hsn: '0405',
-      delivery: {methods: ['pickup', 'courier'], payer: 'buyer', fee: 40, days: '2-3', shipsFrom: 'Salem'},
+      delivery: {methods: ['courier'], payer: 'buyer', fee: 40, days: '2-3', shipsFrom: 'Salem'},
       returns: 'none', cover: jpeg, photoCount: 1, status: 'active',
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...over,
     });
@@ -36,10 +36,22 @@ const fs = require('node:fs');
     await assertFails(setDoc(pRef(seller), product({delivery: {methods: [], payer: 'buyer', fee: 0, days: '1-2', shipsFrom: ''}}))); checks++;
     await assertFails(setDoc(pRef(seller), product({extra: true}))); checks++;
     await assertFails(setDoc(pRef(seller), product({category: 'electronics'}))); checks++; // farm items only
+    const multiDelivery = {...product().delivery, methods: ['pickup', 'courier']};
+    await assertFails(setDoc(pRef(seller), product({delivery: multiDelivery}))); checks++;
     const batch = writeBatch(seller);
     batch.set(pRef(seller), product());
     batch.set(doc(seller, 'shop_products/p1/photos/0'), {data: jpeg});
     await assertSucceeds(batch.commit()); checks++;
+    // Existing shops may still have multiple methods. Orders and stock
+    // updates must work until the seller saves the listing with one method.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(pRef(ctx.firestore()), {delivery: multiDelivery});
+    });
+    await assertFails(updateDoc(pRef(seller), {delivery: {...multiDelivery, methods: ['courier', 'seller_delivery']}, updatedAt: serverTimestamp()})); checks++;
+    await assertSucceeds(updateDoc(pRef(seller), {delivery: product().delivery, updatedAt: serverTimestamp()})); checks++;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(pRef(ctx.firestore()), {delivery: multiDelivery});
+    });
     await assertFails(setDoc(doc(seller, 'shop_products/p1/photos/5'), {data: jpeg})); checks++;
     await assertFails(setDoc(doc(buyer, 'shop_products/p1/photos/1'), {data: jpeg})); checks++;
     await assertSucceeds(getDoc(doc(buyer, 'shop_products/p1/photos/0'))); checks++;

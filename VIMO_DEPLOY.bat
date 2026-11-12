@@ -11,6 +11,8 @@ git clone --depth 1 --branch main %REPO% "%WORK%" || goto :fail
 cd /d "%WORK%"
 call flutter pub get || goto :fail
 call flutter build web --release || goto :fail
+call npm install --prefix "%WORK%\.firebase-sdk" --no-save --ignore-scripts firebase@12.19.0 || goto :fail
+call node tools/web/prepare_release.mjs "%WORK%\.firebase-sdk\node_modules\firebase" || goto :fail
 call firebase deploy --only hosting,firestore:rules --project my-ranch-sync || goto :fail
 echo.
 echo VIMO is live at https://my-ranch-sync.web.app

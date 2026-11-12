@@ -419,12 +419,17 @@ service cloud.firestore {
       }
       allow read: if signedIn();
       allow create: if signedIn() && !marketBlocked() && validProduct(request.resource.data)
+        && request.resource.data.delivery.methods.size() == 1
         && !('pausedByTeam' in request.resource.data)
         && request.resource.data.createdAt == request.time;
       allow update: if (signedIn() && resource.data.sellerUid == request.auth.uid
         && !marketBlocked()
         && validProduct(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
+        // Older multi-method listings can still receive orders and stock
+        // updates. Changing their methods requires one valid choice.
+        && (request.resource.data.delivery.methods.size() == 1
+          || request.resource.data.delivery.methods == resource.data.delivery.methods)
         // A listing the team took down stays down until the team says so.
         && request.resource.data.get('pausedByTeam', false) == resource.data.get('pausedByTeam', false)
         && !(request.resource.data.get('pausedByTeam', false) == true && request.resource.data.status == 'active'))

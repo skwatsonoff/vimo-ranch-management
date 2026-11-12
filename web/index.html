@@ -274,42 +274,13 @@
   </script>
 
   <script>
-    // Older VIMO releases used Flutter's cache-first service worker. Clear that
-    // shell before booting so every deployment becomes visible immediately,
-    // while Hive continues to keep the user's ranch data available offline.
-    (async function bootLatestVimo() {
-      try {
-        if ('serviceWorker' in navigator) {
-          var registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(registrations.map(function (registration) {
-            return registration.unregister();
-          }));
-        }
-
-        if ('caches' in window) {
-          var cacheNames = await caches.keys();
-          var flutterCaches = [
-            'flutter-app-manifest',
-            'flutter-temp-cache',
-            'flutter-app-cache'
-          ];
-          await Promise.all(cacheNames
-            .filter(function (name) {
-              return flutterCaches.indexOf(name) !== -1;
-            })
-            .map(function (name) {
-              return caches.delete(name);
-            }));
-        }
-      } catch (error) {
-        console.warn('VIMO cache refresh could not complete:', error);
-      }
-
-      var bootstrap = document.createElement('script');
-      bootstrap.src = 'flutter_bootstrap.js?v=20260827-1';
-      bootstrap.async = true;
-      document.body.appendChild(bootstrap);
-    })();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('vimo-sw.js', { updateViaCache: 'none' })
+        .catch(function (error) {
+          console.warn('VIMO offline setup is unavailable:', error);
+        });
+    }
   </script>
+  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

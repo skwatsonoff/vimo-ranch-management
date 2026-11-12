@@ -25,6 +25,10 @@ jobs:
         run: flutter pub get
       - name: Build web
         run: flutter build web --release --no-pub
+      - name: Prepare offline app shell
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vimo-firebase-web" --no-save --ignore-scripts firebase@12.19.0
+          node tools/web/prepare_release.mjs "$RUNNER_TEMP/vimo-firebase-web/node_modules/firebase"
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:

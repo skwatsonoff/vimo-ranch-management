@@ -214,19 +214,25 @@ Uint8List? _productThumb(Uint8List bytes) {
   var decoded = image_lib.decodeImage(bytes);
   if (decoded == null) return null;
   decoded = image_lib.bakeOrientation(decoded);
-  decoded = decoded.width >= decoded.height
-      ? image_lib.copyResize(decoded, height: 360)
-      : image_lib.copyResize(decoded, width: 360);
-  var quality = 72;
+  const maxSide = 480;
+  if (decoded.width > maxSide || decoded.height > maxSide) {
+    decoded = decoded.width >= decoded.height
+        ? image_lib.copyResize(decoded, width: maxSide)
+        : image_lib.copyResize(decoded, height: maxSide);
+  }
+  var quality = 76;
   var encoded = Uint8List.fromList(
     image_lib.encodeJpg(decoded, quality: quality),
   );
-  while (encoded.lengthInBytes > 40 * 1024 && quality > 40) {
+  // The product document permits at most 80,000 characters including
+  // the data URL prefix. 59,000 bytes fit after base64 encoding.
+  while (encoded.lengthInBytes > 59000 && quality > 28) {
     quality -= 8;
     encoded = Uint8List.fromList(
       image_lib.encodeJpg(decoded, quality: quality),
     );
   }
+  if (encoded.lengthInBytes > 59000) return null;
   return encoded;
 }
 
@@ -254,6 +260,31 @@ Future<String?> productThumbFrom(String source) =>
 //  Service
 // -----------------------------------------------------------------------------
 
+class ShopDrafts {
+  static const boxName = 'shop_product_drafts';
+
+  static String _key(String uid, String id) => '$uid/$id';
+
+  static List<Map<String, dynamic>> forUser(String uid) {
+    if (uid.isEmpty || !Hive.isBoxOpen(boxName)) return [];
+    final box = Hive.box(boxName);
+    return [
+      for (final key in box.keys.whereType<String>())
+        if (key.startsWith('$uid/')) asMap(box.get(key)),
+    ]..sort((a, b) => toInt(b['updated']).compareTo(toInt(a['updated'])));
+  }
+
+  static Future<void> save(String uid, String id, Map<String, dynamic> data) =>
+      Hive.box(boxName).put(_key(uid, id), {
+        ...data,
+        'id': id,
+        'updated': DateTime.now().millisecondsSinceEpoch,
+      });
+
+  static Future<void> remove(String uid, String id) =>
+      Hive.box(boxName).delete(_key(uid, id));
+}
+
 class ShopService {
   const ShopService._();
 
@@ -270,44 +301,79 @@ class ShopService {
   static Stream<QuerySnapshot<Map<String, dynamic>>> productsOf(String uid) =>
       products.where('sellerUid', isEqualTo: uid).snapshots();
 
-  /// Saves a product and its photos together. [photos] are full-size data
-  /// URLs (1 to 5); the first is the cover.
+  static String newProductId() {
+    final random = math.Random.secure();
+    return base64UrlEncode(List.generate(18, (_) => random.nextInt(256)));
+  }
+
+  /// Reads the same ID on every attempt. Transactions fail offline instead
+  /// of queueing a publish that could unexpectedly appear after a failure.
   static Future<String> save({
-    String? id,
+    required String id,
+    required String uid,
+    required bool editing,
     required Map<String, dynamic> fields,
     required List<String> photos,
-    required int previousPhotoCount,
   }) async {
     if (photos.isEmpty || photos.length > 5) {
       throw StateError(
         bi('Add 1 to 5 photos', '1 முதல் 5 படங்கள் சேர்க்கவும்'),
       );
     }
-    final ref = id == null ? products.doc() : products.doc(id);
     final cover = await productThumbFrom(photos.first);
     if (cover == null) {
       throw StateError(
         bi('Could not read the photo', 'படத்தைப் படிக்க முடியவில்லை'),
       );
     }
-    final batch = _db.batch();
-    batch.set(ref, {
-      ...fields,
-      'sellerUid': signedInUid,
-      'sellerName': await MarketService.myName(),
-      'cover': cover,
-      'photoCount': photos.length,
-      if (id == null) 'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: id != null));
-    for (var i = 0; i < photos.length; i++) {
-      batch.set(ref.collection('photos').doc('$i'), {'data': photos[i]});
-    }
-    for (var i = photos.length; i < previousPhotoCount; i++) {
-      batch.delete(ref.collection('photos').doc('$i'));
-    }
-    await batch.commit().timeout(const Duration(seconds: 40));
-    return ref.id;
+    final sellerName = await MarketService.myName().timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => 'VIMO',
+    );
+    final ref = products.doc(id);
+    return _db.runTransaction((transaction) async {
+      if (uid.isEmpty || signedInUid != uid) {
+        throw StateError(
+          bi('Sign in again to publish', 'மீண்டும் உள்நுழையவும்'),
+        );
+      }
+      final existing = await transaction.get(ref);
+      if (existing.exists && txt(existing.data()!, 'sellerUid') != uid) {
+        throw StateError(
+          bi(
+            'This listing belongs to another seller',
+            'இது வேறொரு விற்பவரின் பட்டியல்',
+          ),
+        );
+      }
+      // A previous attempt may have reached the server before the connection
+      // failed. Treat the same new listing as published without resetting stock.
+      if (!editing && existing.exists) return id;
+      if (editing && !existing.exists) {
+        throw StateError(
+          bi('This listing was deleted', 'இந்தப் பட்டியல் நீக்கப்பட்டது'),
+        );
+      }
+      transaction.set(ref, {
+        ...fields,
+        'sellerUid': uid,
+        'sellerName': sellerName,
+        'cover': cover,
+        'photoCount': photos.length,
+        if (!existing.exists) 'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: existing.exists));
+      for (var i = 0; i < photos.length; i++) {
+        transaction.set(ref.collection('photos').doc('$i'), {
+          'data': photos[i],
+        });
+      }
+      final previousCount = toInt(existing.data()?['photoCount']);
+      for (var i = photos.length; i < previousCount; i++) {
+        transaction.delete(ref.collection('photos').doc('$i'));
+      }
+      return id;
+    }, timeout: const Duration(seconds: 25));
   }
 
   static Future<List<String>> photos(String id, int count) async {
