@@ -269,6 +269,7 @@ class _VoiceBridgeScreenState extends State<VoiceBridgeScreen> {
   late final _url = TextEditingController(text: _VoiceBridge.current?.url.toString());
   bool _busy = false;
   List<String> _legacyCaches = const [];
+  int _legacyRecordings = 0;
 
   @override
   void initState() {
@@ -280,9 +281,15 @@ class _VoiceBridgeScreenState extends State<VoiceBridgeScreen> {
     setState(() => _busy = true);
     await refreshVoiceLessons();
     final caches = await legacyEarCaches();
+    var recordings = 0;
+    try {
+      await _openTrainingBoxes();
+      recordings = Hive.box(_trainingBox).length;
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       _legacyCaches = caches;
+      _legacyRecordings = recordings;
       _busy = false;
     });
   }
@@ -471,6 +478,14 @@ class _VoiceBridgeScreenState extends State<VoiceBridgeScreen> {
                 child: Text(bi('Delete my learning data', 'என் கற்றல் தரவை நீக்கு')),
               ),
             ],
+            if (_legacyRecordings > 0)
+              TextButton(
+                onPressed: () => push(context, const TrainVimoScreen()),
+                child: Text(bi(
+                  'Review $_legacyRecordings old recordings on this phone (move to Drive or delete)',
+                  'இந்த போனில் உள்ள பழைய $_legacyRecordings பதிவுகளைப் பாருங்கள் (Drive-க்கு நகர்த்து அல்லது நீக்கு)',
+                )),
+              ),
             if (_legacyCaches.isNotEmpty)
               TextButton(
                 onPressed: _removeLegacyModels,

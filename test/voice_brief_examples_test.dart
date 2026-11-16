@@ -48,10 +48,16 @@ void main() {
   });
 
   test('two cows in one sentence stage two rows', () {
-    final batch = parseMilkBatch('Kanmani 5, Lakshmi 7', cows, aliases: aliases);
+    final batch = parseMilkBatch(
+      'Kanmani 5, Lakshmi 7',
+      cows,
+      aliases: aliases,
+    );
     expect(batch, isNotNull);
-    expect([for (final c in batch!) (c.cow?.name, c.litres)],
-        [('Kanmani', 5.0), ('Lakshmi', 7.0)]);
+    expect(
+      [for (final c in batch!) (c.cow?.name, c.litres)],
+      [('Kanmani', 5.0), ('Lakshmi', 7.0)],
+    );
   });
 
   test('unknown cow in a batch is not silently dropped', () {
@@ -73,7 +79,10 @@ void main() {
 
   group('Gemini request sanitizer', () {
     test('cow names become tokens; the map stays in the app', () {
-      final (r, skip) = buildMilkGeminiRequest('கண்மணி அஞ்சா ஆறா லிட்டர்', aliases);
+      final (r, skip) = buildMilkGeminiRequest(
+        'கண்மணி அஞ்சா ஆறா லிட்டர்',
+        aliases,
+      );
       expect(skip, isNull);
       expect(r!.text, 'C1 அஞ்சா ஆறா லிட்டர்');
       expect(r.tokens, {'C1': 'Kanmani'});
@@ -81,21 +90,44 @@ void main() {
     });
 
     test('contact details, money, long numbers and chatter are not sent', () {
-      expect(buildMilkGeminiRequest('call 98765 43210 Kanmani 5', aliases).$2, MilkGeminiSkip.contact);
-      expect(buildMilkGeminiRequest('300 ரூபாய் பெட்ரோல்', aliases).$2, MilkGeminiSkip.money);
-      expect(buildMilkGeminiRequest('a@b.co Kanmani', aliases).$2, MilkGeminiSkip.contact);
-      expect(buildMilkGeminiRequest('இன்னைக்கு மழை வருமா', aliases).$2, MilkGeminiSkip.noMilkWords);
-      expect(buildMilkGeminiRequest('x ' * 40, aliases).$2, MilkGeminiSkip.tooLong);
+      expect(
+        buildMilkGeminiRequest('call 98765 43210 Kanmani 5', aliases).$2,
+        MilkGeminiSkip.contact,
+      );
+      expect(
+        buildMilkGeminiRequest('300 ரூபாய் பெட்ரோல்', aliases).$2,
+        MilkGeminiSkip.money,
+      );
+      expect(
+        buildMilkGeminiRequest('a@b.co Kanmani', aliases).$2,
+        MilkGeminiSkip.contact,
+      );
+      expect(
+        buildMilkGeminiRequest('இன்னைக்கு மழை வருமா', aliases).$2,
+        MilkGeminiSkip.noMilkWords,
+      );
+      expect(
+        buildMilkGeminiRequest('x ' * 40, aliases).$2,
+        MilkGeminiSkip.tooLong,
+      );
     });
 
     test('reply schema: only known tokens, finite litres, no writes', () {
-      final (r, _) = buildMilkGeminiRequest('கண்மணி அஞ்சா ஆறா லிட்டர்', aliases);
+      final (r, _) = buildMilkGeminiRequest(
+        'கண்மணி அஞ்சா ஆறா லிட்டர்',
+        aliases,
+      );
       final ok = validateMilkGeminiReply({
         'schema': 'vimo.milk.v2',
         'intent': 'milk_record',
         'uncertain': true,
         'entries': [
-          {'cow': 'C1', 'litres': null, 'litresChoices': [5, 6], 'session': null},
+          {
+            'cow': 'C1',
+            'litres': null,
+            'litresChoices': [5, 6],
+            'session': null,
+          },
         ],
       }, r!);
       expect(ok!.entries.single.cow, 'Kanmani');
@@ -104,14 +136,66 @@ void main() {
         null,
         'text',
         {'schema': 'vimo.milk.v1'},
-        {'schema': 'vimo.milk.v2', 'intent': 'save_now', 'uncertain': false, 'entries': []},
-        {'schema': 'vimo.milk.v2', 'intent': 'milk_record', 'uncertain': false, 'entries': [{'cow': 'C9'}]},
-        {'schema': 'vimo.milk.v2', 'intent': 'milk_record', 'uncertain': false, 'entries': [{'cow': 'C1', 'litres': -5}]},
-        {'schema': 'vimo.milk.v2', 'intent': 'milk_record', 'uncertain': false, 'entries': [{'cow': 'C1', 'litres': double.infinity}]},
-        {'schema': 'vimo.milk.v2', 'intent': 'milk_record', 'uncertain': false, 'entries': [{'cow': 'C1', 'litres': 300}]},
-        {'schema': 'vimo.milk.v2', 'intent': 'not_milk', 'uncertain': false, 'entries': [{'cow': 'C1'}]},
-        {'schema': 'vimo.milk.v2', 'intent': 'milk_record', 'uncertain': 'no', 'entries': []},
-        {'schema': 'vimo.milk.v2', 'intent': 'milk_record', 'uncertain': false, 'entries': [{'session': 'night'}]},
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'save_now',
+          'uncertain': false,
+          'entries': [],
+        },
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'milk_record',
+          'uncertain': false,
+          'entries': [
+            {'cow': 'C9'},
+          ],
+        },
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'milk_record',
+          'uncertain': false,
+          'entries': [
+            {'cow': 'C1', 'litres': -5},
+          ],
+        },
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'milk_record',
+          'uncertain': false,
+          'entries': [
+            {'cow': 'C1', 'litres': double.infinity},
+          ],
+        },
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'milk_record',
+          'uncertain': false,
+          'entries': [
+            {'cow': 'C1', 'litres': 300},
+          ],
+        },
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'not_milk',
+          'uncertain': false,
+          'entries': [
+            {'cow': 'C1'},
+          ],
+        },
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'milk_record',
+          'uncertain': 'no',
+          'entries': [],
+        },
+        {
+          'schema': 'vimo.milk.v2',
+          'intent': 'milk_record',
+          'uncertain': false,
+          'entries': [
+            {'session': 'night'},
+          ],
+        },
       ]) {
         expect(validateMilkGeminiReply(bad, r), isNull, reason: '$bad');
       }

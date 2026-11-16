@@ -1,0 +1,43 @@
+name: Preview VIMO web (manual)
+# Builds a branch and publishes it to a temporary Firebase Hosting preview
+# channel (expires after 7 days). It does NOT change the live site.
+# The preview talks to the same Firebase project, so only run it when the
+# owner has approved testing on it. Run from the GitHub app:
+# Actions → Preview VIMO web (manual) → Run workflow → choose the branch.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Preview channel name
+        default: voice-preview
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: preview-web
+  cancel-in-progress: true
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Build web
+        run: >-
+          flutter build web --release --no-pub
+          --dart-define=VIMO_ASR_URL=${{ vars.VIMO_ASR_URL }}
+          --dart-define=VIMO_BRIDGE_URL=${{ vars.VIMO_BRIDGE_URL }}
+      - name: Prepare offline app shell
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vimo-firebase-web" --no-save --ignore-scripts firebase@12.19.0
+          node tools/web/prepare_release.mjs "$RUNNER_TEMP/vimo-firebase-web/node_modules/firebase"
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Deploy preview channel (hosting only, no rules)
+        run: npx --yes firebase-tools@latest hosting:channel:deploy "${{ inputs.channel }}" --expires 7d --project my-ranch-sync --non-interactive

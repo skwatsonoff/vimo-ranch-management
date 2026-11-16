@@ -18,7 +18,11 @@ class EchoAsr implements SpeechToTextService {
   @override
   bool get configured => true;
   @override
-  Future<String?> transcribe(Uint8List wav, {required String locale, List<String> hints = const []}) async {
+  Future<String?> transcribe(
+    Uint8List wav, {
+    required String locale,
+    List<String> hints = const [],
+  }) async {
     calls++;
     lastBytes = wav.length;
     final riff = String.fromCharCodes(wav.sublist(0, 4));
@@ -36,8 +40,16 @@ late VoiceCaptureController controller;
 void main() {
   final backend = webCaptureBackend()!;
   final asr = EchoAsr();
-  controller = VoiceCaptureController(backend: backend, speechToText: asr, locale: 'ta-IN');
-  controller.phases.listen((p) => probeLog('phase:${p.name}${controller.error != null ? ':${controller.error!.name}' : ''}${controller.interruption != null && p == CapturePhase.interrupted ? ':${controller.interruption!.reason}' : ''}'));
+  controller = VoiceCaptureController(
+    backend: backend,
+    speechToText: asr,
+    locale: 'ta-IN',
+  );
+  controller.phases.listen(
+    (p) => probeLog(
+      'phase:${p.name}${controller.error != null ? ':${controller.error!.name}' : ''}${controller.interruption != null && p == CapturePhase.interrupted ? ':${controller.interruption!.reason}' : ''}',
+    ),
+  );
   controller.transcripts.listen((t) => probeLog('text:$t'));
   _probeStart = (() {
     probeLog('gen:${controller.startFromTap()}');

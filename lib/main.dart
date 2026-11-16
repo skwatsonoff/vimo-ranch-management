@@ -20091,15 +20091,8 @@ class AppSettingsScreen extends StatelessWidget {
                     },
                   ),
                 ),
-                // After choosing a language: its offline voice packs.
-                _ActionRow(
-                  icon: CupertinoIcons.cloud_download,
-                  label: bi(
-                    'Download for offline voice',
-                    'Offline குரலுக்குப் பதிவிறக்கு',
-                  ),
-                  onTap: () => push(context, const LanguagePacksScreen()),
-                ),
+                // Offline voice packs are no longer downloaded to the phone:
+                // VIMO's AI data and models live in the owner's Drive only.
                 _ActionRow(
                   icon: CupertinoIcons.slider_horizontal_3,
                   label: 'Preferences',
@@ -20107,9 +20100,9 @@ class AppSettingsScreen extends StatelessWidget {
                 ),
                 if (workspaceEnabled('Ranch') && canManageRanch)
                   _ActionRow(
-                    icon: CupertinoIcons.bolt,
-                    label: bi('Train VIMO', 'VIMO பயிற்சி'),
-                    onTap: () => push(context, const TrainVimoScreen()),
+                    icon: CupertinoIcons.waveform,
+                    label: bi('VIMO Voice', 'VIMO குரல்'),
+                    onTap: () => push(context, const VoiceBridgeScreen()),
                   ),
                 if (workspaceEnabled('Ranch') && canManageRanch)
                   _ActionRow(

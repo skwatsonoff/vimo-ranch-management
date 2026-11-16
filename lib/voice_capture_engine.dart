@@ -22,12 +22,16 @@ abstract final class CaptureEngineCodes {
 
 class CaptureVoiceEngine implements VoiceEngine {
   CaptureVoiceEngine(this.controller) {
-    _subs.add(controller.transcripts.listen((text) {
-      if (!_closed) _results.add(VoiceHeard(text, isFinal: true));
-    }));
-    _subs.add(controller.levels.listen((l) {
-      if (!_closed) _levels.add(l);
-    }));
+    _subs.add(
+      controller.transcripts.listen((text) {
+        if (!_closed) _results.add(VoiceHeard(text, isFinal: true));
+      }),
+    );
+    _subs.add(
+      controller.levels.listen((l) {
+        if (!_closed) _levels.add(l);
+      }),
+    );
     _subs.add(controller.phases.listen(_onPhase));
   }
 
@@ -47,7 +51,8 @@ class CaptureVoiceEngine implements VoiceEngine {
   @override
   bool get isOffline => false;
   @override
-  bool get isListening => controller.phase == CapturePhase.listening ||
+  bool get isListening =>
+      controller.phase == CapturePhase.listening ||
       controller.phase == CapturePhase.processing;
 
   void _onPhase(CapturePhase phase) {
@@ -57,15 +62,24 @@ class CaptureVoiceEngine implements VoiceEngine {
         _statuses.add(VoiceStatus.listening);
       case CapturePhase.interrupted:
         _statuses.add(VoiceStatus.notListening);
-        _errors.add(const VoiceEngineError(CaptureEngineCodes.interrupted, permanent: true));
+        _errors.add(
+          const VoiceEngineError(
+            CaptureEngineCodes.interrupted,
+            permanent: true,
+          ),
+        );
       case CapturePhase.error:
         _statuses.add(VoiceStatus.notListening);
-        _errors.add(VoiceEngineError(
-          '${CaptureEngineCodes.prefix}${controller.error?.name ?? 'other'}',
-          permanent: true,
-        ));
+        _errors.add(
+          VoiceEngineError(
+            '${CaptureEngineCodes.prefix}${controller.error?.name ?? 'other'}',
+            permanent: true,
+          ),
+        );
       case CapturePhase.needsTap:
-        _errors.add(const VoiceEngineError(CaptureEngineCodes.needsTap, permanent: true));
+        _errors.add(
+          const VoiceEngineError(CaptureEngineCodes.needsTap, permanent: true),
+        );
       case CapturePhase.processing:
       case CapturePhase.connecting:
         break;
@@ -104,7 +118,9 @@ class CaptureVoiceEngine implements VoiceEngine {
         break;
       default:
         // Never opens the microphone from a timer: the owner must tap.
-        _errors.add(const VoiceEngineError(CaptureEngineCodes.needsTap, permanent: true));
+        _errors.add(
+          const VoiceEngineError(CaptureEngineCodes.needsTap, permanent: true),
+        );
     }
   }
 

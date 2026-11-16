@@ -93,7 +93,9 @@ enum CaptureError {
 CaptureError captureErrorFromCode(String code) {
   final base = code.split(':').first;
   if (base == 'not-allowed') {
-    return code.endsWith(':blocked') ? CaptureError.blocked : CaptureError.denied;
+    return code.endsWith(':blocked')
+        ? CaptureError.blocked
+        : CaptureError.denied;
   }
   return switch (base) {
     'audio-busy' => CaptureError.busy,
@@ -137,7 +139,12 @@ class CapturePhaseEvent extends CaptureEvent {
   final String phase;
   final String? reason;
   final String? code;
-  const CapturePhaseEvent(super.generation, this.phase, {this.reason, this.code});
+  const CapturePhaseEvent(
+    super.generation,
+    this.phase, {
+    this.reason,
+    this.code,
+  });
 }
 
 class CaptureLevelEvent extends CaptureEvent {
@@ -220,7 +227,8 @@ class UnavailableSpeechToText implements SpeechToTextService {
     Uint8List wav, {
     required String locale,
     List<String> hints = const [],
-  }) async => throw const SpeechServiceFailure(CaptureError.recognitionUnavailable);
+  }) async =>
+      throw const SpeechServiceFailure(CaptureError.recognitionUnavailable);
 }
 
 /// Owns the microphone for one voice screen.
@@ -306,7 +314,8 @@ class VoiceCaptureController {
     try {
       log?.call(type, {
         'gen': _generation,
-        if (_tapAt != null) 'msSinceTap': _clock().difference(_tapAt!).inMilliseconds,
+        if (_tapAt != null)
+          'msSinceTap': _clock().difference(_tapAt!).inMilliseconds,
         ...details,
       });
     } catch (_) {}
@@ -345,25 +354,32 @@ class VoiceCaptureController {
   Future<void> _await(Future<void> started, int generation) async {
     _watchdog?.cancel();
     _watchdog = Timer(startTimeout, () {
-      if (generation != _generation || _phase != CapturePhase.connecting) return;
+      if (generation != _generation || _phase != CapturePhase.connecting) {
+        return;
+      }
       backend.stop(generation, 'timeout');
       _set(CapturePhase.error, error: CaptureError.timeout);
     });
     try {
       await started;
-      if (generation != _generation || _phase != CapturePhase.connecting) return;
+      if (generation != _generation || _phase != CapturePhase.connecting) {
+        return;
+      }
       _watchdog?.cancel();
       _log('capture_ready', const {});
       _set(CapturePhase.listening);
     } on CaptureFailure catch (failure) {
       if (generation != _generation) return;
       _watchdog?.cancel();
-      if (failure.code == 'cancelled' || failure.code == 'stale-generation') return;
+      if (failure.code == 'cancelled' || failure.code == 'stale-generation') {
+        return;
+      }
       if (failure.code == 'needs-gesture') {
         _set(CapturePhase.needsTap);
         return;
       }
-      if (failure.code == 'interruption-active' || failure.code == 'interrupted') {
+      if (failure.code == 'interruption-active' ||
+          failure.code == 'interrupted') {
         _interruption ??= const CaptureInterruption('active');
         _set(CapturePhase.interrupted);
         return;
@@ -380,9 +396,13 @@ class VoiceCaptureController {
     if (_disposed || event.generation != _generation) return;
     switch (event) {
       case CapturePhaseEvent(phase: 'interrupted', :final reason):
-        interrupt(CaptureInterruption(reason ?? 'platform'), fromPlatform: true);
+        interrupt(
+          CaptureInterruption(reason ?? 'platform'),
+          fromPlatform: true,
+        );
       case CapturePhaseEvent(phase: 'error', :final code)
-          when _phase != CapturePhase.connecting && _phase != CapturePhase.error:
+          when _phase != CapturePhase.connecting &&
+              _phase != CapturePhase.error:
         _set(CapturePhase.error, error: captureErrorFromCode(code ?? 'other'));
       case CapturePhaseEvent():
         break;
@@ -398,7 +418,8 @@ class VoiceCaptureController {
   Future<void> _transcribe(CapturedSpeech speech) async {
     final generation = speech.generation;
     if (!isCurrent(generation) ||
-        (_phase != CapturePhase.listening && _phase != CapturePhase.processing)) {
+        (_phase != CapturePhase.listening &&
+            _phase != CapturePhase.processing)) {
       return;
     }
     _inFlight++;
@@ -451,7 +472,9 @@ class VoiceCaptureController {
   /// VIMO finished speaking: listen again, only if the session is still
   /// the same, live, foreground one.
   void endSpeaking() {
-    if (_phase != CapturePhase.speaking && _phase != CapturePhase.paused) return;
+    if (_phase != CapturePhase.speaking && _phase != CapturePhase.paused) {
+      return;
+    }
     backend.gate(_generation, false);
     _set(CapturePhase.listening);
   }
@@ -550,7 +573,11 @@ class FakeCaptureBackend implements CaptureBackend {
   /// A sentence of fake audio for [generation].
   void speak(int generation, [double seconds = 1.2]) => emit(
     CaptureSpeechEvent(
-      CapturedSpeech(generation, Uint8List.fromList(List.filled(44, 0)), seconds),
+      CapturedSpeech(
+        generation,
+        Uint8List.fromList(List.filled(44, 0)),
+        seconds,
+      ),
     ),
   );
 }

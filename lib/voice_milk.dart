@@ -4056,8 +4056,8 @@ class _CaptureCard extends StatelessWidget {
     ),
     'capture-blocked' => (
       bi('Microphone blocked for this site', 'இந்தத் தளத்துக்கு மைக் தடுக்கப்பட்டுள்ளது'),
-      bi('Safari: tap "aA" in the address bar → Website Settings → Microphone → Allow, then reload. Home Screen app: iPhone Settings → Apps → Safari → Advanced → Website Data is not needed; open Settings → Privacy & Security → Microphone and check Safari, then reopen VIMO.',
-          'Safari: முகவரிப் பட்டியில் "aA" தட்டி → Website Settings → Microphone → Allow, பிறகு reload செய்யுங்கள். Home Screen app: iPhone Settings → Privacy & Security → Microphone-இல் Safari இயக்கத்தில் உள்ளதா பாருங்கள், பிறகு VIMO-வை மீண்டும் திறங்கள்.'),
+      bi('Safari: tap the page menu (aA or ⋯) next to the address → Website Settings → Microphone → Allow, then reload. Home Screen app and all sites: iPhone Settings → Apps → Safari → Microphone → Ask or Allow, then reopen VIMO.',
+          'Safari: முகவரிக்கு அருகில் உள்ள page menu (aA அல்லது ⋯) → Website Settings → Microphone → Allow, பிறகு reload. Home Screen app மற்றும் எல்லாத் தளங்களுக்கும்: iPhone Settings → Apps → Safari → Microphone → Ask அல்லது Allow, பிறகு VIMO-வை மீண்டும் திறங்கள்.'),
       null,
       CupertinoIcons.lock_fill,
     ),

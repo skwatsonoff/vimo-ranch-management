@@ -28,7 +28,8 @@ extension type _Legacy(JSObject _) implements JSObject {
   external JSPromise<JSNumber> remove();
 }
 
-CaptureBackend? webCaptureBackend() => _mic == null ? null : WebCaptureBackend();
+CaptureBackend? webCaptureBackend() =>
+    _mic == null ? null : WebCaptureBackend();
 
 class WebCaptureBackend implements CaptureBackend {
   final _events = StreamController<CaptureEvent>.broadcast(sync: true);
@@ -64,10 +65,12 @@ class WebCaptureBackend implements CaptureBackend {
           _events.add(CaptureLevelEvent(gen, (m['level'] as num).toDouble()));
         case 'diag':
           // Only steps, flags and error names: never audio or words.
-          _events.add(CaptureDiagEvent(gen, {
-            for (final e in m.entries)
-              if (e.key != 'type' && e.key != 'gen') e.key: e.value,
-          }));
+          _events.add(
+            CaptureDiagEvent(gen, {
+              for (final e in m.entries)
+                if (e.key != 'type' && e.key != 'gen') e.key: e.value,
+            }),
+          );
       }
     } catch (_) {}
   }

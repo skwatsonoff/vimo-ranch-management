@@ -151,12 +151,15 @@ MilkGeminiReply? validateMilkGeminiReply(
   for (final item in list) {
     if (item is! Map) return null;
     final token = item['cow'];
-    if (token != null && (token is! String || !request.tokens.containsKey(token))) {
+    if (token != null &&
+        (token is! String || !request.tokens.containsKey(token))) {
       return null;
     }
     final words = item['cowWords'];
     if (words != null &&
-        (words is! String || words.isEmpty || words.length > 40 ||
+        (words is! String ||
+            words.isEmpty ||
+            words.length > 40 ||
             RegExp(r'C\d').hasMatch(words))) {
       return null;
     }

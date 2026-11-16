@@ -24,7 +24,13 @@ jobs:
       - name: Install packages
         run: flutter pub get
       - name: Build web
-        run: flutter build web --release --no-pub
+        # Voice service addresses are configuration, not secrets: set them in
+        # GitHub → Settings → Secrets and variables → Actions → Variables.
+        # Empty means voice shows "not set up" and Manual Entry.
+        run: >-
+          flutter build web --release --no-pub
+          --dart-define=VIMO_ASR_URL=${{ vars.VIMO_ASR_URL }}
+          --dart-define=VIMO_BRIDGE_URL=${{ vars.VIMO_BRIDGE_URL }}
       - name: Prepare offline app shell
         run: |
           npm install --prefix "$RUNNER_TEMP/vimo-firebase-web" --no-save --ignore-scripts firebase@12.19.0
