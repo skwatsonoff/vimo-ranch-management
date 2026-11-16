@@ -21,6 +21,18 @@ jobs:
         run: |
           pip install --quiet pytest
           python -m pytest -q tools/voice_training/tests
+      - name: Voice bridge, ASR runner and browser capture checks
+        id: voice
+        continue-on-error: true
+        run: |
+          set -e
+          node tools/voice_bridge/bridge_test.cjs
+          pip install --quiet -r services/vimo-asr/requirements.txt
+          (cd services/vimo-asr && python -m pytest -q tests)
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save playwright@1.49.1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" node test/js/vimo_mic_test.cjs
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" node test/js/capture_interop_test.cjs
       - name: Analyze
         id: analyze
         continue-on-error: true
@@ -87,8 +99,9 @@ jobs:
         run: flutter build web --release --no-pub --no-wasm-dry-run
       - name: Result
         run: |
-          echo "analyze=${{ steps.analyze.outcome }} test=${{ steps.test.outcome }} build=${{ steps.build.outcome }}"
-          echo "::notice::analyze=${{ steps.analyze.outcome }} test=${{ steps.test.outcome }} build=${{ steps.build.outcome }}"
+          echo "voice=${{ steps.voice.outcome }} analyze=${{ steps.analyze.outcome }} test=${{ steps.test.outcome }} build=${{ steps.build.outcome }}"
+          echo "::notice::voice=${{ steps.voice.outcome }} analyze=${{ steps.analyze.outcome }} test=${{ steps.test.outcome }} build=${{ steps.build.outcome }}"
+          test "${{ steps.voice.outcome }}" = success
           test "${{ steps.analyze.outcome }}" = success
           test "${{ steps.test.outcome }}" = success
           test "${{ steps.build.outcome }}" = success

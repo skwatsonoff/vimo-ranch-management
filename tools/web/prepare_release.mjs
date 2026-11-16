@@ -47,7 +47,7 @@ async function list(dir) {
 const paths = [
   'index.html', 'flutter_bootstrap.js', 'main.dart.js', 'manifest.json',
   'version.json', 'apple-touch-icon.png', 'favicon.png',
-  'vimo_ear.js', 'firebase-sdk.js',
+  'vimo_mic.js', 'firebase-sdk.js',
   ...(await list('firebase-sdk')),
   ...(await list('assets')).filter(path => !path.endsWith('/NOTICES')),
   ...(await list('icons')),

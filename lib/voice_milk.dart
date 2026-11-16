@@ -43,7 +43,8 @@ class VoiceMilkEntry {
     'cow': cow,
     'litres': litres,
     'at': at.toIso8601String(),
-    'heard': heard,
+    // What was heard stays in memory only: the draft on the phone keeps
+    // the entry itself, never the words.
     if (sessionOverride != null) 'session': sessionOverride,
     if (requiresSessionConfirmation && sessionOverride == null)
       'confirmSession': true,
@@ -354,9 +355,26 @@ class _Line {
 
 // --- the screen ----------------------------------------------------------------
 
-/// Previews and browser checks: listen with VIMO's own ear everywhere.
+/// Previews and browser checks: use VIMO's own capture everywhere.
 @visibleForTesting
-bool debugVoiceEar = false;
+bool debugVoiceCapture = false;
+
+/// Tests replace the capture backend and speech-to-text service.
+@visibleForTesting
+CaptureBackend? Function()? debugCaptureBackend;
+@visibleForTesting
+SpeechToTextService? debugSpeechToText;
+
+/// VIMO's private speech-to-text runner, when one is approved and set.
+SpeechToTextService voiceSpeechToText() =>
+    debugSpeechToText ??
+    (vimoAsrEndpoint() == null
+        ? const UnavailableSpeechToText()
+        : RemoteSpeechToText(
+            endpoint: vimoAsrEndpoint(),
+            idToken: _firebaseIdToken,
+            ranchId: ranchId,
+          ));
 
 class VoiceMilkScreen extends StatefulWidget {
   const VoiceMilkScreen({super.key});
@@ -443,29 +461,24 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   final Map<String, TextEditingController> _litreFields = {};
 
-  /// VIMO's own ear waiting to be downloaded (the card offers it), and how
-  /// far the download is.
-  EarModel? _earOffer;
-  double? _earProgress;
+  /// iPhone web (Safari and the Home Screen app): VIMO's own capture, one
+  /// microphone owner, opened only from the owner's tap. Apple's speech
+  /// service has no Tamil and is blocked in the Home Screen app.
+  bool get _wantCapture =>
+      debugVoiceCapture ||
+      (kIsWeb && _browserRuntime.appleMobile && webCaptureBackend() != null);
 
-  /// The browser's speech service refused (no Tamil, or blocked): listen
-  /// with VIMO's own ear instead.
-  bool _earChosen = false;
+  CaptureVoiceEngine? get _capture {
+    final engine = _engine;
+    return engine is CaptureVoiceEngine ? engine : null;
+  }
 
-  /// Where the browser's speech service cannot help: Tamil on an iPhone
-  /// (Apple's service has no Tamil) and the Home Screen web app (Apple
-  /// blocks the service there).
-  bool get _wantEar =>
-      kIsWeb &&
-      earSupported &&
-      (_earChosen ||
-          debugVoiceEar ||
-          // English too: Apple's English mishears the cows' names, and
-          // Whistle is told them (17 MB, fast).
-          (_browserRuntime.appleMobile &&
-              (_browserRuntime.standaloneApp ||
-                  _locale.startsWith('ta') ||
-                  _locale.startsWith('en'))));
+  /// What the capture card asks for: 'start', 'resume', 'tap', or an error
+  /// code ('capture-denied', ...). Null when nothing is needed.
+  String? _captureNeed;
+
+  /// The platform said this was a call (native only; never on the web).
+  bool _captureCall = false;
 
   void _listenTo(VoiceEngine engine) => _engineSubs.addAll([
     engine.results.listen(_onResult),
@@ -486,37 +499,6 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     _engine = null;
     _initialised = false;
     if (old != null) _quietly(old.dispose);
-  }
-
-  /// Downloads VIMO's own ear (the card's button), then listens with it.
-  Future<void> _downloadEar() async {
-    final model = _earOffer;
-    if (model == null || _earProgress != null) return;
-    setState(() => _earProgress = 0);
-    try {
-      await prepareEar(model, (p) {
-        if (mounted) setState(() => _earProgress = p.clamp(0, 1).toDouble());
-      });
-      VoiceDiagnostics.log('ear_downloaded', {'model': model.id});
-      if (!mounted) return;
-      setState(() {
-        _earOffer = null;
-        _earProgress = null;
-      });
-      await _start();
-    } catch (error) {
-      VoiceDiagnostics.log('ear_download_error', {'error': '$error'});
-      if (!mounted) return;
-      setState(() => _earProgress = null);
-      snack(
-        context,
-        bi(
-          'The download stopped. Check the internet and try again.',
-          'பதிவிறக்கம் நின்றுவிட்டது. இணையத்தைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
-        ),
-        tone: SnackTone.error,
-      );
-    }
   }
 
   bool get _tamilReplies => _locale.startsWith('ta');
@@ -615,6 +597,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       unawaited(sub.cancel());
     }
     final engine = _engine;
+    _capture?.controller.stop('navigation');
     if (engine != null) _quietly(engine.dispose);
     _quietly(_tts.stop);
     _keepAwake(false);
@@ -630,6 +613,8 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Capture never resumes by itself: the card asks for a tap.
+      if (_capture != null) return;
       // The phone may have taken the permission back while VIMO was away
       // ("Only this time"), or the owner may have just allowed it in
       // Settings: check again before listening.
@@ -639,9 +624,24 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         return;
       }
       if (_running || _micProblem != null) unawaited(_resumeMic());
-    } else if (state == AppLifecycleState.paused) {
-      _restart?.cancel();
-      _quietly(_cancelEar);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.inactive) {
+      // Never listen in the background or on the lock screen. The capture
+      // path also stops itself on pagehide/visibility; this covers the
+      // Flutter side and the other engines.
+      final capture = _capture;
+      if (capture != null) {
+        if (capture.controller.open ||
+            capture.controller.phase == CapturePhase.connecting) {
+          capture.controller.interrupt(CaptureInterruption('lifecycle-${state.name}'));
+        }
+        return;
+      }
+      if (state != AppLifecycleState.inactive) {
+        _restart?.cancel();
+        _quietly(_cancelEar);
+      }
     }
   }
 
@@ -792,21 +792,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     }
   }
 
-  bool get _canSwitchToEar =>
-      kIsWeb && earSupported && _engine is! BrowserEarEngine;
+  bool get _canSwitchToEar => false;
 
-  Future<void> _switchToEar(String reason) async {
-    VoiceDiagnostics.log('ear_switch', {'reason': reason, 'locale': _locale});
-    _running = false;
-    await _dropEngine();
-    if (!mounted) return;
-    setState(() {
-      _earChosen = true;
-      _micError = null;
-      _micProblem = null;
-    });
-    await _start();
-  }
+  Future<void> _switchToEar(String reason) async {}
 
   // --- start, listen, speak ----------------------------------------------------
 
@@ -820,24 +808,17 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
       );
       return;
     }
+    if (_wantCapture) {
+      await _prepareCapture();
+      return;
+    }
     // Never trust the recogniser's remembered start: check the permission
     // itself, asking with the system pop-up when it is still possible.
     if (!await _checkMic()) return;
     await _setupVoice();
     bool ok = false;
     try {
-      if (_engine == null && _wantEar) {
-        final model = await earModelReadyFor(_locale);
-        if (!await earDownloaded(model)) {
-          // One download, offered on a card: nothing starts until then.
-          if (mounted) setState(() => _earOffer = model);
-          return;
-        }
-        final engine = BrowserEarEngine(model);
-        _engine = engine;
-        _listenTo(engine);
-        ok = await engine.initialize();
-      } else if (_engine == null) {
+      if (_engine == null) {
         final (engine, started) = await createVoiceEngine(
           offlineEnabled: voiceOfflineBetaEnabled(),
           offlineModelPath: offlineVoiceModelPath(_locale),
@@ -893,6 +874,117 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         'Ready. Say Hey Vimo.',
       ),
     );
+  }
+
+  /// Capture path: builds the engine without touching the microphone and
+  /// shows "Start listening". The microphone opens only from that tap.
+  Future<void> _prepareCapture() async {
+    if (_capture == null) {
+      await _dropEngine();
+      final backend = debugCaptureBackend?.call() ?? webCaptureBackend();
+      if (backend == null) {
+        if (mounted) setState(() => _captureNeed = 'capture-unsupported');
+        return;
+      }
+      final controller = VoiceCaptureController(
+        backend: backend,
+        speechToText: voiceSpeechToText(),
+        locale: _locale,
+        hints: voiceHotwords(),
+        log: VoiceDiagnostics.log,
+      );
+      final engine = CaptureVoiceEngine(controller);
+      _engine = engine;
+      _listenTo(engine);
+      // Every phase change redraws the status (connecting, processing...).
+      _engineSubs.add(controller.phases.listen((_) {
+        if (mounted) setState(() {});
+      }));
+    }
+    // The Tamil speaking voice is separate: failing to find one leaves
+    // text replies and the microphone working.
+    unawaited(_setupVoice());
+    if (!mounted) return;
+    final ready = await _capture!.initialize();
+    if (!mounted) return;
+    setState(() {
+      _initialised = true;
+      _micError = null;
+      _micProblem = null;
+      _captureNeed = ready
+          ? 'start'
+          : (_capture!.controller.backend.supported
+                ? 'capture-recognitionUnavailable'
+                : 'capture-unsupported');
+    });
+    VoiceDiagnostics.log('capture_prepared', {
+      'appVersion': vimoAppVersion,
+      'standalone': _browserRuntime.standaloneApp,
+      'asr': voiceSpeechToText().name,
+      'need': _captureNeed,
+    });
+  }
+
+  /// The owner's tap: Start listening, Resume listening, or Safari's extra
+  /// tap. Synchronous up to the platform call, so the gesture counts.
+  void _tapCapture() {
+    final capture = _capture;
+    if (capture == null) return;
+    final controller = capture.controller;
+    controller.hints = voiceHotwords();
+    controller.locale = _locale;
+    final need = _captureNeed;
+    controller.startFromTap();
+    VoiceDiagnostics.log('capture_tap', {'need': need});
+    setState(() {
+      _captureNeed = null;
+      _captureCall = false;
+      _micError = null;
+    });
+    _running = true;
+    _keepAwake(true);
+    // Late: when the microphone is really live, greet once.
+    late final StreamSubscription<CapturePhase> sub;
+    sub = controller.phases.listen((phase) {
+      if (phase == CapturePhase.listening) {
+        unawaited(sub.cancel());
+        if (!mounted) return;
+        setState(() => _listeningNow = true);
+        if (need == 'start') {
+          _say(const _Say(
+            'தயார். ஹே விமோ சொல்லுங்க.',
+            'Ready. Hey Vimo sollunga.',
+            'Ready. Say Hey Vimo.',
+          ));
+        } else {
+          _say(const _Say('கேட்கிறேன்.', 'Ketkiren.', 'Listening.'));
+        }
+      } else if (phase != CapturePhase.connecting) {
+        unawaited(sub.cancel());
+      }
+    });
+  }
+
+  /// Stops everything that belongs to the interrupted session: speech,
+  /// pending Gemini answers, timers. Confirmed entries stay.
+  void _onCaptureStopped(String need, {bool call = false}) {
+    _running = false;
+    _restart?.cancel();
+    _settle?.cancel();
+    _sleep?.cancel();
+    _quietly(_tts.stop);
+    _speech = Future.value();
+    _geminiGeneration++;
+    _keepAwake(false);
+    if (!mounted) return;
+    setState(() {
+      _captureNeed = need;
+      _captureCall = call;
+      _listeningNow = false;
+      _speaking = false;
+      _partial = '';
+      _level = 0;
+    });
   }
 
   Future<void> _setupVoice() async {
@@ -968,13 +1060,9 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   /// VIMO's own ear is writing down what was said (a few seconds).
-  bool _thinking = false;
+  bool get _thinking => _capture?.controller.phase == CapturePhase.processing;
 
   void _onStatus(String status) {
-    if (status == earThinking || status == earThought) {
-      if (mounted) setState(() => _thinking = status == earThinking);
-      return;
-    }
     VoiceDiagnostics.log('speech_status', {
       'status': status,
       if (_listenStartedAt != null && status != VoiceStatus.listening)
@@ -995,6 +1083,20 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   void _onError(VoiceEngineError error) {
     if (!mounted) return;
     final message = error.code;
+    if (message.startsWith(CaptureEngineCodes.prefix)) {
+      VoiceDiagnostics.log('capture_error', {'code': message});
+      final controller = _capture?.controller;
+      if (message == CaptureEngineCodes.interrupted) {
+        _onCaptureStopped('resume', call: controller?.interruption?.isCall ?? false);
+      } else if (message == CaptureEngineCodes.needsTap) {
+        // Safari's extra tap, or a timer asked to listen with no live mic.
+        final p = controller?.phase;
+        _onCaptureStopped(p == CapturePhase.needsTap ? 'tap' : (_captureNeed ?? 'start'));
+      } else {
+        _onCaptureStopped(message);
+      }
+      return;
+    }
     VoiceDiagnostics.log('speech_error', {
       'code': message,
       'permanent': error.permanent,
@@ -1260,6 +1362,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   bool _geminiBusy = false;
 
+  /// Bumped on interruption, stop and new sessions: a Gemini answer that
+  /// arrives for an older one is ignored.
+  int _geminiGeneration = 0;
+
+  /// Free Tier Gemini for one unclear milk sentence: sanitized and
+  /// tokenized here, validated twice, and always confirmed by the owner.
   Future<void> _readMilkWithGemini(
     _VoiceBridge bridge,
     VoiceCommand command,
@@ -1267,31 +1375,71 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     String? selectedSession,
   ) async {
     if (_geminiBusy) return;
+    final aliases = cowNameAliases();
+    final (request, skip) = buildMilkGeminiRequest(command.text, {
+      for (final cow in cows) cow: aliases[cow] ?? const [],
+    });
+    if (request == null) {
+      // Not sent: VIMO asks the owner itself.
+      VoiceDiagnostics.log('gemini_skipped', {'reason': skip?.name});
+      _stageMilkSuggestion(command, null, null, selectedSession);
+      return;
+    }
     _geminiBusy = true;
+    final generation = ++_geminiGeneration;
+    final captureGeneration = _capture?.controller.generation;
+    bool current() =>
+        mounted &&
+        generation == _geminiGeneration &&
+        !_report &&
+        (captureGeneration == null ||
+            _capture?.controller.isCurrent(captureGeneration) == true);
     _sleep?.cancel();
     _restart?.cancel();
     _quietly(_cancelEar);
-    final available = cows.where((cow) => cow.length <= 100).take(80).toList();
     try {
-      final result = await bridge.call('milk', {'text': command.text, 'cows': available});
-      if (!mounted || _report || _pending != null) return;
-      final index = result['cowIndex'];
-      final litres = result['litres'];
-      final cow = index is int && index >= 0 && index < available.length
-          ? available[index] : null;
-      final amount = litres is num && litres.isFinite && litres > 0 &&
-          litres <= maxMilkLitres ? litres.toDouble() : null;
-      _stageMilkSuggestion(command, cow, amount, selectedSession);
-    } catch (_) {
-      if (!mounted || _report || _pending != null) return;
-      _running = false;
-      snack(context, bi(
-        'Gemini is unavailable. Enter the milk manually.',
-        'Gemini இப்போது கிடைக்கவில்லை. பால் அளவை நீங்களே உள்ளிடுங்கள்.',
-      ), tone: SnackTone.error);
-      await _typeInstead();
+      final result = await bridge.call('milk', {
+        'geminiOptIn': true,
+        'request': request.toJson(),
+      });
+      if (!current() || _pending != null) return;
+      final reply = validateMilkGeminiReply(result['reply'], request, maxLitres: maxMilkLitres);
+      VoiceDiagnostics.log('gemini_reply', {
+        'valid': reply != null,
+        'intent': reply?.intent,
+        'entries': reply?.entries.length,
+      });
+      if (reply == null || reply.intent != 'milk_record' || reply.entries.length != 1) {
+        // Unclear, not milk, or several cows: VIMO asks instead.
+        if (reply?.intent == 'not_milk') {
+          _notUnderstood(command);
+        } else {
+          _stageMilkSuggestion(command, null, null, selectedSession);
+        }
+        return;
+      }
+      final entry = reply.entries.single;
+      String? cow = entry.cow;
+      if (cow == null && entry.cowWords != null) {
+        // Resolved here, against registered cows only.
+        final local = parseVoiceCommand(entry.cowWords!, cows, aliases: aliases);
+        if (local.cowIsSure) cow = local.cow!.name;
+      }
+      if (cow != null && VoiceDriveState.conflicts.contains(cow.toLowerCase())) cow = null;
+      _stageMilkSuggestion(
+        command,
+        cow,
+        entry.litresChoices.isEmpty ? entry.litres : null,
+        entry.session ?? selectedSession,
+        choices: entry.litresChoices,
+      );
+    } catch (error) {
+      if (!current() || _pending != null) return;
+      VoiceDiagnostics.log('gemini_unavailable', {'error': '$error'.replaceAll('Bad state: ', '')});
+      // Quota, outage or billing doubt: no retry, VIMO asks itself.
+      _stageMilkSuggestion(command, null, null, selectedSession);
     } finally {
-      _geminiBusy = false;
+      if (generation == _geminiGeneration) _geminiBusy = false;
       if (mounted && !_report && _running) {
         _scheduleListen();
         if (_pending == null) _armSleep();
@@ -1303,14 +1451,18 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     VoiceCommand command,
     String? cow,
     double? litres,
-    String? selectedSession,
-  ) {
+    String? selectedSession, {
+    List<double> choices = const [],
+  }) {
     if (_phase == _VoicePhase.sleeping) _wake(silent: true);
     _line(_LineKind.me, command.text);
     _merge(command, selectedSession);
     final pending = _pending!;
     pending.cow ??= cow;
     pending.litres ??= litres;
+    if (pending.litres == null && choices.length > 1) {
+      pending.quantities = choices;
+    }
     pending.needsConfirmation = true;
     _evaluate();
     _armSleep();
@@ -2124,21 +2276,15 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
     try {
       await _cancelEar();
     } catch (_) {}
-    final before = _engine;
-    final ear = before is BrowserEarEngine ? before.model : null;
     setState(() {
       _locale = chosen;
       _micError = null;
-      _earOffer = null;
-      _earChosen = false;
     });
-    // A different ear for this language (Tamil model, other model, or the
-    // browser's own service): start again with the right one.
-    final wantsEar = _wantEar;
-    if (ear != null ? (!wantsEar || earModelFor(chosen) != ear) : wantsEar) {
-      _running = false;
-      await _dropEngine();
-      if (mounted) await _start();
+    final capture = _capture;
+    if (capture != null) {
+      capture.controller.locale = chosen;
+      if (!_running && _initialised) _running = true;
+      _scheduleListen();
       return;
     }
     if (!_running && _initialised) _running = true;
@@ -2146,6 +2292,21 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
   }
 
   void _tapOrb() {
+    if (_captureNeed != null && _capture != null) {
+      if (!_captureNeed!.startsWith(CaptureEngineCodes.prefix) ||
+          const {
+            'capture-denied',
+            'capture-noFrames',
+            'capture-muted',
+            'capture-busy',
+            'capture-timeout',
+            'capture-other',
+            'capture-offline',
+          }.contains(_captureNeed)) {
+        _tapCapture();
+      }
+      return;
+    }
     if (_micProblem != null) {
       // A permission problem: ask again rather than only restarting.
       if (_micProblem == _MicProblem.speechService && !kIsWeb) {
@@ -2310,9 +2471,12 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
         }
       }
       final total = _entries.fold<double>(0, (s, e) => s + e.litres);
+      final saved = List<VoiceMilkEntry>.of(_entries);
       final count = await saveVoiceMilkEntries(_entries);
       VoiceDiagnostics.log('saved', {'entries': count, 'liters': total});
       _entries.clear();
+      // Only after the existing milk write succeeded: learn from it.
+      _learnFromSaved(saved);
       if (!mounted) return;
       final messenger = ScaffoldMessenger.maybeOf(context);
       Navigator.of(context).pop();
@@ -2339,6 +2503,37 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           tone: SnackTone.error,
         );
       }
+    }
+  }
+
+  /// One minimal verified example per saved voice entry, to Drive, when
+  /// this person allowed learning. A Drive problem never affects saving.
+  void _learnFromSaved(List<VoiceMilkEntry> saved) {
+    if (!VoiceDriveState.textConsent) return;
+    final uid = signedInUid;
+    final ranch = ranchId();
+    bool current() => signedInUid == uid && ranchId() == ranch && VoiceDriveState.textConsent;
+    for (final e in saved) {
+      final heard = e.heard.split(' · ').first.trim();
+      if (heard.isEmpty) continue;
+      final parsed = parseVoiceCommand(heard, cowNames(), aliases: cowNameAliases());
+      if (parsed.sale) continue;
+      final guess = parsed.cows.where((c) => c.name == e.cow).firstOrNull;
+      final words = voiceTokens(heard);
+      final spoken = guess == null
+          ? ''
+          : [for (final i in guess.tokens.toList()..sort()) if (i < words.length) words[i]].join(' ');
+      final corrected = parsed.cow?.name != e.cow || parsed.litres != e.litres;
+      unawaited(sendVerifiedMilkExample(
+        heard: heard,
+        cowName: e.cow,
+        cowSpoken: spoken,
+        litres: e.litres,
+        session: e.session,
+        corrected: corrected,
+        provenance: 'vimo',
+        stillCurrent: current,
+      ));
     }
   }
 
@@ -2451,6 +2646,27 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
 
   String get _statusText {
     if (_micError != null) return _micError!;
+    final capture = _capture?.controller;
+    if (capture != null) {
+      switch (capture.phase) {
+        case CapturePhase.idle:
+          return bi('Tap Start listening', '"கேட்கத் தொடங்கு" தட்டுங்கள்');
+        case CapturePhase.connecting:
+          return bi('Connecting to the microphone… Choose Allow if asked.', 'மைக்குடன் இணைகிறது… கேட்டால் "Allow" தேர்வு செய்யுங்கள்.');
+        case CapturePhase.needsTap:
+          return bi('Microphone ready. Tap once more to start.', 'மைக் தயார். தொடங்க இன்னும் ஒருமுறை தட்டுங்கள்.');
+        case CapturePhase.processing:
+          return bi('Understanding what you said…', 'நீங்கள் சொன்னதைப் புரிந்துகொள்கிறேன்…');
+        case CapturePhase.interrupted:
+          return _captureCall
+              ? bi("You're in a call", 'நீங்கள் அழைப்பில் இருக்கிறீர்கள்')
+              : bi('Voice paused — your microphone may be in use', 'குரல் பதிவு இடைநிறுத்தப்பட்டது — மைக் வேறு பயன்பாட்டில் இருக்கலாம்');
+        case CapturePhase.stopped:
+          return bi('Stopped', 'நிறுத்தப்பட்டது');
+        default:
+          break;
+      }
+    }
     if (!_initialised) {
       return bi('Starting the microphone…', 'மைக் தயாராகிறது…');
     }
@@ -2505,15 +2721,15 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
           level: _level,
         ),
         const SizedBox(height: Space.s8),
-        if (_earOffer != null)
+        if (_captureNeed != null)
           Flexible(
             flex: 3,
             child: SingleChildScrollView(
-              child: _EarOfferCard(
-                model: _earOffer!,
-                tamil: _locale.startsWith('ta'),
-                progress: _earProgress,
-                onDownload: () => unawaited(_downloadEar()),
+              child: _CaptureCard(
+                need: _captureNeed!,
+                call: _captureCall,
+                onTap: _tapCapture,
+                onType: canRecordEntries ? () => unawaited(_typeInstead()) : null,
               ),
             ),
           )
@@ -2578,7 +2794,7 @@ class _VoiceMilkScreenState extends State<VoiceMilkScreen>
             _phase == _VoicePhase.confirmAdd)
           _milkClarificationChoices(),
         Expanded(
-          child: _earOffer != null
+          child: _captureNeed != null
               ? const SizedBox.shrink()
               : _lines.isEmpty
               ? _VoiceHelp(tamil: _tamilReplies)
@@ -3795,90 +4011,152 @@ class _MicProblemCard extends StatelessWidget {
   }
 }
 
-/// Offers VIMO's own ear: one download, then listening on the phone itself.
-class _EarOfferCard extends StatelessWidget {
-  final EarModel model;
-  final bool tamil;
-  final double? progress;
-  final VoidCallback onDownload;
-  const _EarOfferCard({
-    required this.model,
-    required this.tamil,
-    required this.progress,
-    required this.onDownload,
+/// What the owner can do now on the capture path: start, resume after an
+/// interruption, Safari's extra tap, or why voice cannot run (with Manual
+/// Entry always one tap away).
+class _CaptureCard extends StatelessWidget {
+  final String need;
+  final bool call;
+  final VoidCallback onTap;
+  final VoidCallback? onType;
+  const _CaptureCard({
+    required this.need,
+    required this.call,
+    required this.onTap,
+    required this.onType,
   });
+
+  static (String, String, String?, IconData) _text(String need, bool call) => switch (need) {
+    'start' => (
+      bi('Voice milk entry', 'குரல் பால் பதிவு'),
+      bi('Tap Start listening and say the cow and litres, e.g. "கண்மணி அஞ்சு லிட்டர்". If the iPhone asks, choose Allow.',
+          'கேட்கத் தொடங்கு தட்டி மாடும் லிட்டரும் சொல்லுங்கள், உ.தா. "கண்மணி அஞ்சு லிட்டர்". iPhone கேட்டால் Allow தேர்வு செய்யுங்கள்.'),
+      bi('Start listening', 'கேட்கத் தொடங்கு'),
+      CupertinoIcons.mic_fill,
+    ),
+    'resume' => (
+      call ? bi("You're in a call", 'நீங்கள் அழைப்பில் இருக்கிறீர்கள்')
+           : bi('Voice paused — your microphone may be in use', 'குரல் பதிவு இடைநிறுத்தப்பட்டது — மைக் வேறு பயன்பாட்டில் இருக்கலாம்'),
+      bi('Nothing was recorded or saved from that moment. Entries you already confirmed are kept. When you are ready, tap Resume listening.',
+          'அந்த நேரத்தில் எதுவும் பதிவாகவோ சேமிக்கப்படவோ இல்லை. நீங்கள் உறுதிசெய்த பதிவுகள் அப்படியே உள்ளன. தயாரானதும் "மீண்டும் கேள்" தட்டுங்கள்.'),
+      bi('Resume listening', 'மீண்டும் கேள்'),
+      CupertinoIcons.pause_circle_fill,
+    ),
+    'tap' => (
+      bi('One more tap', 'இன்னும் ஒரு தட்டு'),
+      bi('The microphone is allowed. Safari needs one more tap to start sound.', 'மைக் அனுமதி உள்ளது. ஒலியைத் தொடங்க Safari-க்கு இன்னும் ஒரு தட்டு தேவை.'),
+      bi('Tap to start listening', 'கேட்கத் தொடங்கத் தட்டுங்கள்'),
+      CupertinoIcons.hand_point_right_fill,
+    ),
+    'capture-denied' => (
+      bi('Microphone not allowed', 'மைக் அனுமதி இல்லை'),
+      bi('Tap Try again and choose Allow.', '"மீண்டும் முயற்சி" தட்டி Allow தேர்வு செய்யுங்கள்.'),
+      bi('Try again', 'மீண்டும் முயற்சி'),
+      CupertinoIcons.mic_slash_fill,
+    ),
+    'capture-blocked' => (
+      bi('Microphone blocked for this site', 'இந்தத் தளத்துக்கு மைக் தடுக்கப்பட்டுள்ளது'),
+      bi('Safari: tap the page menu (aA or ⋯) next to the address → Website Settings → Microphone → Allow, then reload. Home Screen app and all sites: iPhone Settings → Apps → Safari → Microphone → Ask or Allow, then reopen VIMO.',
+          'Safari: முகவரிக்கு அருகில் உள்ள page menu (aA அல்லது ⋯) → Website Settings → Microphone → Allow, பிறகு reload. Home Screen app மற்றும் எல்லாத் தளங்களுக்கும்: iPhone Settings → Apps → Safari → Microphone → Ask அல்லது Allow, பிறகு VIMO-வை மீண்டும் திறங்கள்.'),
+      null,
+      CupertinoIcons.lock_fill,
+    ),
+    'capture-busy' => (
+      bi('Microphone busy', 'மைக் வேறு பயன்பாட்டில் உள்ளது'),
+      bi('Another app or a call is using the microphone. Finish it, then tap Try again.', 'வேறு app அல்லது அழைப்பு மைக்கைப் பயன்படுத்துகிறது. அதை முடித்து "மீண்டும் முயற்சி" தட்டுங்கள்.'),
+      bi('Try again', 'மீண்டும் முயற்சி'),
+      CupertinoIcons.phone_fill,
+    ),
+    'capture-noFrames' || 'capture-muted' => (
+      bi('No sound from the microphone', 'மைக்கிலிருந்து ஒலி வரவில்லை'),
+      bi('The microphone opened but sent no sound. Check that no call or other app is using it, then tap Try again.', 'மைக் திறந்தது, ஆனால் ஒலி வரவில்லை. அழைப்போ வேறு app-ஓ பயன்படுத்தவில்லை என்பதை உறுதிசெய்து "மீண்டும் முயற்சி" தட்டுங்கள்.'),
+      bi('Try again', 'மீண்டும் முயற்சி'),
+      CupertinoIcons.waveform,
+    ),
+    'capture-recognitionUnavailable' => (
+      bi('Voice recognition is not set up yet', 'குரல் அறிதல் இன்னும் அமைக்கப்படவில்லை'),
+      bi("VIMO's private speech service is not switched on for this app yet. Please use Manual Entry.", 'VIMO-வின் தனிப்பட்ட குரல் சேவை இன்னும் இயக்கப்படவில்லை. கையால் பதிவு செய்யுங்கள்.'),
+      null,
+      CupertinoIcons.info_circle_fill,
+    ),
+    'capture-offline' => (
+      bi('No internet for voice', 'குரலுக்கு இணையம் இல்லை'),
+      bi('Voice needs the internet. Manual Entry works now.', 'குரலுக்கு இணையம் தேவை. கையால் பதிவு இப்போதே வேலை செய்யும்.'),
+      bi('Try again', 'மீண்டும் முயற்சி'),
+      CupertinoIcons.wifi_slash,
+    ),
+    'capture-quota' => (
+      bi('Voice limit reached for today', 'இன்றைய குரல் வரம்பு முடிந்தது'),
+      bi('The free voice service is used up for now. Please use Manual Entry.', 'இலவசக் குரல் சேவை இப்போதைக்கு முடிந்தது. கையால் பதிவு செய்யுங்கள்.'),
+      null,
+      CupertinoIcons.hourglass,
+    ),
+    'capture-unsupported' => (
+      bi('Voice is not available here', 'இங்கே குரல் கிடைக்காது'),
+      bi('This browser cannot use the microphone for VIMO. Please use Manual Entry.', 'இந்த browser-இல் VIMO-க்கு மைக் பயன்படுத்த முடியாது. கையால் பதிவு செய்யுங்கள்.'),
+      null,
+      CupertinoIcons.nosign,
+    ),
+    _ => (
+      bi('Voice stopped', 'குரல் நின்றது'),
+      bi('Something went wrong with the microphone. Tap Try again, or use Manual Entry.', 'மைக்கில் ஏதோ சிக்கல். "மீண்டும் முயற்சி" தட்டுங்கள், அல்லது கையால் பதிவு செய்யுங்கள்.'),
+      bi('Try again', 'மீண்டும் முயற்சி'),
+      CupertinoIcons.exclamationmark_circle_fill,
+    ),
+  };
 
   @override
   Widget build(BuildContext context) {
-    final p = progress;
-    final mb = model.megabytes;
+    final (title, body, action, icon) = _text(need, call);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Space.s16),
       child: Glass(
         radius: Gold.r21,
         tint: Ink.violet.withValues(alpha: .06),
         padding: const EdgeInsets.all(Space.s16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(CupertinoIcons.ear, size: 22, color: Ink.violetDeep),
-                const SizedBox(width: Space.s8),
-                Expanded(
-                  child: AppText(
-                    tamil
-                        ? bi(
-                            "VIMO's own ear for Tamil",
-                            'தமிழுக்கு VIMO-வின் சொந்தக் காது',
-                          )
-                        : bi("VIMO's own ear", 'VIMO-வின் சொந்தக் காது'),
-                    style: TextStyle(
-                      fontSize: Gold.t16 + 1,
-                      fontWeight: FontWeight.w700,
-                      color: Ink.navy,
+        child: Semantics(
+          liveRegion: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 22, color: Ink.violetDeep),
+                  const SizedBox(width: Space.s8),
+                  Expanded(
+                    child: AppText(
+                      title,
+                      style: TextStyle(fontSize: Gold.t16 + 1, fontWeight: FontWeight.w700, color: Ink.navy),
                     ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Space.s8),
+              AppText(body, style: TextStyle(fontSize: 14, height: 1.4, color: Ink.body)),
+              const SizedBox(height: Space.s12),
+              if (action != null)
+                LiquidButton(
+                  key: const ValueKey('capture-action'),
+                  label: action,
+                  icon: icon,
+                  height: Space.target,
+                  onPressed: onTap,
+                ),
+              if (onType != null) ...[
+                const SizedBox(height: Space.s8),
+                OutlinedButton.icon(
+                  key: const ValueKey('capture-manual'),
+                  onPressed: onType,
+                  icon: const Icon(CupertinoIcons.pencil),
+                  label: Text(bi('Manual Entry', 'கையால் பதிவு')),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(Space.target),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: Space.s8),
-            AppText(
-              bi(
-                "This phone's speech service cannot listen here, so VIMO listens itself, on this phone. One download of about $mb MB (Wi-Fi is best); after that it works even without the internet.",
-                'இந்த போனின் குரல் சேவை இங்கே கேட்காது; அதனால் VIMO தானே இந்த போனிலேயே கேட்கும். ஒரு முறை மட்டும் சுமார் $mb MB பதிவிறக்கம் (Wi-Fi நல்லது); அதன் பிறகு இணையம் இல்லாமலும் வேலை செய்யும்.',
-              ),
-              style: TextStyle(fontSize: 14, height: 1.4, color: Ink.body),
-            ),
-            const SizedBox(height: Space.s12),
-            if (p == null)
-              LiquidButton(
-                label: bi('Download ($mb MB)', 'பதிவிறக்கு ($mb MB)'),
-                icon: CupertinoIcons.arrow_down_circle_fill,
-                height: Space.target,
-                onPressed: onDownload,
-              )
-            else ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(Space.s4),
-                child: LinearProgressIndicator(
-                  value: p <= 0 ? null : p,
-                  minHeight: Space.s8,
-                  color: Ink.tint,
-                  backgroundColor: Ink.lavender,
-                ),
-              ),
-              const SizedBox(height: Space.s8),
-              AppText(
-                bi(
-                  'Downloading… ${(p * 100).round()}%. Keep this screen open.',
-                  'பதிவிறக்குகிறது… ${(p * 100).round()}%. இந்தத் திரையைத் திறந்தே வையுங்கள்.',
-                ),
-                style: TextStyle(fontSize: 13, color: Ink.muted),
-              ),
             ],
-          ],
+          ),
         ),
       ),
     );

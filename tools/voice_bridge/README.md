@@ -1,27 +1,43 @@
-# VIMO கற்றல் அமைப்பு
+# VIMO குரல் bridge (பதிப்பு 2) — Google Drive & இலவச Gemini
 
-## 1. Google Drive இணைப்பு
+இந்த bridge உங்கள் சொந்த Google கணக்கில் இயங்கும் Apps Script. VIMO-வின் கற்றல் தரவு உங்கள் தனிப்பட்ட Drive-இல் மட்டுமே இருக்கும். **Access code இனி இல்லை**: ஒவ்வொரு கோரிக்கையும் உள்நுழைந்த நபரின் Firebase அடையாளத்துடன் வரும். அவர் உங்கள் ranch உறுப்பினரா என்பதை Firestore விதிகள் சரிபார்க்கும்.
 
-1. iPhone Safari-ல் [Google Drive](https://drive.google.com/) திறந்து உங்கள் Google கணக்கில் **VIMO AI** என்ற தனிப்பட்ட folder உருவாக்குங்கள். Folder link-ல் `/folders/`க்குப் பிறகு வரும் ID-ஐ நகலெடுங்கள்.
-2. [Google Apps Script](https://script.google.com/home) திறந்து **New project** தேர்வு செய்யுங்கள். Safari-ல் தேவைப்பட்டால் பக்க மெனுவில் **Request Desktop Website** தேர்வு செய்யுங்கள். [Code.gs](Code.gs) கோப்பை editor-ல் ஒட்டுங்கள்.
-3. **Project Settings → Show “appsscript.json” manifest file in editor** இயக்குங்கள். Editor-ல் [appsscript.json](appsscript.json) கோப்பின் உள்ளடக்கத்தை ஒட்டி Save செய்யுங்கள்.
-4. **Project Settings → Script properties → Add script property** வழியாக `VIMO_DRIVE_FOLDER_ID` சேர்த்து folder ID-ஐ value ஆகக் கொடுங்கள். Editor-ல் `generateVimoAccessCode` தேர்வு செய்து **Run** தட்டுங்கள். உங்கள் Google கணக்கில் அனுமதி கொடுத்து, Script properties-ல் உருவான `VIMO_ACCESS_CODE` மதிப்பை நகலெடுங்கள்.
-5. **Deploy → New deployment → Web app** தேர்வு செய்யுங்கள். **Execute as → Me**, **Who has access → Anyone** தேர்வு செய்து Deploy செய்யுங்கள். ஒவ்வொரு கோரிக்கைக்கும் access code தேவை. `/exec` என்று முடியும் Web app URL-ஐ நகலெடுங்கள்.
-6. VIMO-வில் **Settings → Train VIMO → Train → Google Drive & Gemini** திறங்கள். URL மற்றும் access code-ஐ உள்ளிட்டு **Connect & sync** தட்டுங்கள். **Google Drive synced** என்ற செய்தி வர வேண்டும். Access code-ஐ உங்கள் VIMO app-ல் மட்டும் உள்ளிடுங்கள்.
+## 1. ஒருமுறை அமைப்பு (iPhone Safari, “Request Desktop Website”)
 
-புதிய திருத்தங்களும் உறுதிசெய்த மாட்டுப் பெயர் உதாரணங்களும் ஒத்திசையும். **Train VIMO → Data → Upload to Drive** வழியாக புதிய குரல் WAV கோப்புகளைத் தனியாகப் பதிவேற்றலாம்.
+1. [Google Apps Script](https://script.google.com/home) → பழைய VIMO project-ஐத் திறங்கள் (அல்லது **New project**).
+2. [Code.gs](Code.gs) முழுவதையும் editor-இல் ஒட்டி Save.
+3. **Project Settings → Show “appsscript.json” manifest file in editor** இயக்கி, [appsscript.json](appsscript.json) உள்ளடக்கத்தை ஒட்டி Save.
+   இது கேட்கும் அனுமதிகள்: Drive-இல் **இந்த script உருவாக்கிய கோப்புகள் மட்டும்** (`drive.file`), வெளி இணைப்பு, Cloud billing/project-ஐ **படிக்க மட்டும்**.
+4. **Project Settings → Script properties**:
+   - `FIREBASE_PROJECT_ID` = `my-ranch-sync`
+   - `FIREBASE_WEB_API_KEY` = VIMO app-இன் பொது Web API key (`lib/firebase_options.dart` → web `apiKey`; இது ரகசியம் அல்ல)
+   - பழைய `VIMO_ACCESS_CODE` இருந்தால் **நீக்குங்கள்**.
+5. Editor-இல் `setupVimoFolder` தேர்வு செய்து **Run**. Google அனுமதி கேட்கும் — உங்கள் கணக்கைத் தேர்ந்தெடுங்கள். உங்கள் Drive-இல் **VIMO AI** என்ற தனிப்பட்ட folder உருவாகும். அதை யாருடனும் share செய்ய வேண்டாம்; public ஆக்க வேண்டாம்.
+6. **Triggers (கடிகாரக் குறி) → Add Trigger** → function `rebuildAliases`, event source **Time-driven**, **Day timer**. (மாட்டுப் பெயர் கற்றல் தினமும் தானாக நடக்கும்.)
+7. **Deploy → Manage deployments → Edit (பென்சில்) → Version: New version → Deploy**. (புதிய deployment என்றால்: **Web app**, Execute as **Me**, Who has access **Anyone**.) `/exec` என முடியும் URL-ஐ நகலெடுங்கள்.
+8. VIMO-வில் **Settings → VIMO குரல்** → URL ஒட்டி **Google Drive இணை**. “Google Drive இணைந்தது” வர வேண்டும்.
 
-## 2. ₹0 Gemini
+## 2. இலவச Gemini (விருப்பம்; இயல்பாக அணைந்திருக்கும்)
 
-1. [Google AI Studio → API keys](https://aistudio.google.com/api-keys) திறக்கவும். Billing account இணைக்காத தனி **Free Tier** project-ல் API key உருவாக்குங்கள். அந்த project-ன் **Project ID**-ஐ எடுத்துக்கொள்ளுங்கள்.
-2. அதே project-ஐ [Google Cloud Console](https://console.cloud.google.com/apis/library) இல் தேர்வு செய்து **API Keys API**, **Cloud Resource Manager API**, **Cloud Billing API**, **Generative Language API** ஆகியவற்றை Enable செய்யுங்கள். Billing account இணைக்கப்படாததைச் சரிபார்க்க இந்த API-கள் பயன்படும்.
-3. Apps Script **Project Settings → Script properties** இல் `GEMINI_PROJECT_ID`, `GEMINI_API_KEY` சேர்க்கவும். API key-ஐ இங்கே மட்டும் உள்ளிடுங்கள். Apps Script இயக்கும் Google கணக்குக்கு அந்த Cloud project-ல் API key lookup மற்றும் project metadata read அனுமதி தேவை.
-4. VIMO-வில் **Gemini Free Tier fallback → Connect & sync** தட்டுங்கள். Free Tier சரிபார்ப்பு வென்றால் switch இயங்கும். **Drive synced. Gemini Free Tier could not be verified** என்றால் Drive இணைப்பு வேலை செய்கிறது. Google Cloud project ID, key, API அனுமதிகளைச் சரிபாருங்கள்.
+Gemini **மூன்றும்** இருந்தால் மட்டுமே அழைக்கப்படும்: (1) `GEMINI_ENABLED` = `true`, (2) அந்த நபர் VIMO குரல் திரையில் Gemini-ஐத் தேர்ந்தெடுத்தார், (3) ஒவ்வொரு அழைப்புக்கும் முன் project-இல் billing அணைந்துள்ளது என உறுதி. சந்தேகம் இருந்தால் ஒரு அழைப்பும் இல்லை.
 
-தெளிவான பால் கட்டளைகளுக்கு VIMO சாதனத்திலேயே பதிலளிக்கும். Gemini உதவியால் கிடைத்த மாடு அல்லது அளவை VIMO உங்களிடம் உறுதிசெய்யும். இலவச quota முடிந்தால் அல்லது இணையம் கிடைக்காவிட்டால் manual milk form திறக்கும்.
+1. [Google AI Studio → API keys](https://aistudio.google.com/api-keys) — **billing account இணைக்காத தனி project**-இல் key உருவாக்குங்கள். Card சேர்க்க வேண்டாம்.
+2. அதே project-இல் [Cloud Console API Library](https://console.cloud.google.com/apis/library)-இல் **API Keys API**, **Cloud Resource Manager API**, **Cloud Billing API**, **Generative Language API** Enable.
+3. Script properties: `GEMINI_PROJECT_ID`, `GEMINI_API_KEY` (key-ஐ **இங்கே மட்டும்** — chat-இலோ app-இலோ அல்ல), பிறகு `GEMINI_ENABLED` = `true`.
+4. விருப்ப வரம்புகள்: `GEMINI_RANCH_DAILY` (இயல்பு 40), `GEMINI_GLOBAL_DAILY` (இயல்பு 150).
 
-## 3. சொந்த குரல் மாடல்
+**உடனே அணைக்க:** `GEMINI_ENABLED`-ஐ நீக்குங்கள் (அல்லது `false`). Key-ஐ ரத்து செய்ய: AI Studio → API keys → அந்த key → Delete.
+Model: `gemini-3.1-flash-lite` (2026-11-16 அன்று Free Tier விலைப் பக்கத்தில் சரிபார்த்தது). இலவச நிலையில் அனுப்பும் உரையை Google தன் சேவைகளை மேம்படுத்தப் பயன்படுத்தலாம் — அதனால் மாட்டுப் பெயர்கள் C1, C2 என மாற்றப்பட்டே அனுப்பப்படும்; ஒலி ஒருபோதும் அனுப்பப்படாது.
 
-**Settings → Train VIMO → Train → Train VIMO** நீங்கள் திருத்திய பால் கட்டளைகளிலிருந்து சாதனத்திலேயே மாட்டுப் பெயர் அறியும் மாடலை உருவாக்கும்.
+## 3. Drive-இல் என்ன இருக்கும்
 
-தனி speech-recognition மாடலுக்கு **Record**-ல் உங்கள் இயல்பான தமிழிலும் Tanglish-லும் பல்வேறு மாட்டுப் பெயர்கள், லிட்டர் அளவுகள், சொல் வரிசைகளுடன் பதிவு செய்யுங்கள். **Data → Upload to Drive** தட்டிவிட்டு, [Colab notebook](https://colab.research.google.com/github/skwatsonoff/vimo-ranch-management/blob/main/tools/voice_training/finetune_asr_colab.ipynb) திறக்கவும். Drive-ல் WAV கோப்புகள் உள்ள folder path-ஐ உள்ளிட்டு, இலவச GPU கிடைக்கும்போது cells-ஐ வரிசையாக இயக்கவும். சோதனை அறிக்கையும், பிழை விகிதம் குறைந்தால் candidate model-உம் உங்கள் Drive-ல் இருக்கும். அந்த speech model-ஐ app-ல் பயன்படுத்தும் முன் iPhone-ல் தனியாகச் சோதிக்க வேண்டும்.
+```
+VIMO AI/ranches/<மறைக்கப்பட்ட ranch பெயர்>/
+  consent/        ஒவ்வொரு நபரின் ஒப்புதல்
+  examples/       உறுதிசெய்த பால் வாக்கியங்கள் (மாற்ற முடியாத கோப்புகள்)
+  audio-opt-in/   தனி ஒப்புதல் கொடுத்தவரின் குரல் மாதிரிகள் மட்டும்
+  dictionaries/   கற்ற மாட்டுப் பெயர்ப் பதிப்புகள்
+  active-manifest.json   செயலில் உள்ள பதிப்பு + checksum
+```
+
+சோதனை: `node tools/voice_bridge/bridge_test.cjs`

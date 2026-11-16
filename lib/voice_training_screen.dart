@@ -187,41 +187,16 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
   Future<void> _saveTake() async {
     final take = _take;
     if (take == null) return;
-    if (_takeMs < 600) {
-      snack(
-        context,
-        bi(
-          'Too short. Please read the sentence again.',
-          'மிகக் குறுகியது. மீண்டும் படியுங்கள்.',
-        ),
-        tone: SnackTone.error,
-      );
-      return;
-    }
-    final id = 'r${DateTime.now().microsecondsSinceEpoch}';
-    final prompt = _prompt;
-    await Hive.lazyBox(_trainingAudioBox).put(id, take);
-    await Hive.box(_trainingBox).put(id, {
-      'text': prompt.text,
-      'lang': prompt.language,
-      'speaker': _speaker,
-      'noise': _noise,
-      'durationMs': _takeMs,
-      'device': kIsWeb ? 'web' : defaultTargetPlatform.name,
-      'createdAt': DateTime.now().toIso8601String(),
-      'scope': _voiceScope(),
-      'driveUploaded': false,
-      'fromCorrection': _custom != null,
-    });
-    VoiceDiagnostics.log('training_saved', {
-      'lang': prompt.language,
-      'ms': _takeMs,
-    });
-    setState(() {
-      _take = null;
-      _custom = null;
-      _index = (_index + 1) % _prompts.length;
-    });
+    // VIMO no longer keeps recordings on the phone, and no practice
+    // reading is needed: it learns from normal voice use, in Drive.
+    setState(() => _take = null);
+    snack(
+      context,
+      bi(
+        'No recording needed. VIMO now learns from your normal voice entries.',
+        'பதிவு தேவையில்லை. உங்கள் வழக்கமான குரல் பதிவுகளிலிருந்து VIMO இப்போது கற்றுக்கொள்கிறது.',
+      ),
+    );
   }
 
   void _skip() => setState(() {
@@ -247,19 +222,19 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
         final id = txt(row, 'id');
         final bytes = await Hive.lazyBox(_trainingAudioBox).get(id);
         if (bytes is! Uint8List || bytes.length >= 1000000) continue;
-        final result = await bridge.call('recording', {
-          'id': id,
+        // One-time move of an old recording to the owner's Drive. It needs
+        // the voice-sample consent; once Drive confirms, the phone's copy
+        // is deleted.
+        final transcript = txt(row, 'text');
+        if (bytes.length > 44 + 16000 * 2 * 15 || transcript.length > 160) continue;
+        final result = await bridge.call('sample', {
+          'eventId': sha256.convert(utf8.encode('legacy/$id')).toString().substring(0, 32),
           'wav': base64Encode(bytes),
-          'sidecar': trainingSidecar(
-            id: id, transcript: txt(row, 'text'), language: txt(row, 'lang', 'ta'),
-            speaker: txt(row, 'speaker'), noise: txt(row, 'noise'),
-            durationMs: toInt(row['durationMs']), device: txt(row, 'device'),
-            recordedAt: DateTime.tryParse(txt(row, 'createdAt')) ?? DateTime.now(),
-          ),
+          'transcript': transcript,
         });
         if (result['ok'] != true) throw StateError('recording');
-        final box = Hive.box(_trainingBox);
-        await box.put(id, {...asMap(box.get(id)), 'driveUploaded': true});
+        await Hive.box(_trainingBox).delete(id);
+        await Hive.lazyBox(_trainingAudioBox).delete(id);
       }
       if (mounted) {
         snack(context, bi('Recordings synced to Google Drive', 'பதிவுகள் Google Drive-ல் ஒத்திசைந்தன'), tone: SnackTone.success);
@@ -278,22 +253,8 @@ class _TrainVimoScreenState extends State<TrainVimoScreen> {
   Future<void> _delete(String id, String lang) async {
     if (_uploading) return;
     final box = Hive.box(_trainingBox);
-    final row = asMap(box.get(id));
-    if (row['driveUploaded'] == true) {
-      final bridge = _VoiceBridge.current;
-      try {
-        if (bridge == null || row['scope'] != bridge.scope) {
-          throw StateError('session');
-        }
-        final reply = await bridge.call('deleteRecording', {'id': id});
-        if (reply['ok'] != true) throw StateError('recording');
-      } catch (_) {
-        if (mounted) {
-          snack(context, bi('Connect Google Drive to delete this recording.', 'இந்தப் பதிவை நீக்க Google Drive-ஐ இணைக்கவும்.'), tone: SnackTone.error);
-        }
-        return;
-      }
-    }
+    // Copies already in Drive are removed with "Delete my learning data"
+    // in VIMO Voice; this deletes the phone's copy.
     await box.delete(id);
     await Hive.lazyBox(_trainingAudioBox).delete(id);
     if (mounted) setState(() {});

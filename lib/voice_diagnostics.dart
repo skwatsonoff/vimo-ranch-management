@@ -1,5 +1,5 @@
-/// VIMO's voice diagnostics: a log of what the voice assistant heard,
-/// understood and did, and the report the owner downloads and gives to
+/// VIMO's voice diagnostics: a log of what the voice assistant did (phases,
+/// codes, timings; spoken words are reduced to their length), and the report the owner downloads and gives to
 /// Claude so a problem can be found without the phone.
 ///
 /// The log lives only on this phone (Hive box `voice_diagnostics`, the last
@@ -116,9 +116,35 @@ class VoiceDiagnostics {
   /// Fixed facts about this session, added to every report.
   static final Map<String, Object?> context = {};
 
+  /// Keys whose values are what someone said (or VIMO's reading of it).
+  /// The log keeps only their length: no transcript is ever stored.
+  static const contentKeys = {
+    'heard', 'meant', 'text', 'said', 'words', 'partial', 'transcript',
+    'alternatives', 'final', 'sentence', 'corrected', 'reply', 'prompt',
+  };
+
+  /// Replaces spoken content with its size, recursively.
+  static Object? redact(Object? value, [String? key]) {
+    if (key != null && contentKeys.contains(key)) {
+      if (value is String) return '[${value.length} chars]';
+      if (value is List) return '[${value.length} items]';
+      if (value == null || value is num || value is bool) return value;
+      return '[redacted]';
+    }
+    if (value is Map) {
+      return {for (final e in value.entries) '${e.key}': redact(e.value, '${e.key}')};
+    }
+    if (value is List) return [for (final v in value) redact(v)];
+    return value;
+  }
+
   static void log(String type, [Map<String, Object?> details = const {}]) {
     try {
-      final event = VoiceEvent(DateTime.now(), type, details);
+      final event = VoiceEvent(
+        DateTime.now(),
+        type,
+        (redact(details) as Map).cast<String, Object?>(),
+      );
       // Writing must never slow or break voice: fire and forget.
       store.add(event, maxEvents).catchError((_) {});
     } catch (_) {}

@@ -895,6 +895,11 @@ List<double> _quantityOptions(List<String> words, Set<int> skip) {
 // --- cows ----------------------------------------------------------------------
 
 /// One cow the utterance may name, with how sure the match is (0..1).
+/// A second cow that sounds this close to a name that was not said exactly
+/// as registered is asked about ("செவ்வாளாவா செவலையா?"). Maina/Meena (.80)
+/// stay distinct; Sevvala/Sevvalai (.86) are asked. Tune with real data.
+const cowRivalScore = .85;
+
 class CowGuess {
   final String name;
   final double score;
@@ -1000,6 +1005,9 @@ List<CowGuess> guessCows(
           var score = _nameScore(keyBuffer.toString(), nameKey);
           // A two-word span must earn it: joining helps split names only.
           if (n > 0) score *= .98;
+          // Only the name as written is certain: a sound-alike stays just
+          // below, so a second cow that also sounds right gets asked about.
+          if (score >= 1) score = .995;
           final span = {for (int k = 0; k <= n; k++) i + k};
           if (nameDigits.isNotEmpty) {
             // "Cow 2": the number must be said right after the name.
@@ -1167,7 +1175,11 @@ class VoiceCommand {
     final best = cow;
     if (best == null) return false;
     if (cows.length < 2) return true;
-    return cows[1].score < cowMaybeScore || best.score - cows[1].score >= .08;
+    if (cows[1].score < cowMaybeScore) return true;
+    // "செவ்வாள" when the ranch has செவ்வாளா and செவலை: both sound right,
+    // so VIMO asks instead of choosing one silently.
+    if (best.score < 1 && cows[1].score >= cowRivalScore) return false;
+    return best.score - cows[1].score >= .08;
   }
 
   bool get cowIsSure => cow != null && cow!.score >= cowSureScore && cowIsClear;
@@ -1177,7 +1189,12 @@ class VoiceCommand {
     final best = cow;
     if (best == null) return const [];
     return cows
-        .where((c) => c.score >= cowMaybeScore && best.score - c.score < .08)
+        .where(
+          (c) =>
+              c.score >= cowMaybeScore &&
+              (best.score - c.score < .08 ||
+                  (best.score < 1 && c.score >= cowRivalScore)),
+        )
         .map((c) => c.name)
         .take(3)
         .toList();
