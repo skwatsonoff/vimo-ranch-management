@@ -4,8 +4,10 @@ part of 'main.dart';
 //  On-device learning: what the owner taught VIMO.
 //
 //  When VIMO mishears, the owner types or says what was meant. The fix is
-//  kept in the Hive box `voice_learning` (this phone only) and applied before
-//  the next sentence is understood, with no internet and no waiting.
+//  applied at once for this session (memory only). Lasting learning goes to
+//  the owner's private Drive after a confirmed save (voice_bridge.dart).
+//  Lessons kept on this phone by older versions stay readable until the
+//  owner deletes them; nothing new is written to the phone.
 // =============================================================================
 
 const voiceLearningBox = 'voice_learning';
@@ -19,7 +21,13 @@ Future<void> openVoiceLearning() async {
 VoiceLexicon? _lexicon;
 String? _lexiconScope;
 
+/// This session's corrections (memory only, gone when the app closes).
+final Map<String, Map<String, dynamic>> _sessionLessons = {};
+
 Iterable<(String, Map<String, dynamic>)> _lessonRows() sync* {
+  for (final e in _sessionLessons.entries) {
+    yield (e.key, e.value);
+  }
   if (!Hive.isBoxOpen(voiceLearningBox)) return;
   final box = Hive.box(voiceLearningBox);
   final prefix = _voicePrefix(_voiceScope());
@@ -60,68 +68,28 @@ Future<void> rememberVoiceCorrection(String heard, String corrected) async {
   final from = heard.trim();
   final to = corrected.trim();
   if (from.isEmpty || to.isEmpty || from == to ||
-      from.length > 400 || to.length > 400 || !Hive.isBoxOpen(voiceLearningBox)) {
+      from.length > 400 || to.length > 400) {
     return;
   }
-  final scope = _voiceScope();
-  final prefix = _voicePrefix(scope);
   final pairs = VoiceLexicon().learn(from, to);
-  final command = parseVoiceCommand(to, cowNames(), aliases: cowNameAliases());
-  final share = scope.isNotEmpty && command.cowIsSure &&
-      command.litres != null && command.hasMilkUnit && !command.sale;
-  final box = Hive.box(voiceLearningBox);
-  await box.putAll({
-    '${prefix}text:${from.toLowerCase()}': _makeVoiceLesson(
-      box, '${prefix}text:${from.toLowerCase()}', 'text', from, to, share: share,
-    ),
-    for (final (a, b) in pairs)
-      '${prefix}word:${phoneticKey(a)}': _makeVoiceLesson(
-        box, '${prefix}word:${phoneticKey(a)}', 'word', a, b,
-      ),
-  });
+  final now = DateTime.now().toUtc().toIso8601String();
+  Map<String, dynamic> lesson(String kind, String heard, String meant) =>
+      {'kind': kind, 'heard': heard, 'meant': meant, 'count': 1, 'updatedAt': now, 'session': true};
+  _sessionLessons['session:text:${from.toLowerCase()}'] = lesson('text', from, to);
+  for (final (a, b) in pairs) {
+    _sessionLessons['session:word:${phoneticKey(a)}'] = lesson('word', a, b);
+  }
   _lexicon = null;
-  if (share) _queueDriveSync();
   VoiceDiagnostics.log('learned', {
     'heard': from,
     'meant': to,
-    'words': [for (final (a, b) in pairs) '$a → $b'],
+    'words': pairs.length,
   });
 }
 
-Map<String, dynamic> _makeVoiceLesson(
-  Box box, String key, String kind, String heard, String meant, {
-  bool share = false,
-  bool deleted = false,
-}) {
-  final previous = asMap(box.get(key));
-  final now = DateTime.now().toUtc();
-  return {
-    'kind': kind,
-    'heard': heard,
-    'meant': meant,
-    'count': toInt(previous['count']) + 1,
-    'updatedAt': now.toIso8601String(),
-    'changed': math.max(now.millisecondsSinceEpoch, toInt(previous['changed']) + 1),
-    'share': share,
-    'deleted': deleted,
-  };
-}
-
-Future<void> rememberConfirmedMilkCow(String heard, String cow, double litres) async {
-  final scope = _voiceScope();
-  if (scope.isEmpty || heard.isEmpty || heard.length > 400 ||
-      !Hive.isBoxOpen(voiceLearningBox)) return;
-  final original = parseVoiceCommand(heard, cowNames(), aliases: cowNameAliases());
-  if (original.cowIsSure || original.litres != litres ||
-      original.sale || !original.hasMilkUnit) return;
-  final box = Hive.box(voiceLearningBox);
-  final key = '${_voicePrefix(scope)}example:${heard.toLowerCase()}';
-  await box.put(key, _makeVoiceLesson(
-    box, key, 'example', heard, '$cow $litres litres', share: true,
-  ));
-  _lexicon = null;
-  _queueDriveSync();
-}
+/// Confirmed cows are now learned in Drive after the real save
+/// (sendVerifiedMilkExample); nothing is written to the phone.
+Future<void> rememberConfirmedMilkCow(String heard, String cow, double litres) async {}
 
 /// The owner's fixes applied to a heard sentence.
 String voiceRewrite(String text) => voiceLexicon().apply(text);
@@ -134,17 +102,15 @@ List<Map<String, dynamic>> learnedVoiceRows() {
 }
 
 Future<void> forgetVoiceLesson(String key) async {
+  if (_sessionLessons.remove(key) != null) {
+    _lexicon = null;
+    return;
+  }
   if (!Hive.isBoxOpen(voiceLearningBox)) return;
   final box = Hive.box(voiceLearningBox);
   final row = asMap(box.get(key));
-  if (row['share'] == true) {
-    await box.put(key, _makeVoiceLesson(
-      box, key, txt(row, 'kind'), '', '', share: true, deleted: true,
-    ));
-    _queueDriveSync();
-  } else {
-    await box.delete(key);
-  }
+  // Deleting a legacy local lesson removes it from this phone.
+  if (row.isNotEmpty) await box.delete(key);
   _lexicon = null;
   VoiceDiagnostics.log('unlearned', {'key': key});
 }
@@ -186,7 +152,10 @@ Map<String, List<String>>? _cloudAliases;
 Map<String, List<String>> cloudCowAliases() {
   final cached = _cloudAliases;
   if (cached != null) return cached;
-  final out = <String, List<String>>{};
+  final out = <String, List<String>>{
+    // Learned in Drive, loaded for this session only.
+    for (final e in VoiceDriveState.aliases.entries) e.key: [...e.value],
+  };
   try {
     final raw = Hive.isBoxOpen('settings')
         ? Hive.box('settings').get(_cloudLessonsKey)
@@ -200,7 +169,7 @@ Map<String, List<String>> cloudCowAliases() {
           for (final v in value)
             if ('$v'.trim().isNotEmpty) '$v'.trim(),
         ];
-        if (names.isNotEmpty) out['$key'] = names;
+        if (names.isNotEmpty) out['$key'] = [...?out['$key'], ...names];
       }
     }
   } catch (_) {}
